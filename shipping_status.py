@@ -6,7 +6,7 @@ from base64 import b64encode
 
 # Get the Close API key from the environment variable
 CLOSE_API_KEY = os.environ['CLOSE_API_KEY']
-CLOSE_ENCODED_KEY = b64encode(f"{CLOSE_API_KEY}:".encode()).decode()
+CLOSE_ENCODED_KEY = b64encode(f'{CLOSE_API_KEY}:'.encode()).decode()
 # Define the query
 query = {
     "query": {
@@ -91,12 +91,18 @@ query = {
     "include_counts": True
 }
 
-# Define the headers
-headers = {
-    'Content-Type': 'application/json',
-    'Authorization': f'Basic {CLOSE_ENCODED_KEY}'
-}
 
-# Make the request
-response = requests.post('https://api.close.com/api/v1/lead/', json=query, headers=headers)
-print(response.json())
+# Define the headers
+def post_query_to_close(query):
+    headers = {
+        'Content-Type': 'application/json',
+        'Authorization': f'Basic {CLOSE_ENCODED_KEY}'
+    }
+
+    # Make the request
+    response = requests.post('https://api.close.com/api/v1/data/search/', json=query, headers=headers)
+    return response.json()
+
+
+leads_with_package_undelivered = post_query_to_close(query)
+print(leads_with_package_undelivered)
