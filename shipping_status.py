@@ -104,5 +104,5 @@ def post_query_to_close(query):
     return response.json()
 
 
-leads_with_package_undelivered = post_query_to_close(query)
-print(leads_with_package_undelivered)
+leads_with_package_undelivered_in_close = post_query_to_close(query)
+print(leads_with_package_undelivered_in_close)
