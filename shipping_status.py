@@ -1,7 +1,11 @@
 import os
 import requests
+import requests_cache
 from base64 import b64encode
 
+
+requests_cache.install_cache('cache')
+cache = requests_cache.get_cache()
 
 CLOSE_API_KEY = os.environ['CLOSE_API_KEY']
 CLOSE_ENCODED_KEY = b64encode(f'{CLOSE_API_KEY}:'.encode()).decode()
@@ -199,3 +203,4 @@ query_leads_with_undelivered_packages_in_close = {
 }
 leads_with_package_undelivered_in_close = post_query_to_close(query_leads_with_undelivered_packages_in_close)
 print(leads_with_package_undelivered_in_close)
+
