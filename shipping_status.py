@@ -99,9 +99,22 @@ def post_query_to_close(query):
         'Authorization': f'Basic {CLOSE_ENCODED_KEY}'
     }
 
-    # Make the request
-    response = requests.post('https://api.close.com/api/v1/data/search/', json=query, headers=headers)
-    return response.json()
+    data_to_return = []
+    while True:
+        # Make the request
+        response = requests.post('https://api.close.com/api/v1/data/search/', json=query, headers=headers)
+        response_data = response.json()
+
+        if 'data' in response_data:
+            data_to_return.extend(response_data['data'])  # Use extend to flatten the list
+
+        # Update the cursor from the response, or break if no cursor is present
+        cursor = response_data.get('cursor')
+        if not cursor:
+            break  # Exit the loop if there's no cursor, indicating no more pages
+        query['cursor'] = cursor  # Update the cursor for the next request
+
+    return data_to_return  # Return the aggregated results
 
 
 leads_with_package_undelivered_in_close = post_query_to_close(query)
