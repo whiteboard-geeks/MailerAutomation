@@ -9,6 +9,8 @@ cache = requests_cache.get_cache()
 
 CLOSE_API_KEY = os.environ['CLOSE_API_KEY']
 CLOSE_ENCODED_KEY = b64encode(f'{CLOSE_API_KEY}:'.encode()).decode()
+EASYPOST_API_KEY = os.environ['EASYPOST_API_KEY']
+EASYPOST_ENCODED_KEY = b64encode(f'{EASYPOST_API_KEY}:'.encode()).decode()
 # Define the query for leads that are undelivered
 query_leads_with_undelivered_packages_in_close = {
     "query": {
@@ -119,6 +121,26 @@ def post_query_to_close(query):
     return data_to_return  # Return the aggregated results
 
 
+def get_shipping_status_from_easypost(tracking_number, carrier):
+    url = "https://api.easypost.com/v2/trackers"
+
+    payload = {
+        "tracker": {
+            "tracking_code": tracking_number,
+            "carrier": carrier
+        }
+    }
+
+    headers = {
+        'Content-Type': 'application/json',
+        'Authorization': f'Basic {EASYPOST_ENCODED_KEY}'
+    }
+
+    response = requests.post(url, headers=headers, json=payload)
+    print(response.json)
+    return response.json()
+
+
 query_leads_with_undelivered_packages_in_close = {
     "query": {
         "negate": False,
@@ -204,3 +226,6 @@ query_leads_with_undelivered_packages_in_close = {
 leads_with_package_undelivered_in_close = post_query_to_close(query_leads_with_undelivered_packages_in_close)
 print(leads_with_package_undelivered_in_close)
 
+tracking_number = "9400136105536731108085"
+carrier = "USPS"
+shipping_status = get_shipping_status_from_easypost(tracking_number, carrier)
