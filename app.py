@@ -50,6 +50,11 @@ def post_query_to_close(query):
 
 
 def update_delivery_information_for_lead(lead_id, delivery_information):
+    def verify_delivery_information_updated(response_data, lead_update_data):
+        for key, value in lead_update_data.items():
+            if key not in response_data or response_data[key] != value:
+                return False
+        return True
     CLOSE_API_KEY = os.environ['CLOSE_API_KEY']
     CLOSE_ENCODED_KEY = b64encode(f'{CLOSE_API_KEY}:'.encode()).decode()
     headers = {
@@ -99,7 +104,8 @@ def update_delivery_information_for_lead(lead_id, delivery_information):
 
     response = requests.put(f'https://api.close.com/api/v1/lead/{lead_id}', json=lead_update_data, headers=headers)
     response_data = response.json()
-    return response_data
+    data_updated = verify_delivery_information_updated(response_data, lead_update_data)
+    return response_data, data_updated
 
 
 @app.route('/delivery_status', methods=['POST'])
