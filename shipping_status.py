@@ -1,100 +1,14 @@
 import os
 import requests
-import requests_cache
 from base64 import b64encode
 from datetime import datetime
+from time import sleep
 
-
-requests_cache.install_cache('cache')
-cache = requests_cache.get_cache()
 
 CLOSE_API_KEY = os.environ['CLOSE_API_KEY']
 CLOSE_ENCODED_KEY = b64encode(f'{CLOSE_API_KEY}:'.encode()).decode()
 EASYPOST_API_KEY = os.environ['EASYPOST_API_KEY']
 EASYPOST_ENCODED_KEY = b64encode(f'{EASYPOST_API_KEY}:'.encode()).decode()
-# Define the query for leads that are undelivered
-query_leads_with_undelivered_packages_in_close = {
-    "query": {
-        "negate": False,
-        "queries": [
-            {
-                "_comment": "Setting the object type to lead",
-                "negate": False,
-                "object_type": "lead",
-                "type": "object_type"
-            },
-            {
-                "_comment": "Adding the filters",
-                "negate": False,
-                "queries": [
-                    {
-                        "negate": False,
-                        "queries": [
-                            {
-                                "_comment": "Tracking Number present = True",
-                                "condition": {
-                                    "type": "exists"
-                                },
-                                "field": {
-                                    "custom_field_id": "cf_iSOPYKzS9IPK20gJ8eH9Q74NT7grCQW9psqo4lZR3Ii",
-                                    "type": "custom_field"
-                                },
-                                "negate": False,
-                                "type": "field_condition"
-                            },
-                            {
-                                "_comment": "Carrier present = True",
-                                "condition": {
-                                    "type": "exists"
-                                },
-                                "field": {
-                                    "custom_field_id": "cf_2QQR5e6vJUyGzlYBtHddFpdqNp5393nEnUiZk1Ukl9l",
-                                    "type": "custom_field"
-                                },
-                                "negate": False,
-                                "type": "field_condition"
-                            },
-                            {
-                                "_comment": "Package Delivered not present = True",
-                                "condition": {
-                                    "type": "exists"
-                                },
-                                "field": {
-                                    "custom_field_id": "cf_wkZ5ptOR1Ro3YPxJPYipI35M7ticuYvJHFgp2y4fzdQ",
-                                    "type": "custom_field"
-                                },
-                                "negate": True,
-                                "type": "field_condition"
-                            },
-                            {
-                                "_comment": "lead_source = Mailer",
-                                "condition": {
-                                    "type": "term",
-                                    "values": [
-                                        "Mailer"
-                                    ]
-                                },
-                                "field": {
-                                    "custom_field_id": "lcf_m8vYwl21cyOo53d97DYSMQDzFnt6cxoSMQ84pAKIN0e",
-                                    "type": "custom_field"
-                                },
-                                "negate": False,
-                                "type": "field_condition"
-                            }
-                        ],
-                        "type": "and"
-                    }
-                ],
-                "type": "and"
-            }
-        ],
-        "type": "and"
-    },
-    "_fields": {
-        "lead": ["name", "custom.cf_iSOPYKzS9IPK20gJ8eH9Q74NT7grCQW9psqo4lZR3Ii"]
-    },
-    "include_counts": True
-}
 
 
 # Define the headers
@@ -150,6 +64,7 @@ def parse_delivery_information(tracking_data):
     delivery_datetime = datetime.strptime(delivery_tracking_data['datetime'], '%Y-%m-%dT%H:%M:%SZ')
     delivery_information['delivery_date'] = delivery_datetime.date()
     delivery_information['delivery_date_readable'] = delivery_datetime.strftime('%a %-m/%-d')
+    sleep(1)  # To avoid rate limiting. Should implement a retry strategy in production.
     return delivery_information
 
 
@@ -220,6 +135,18 @@ query_leads_with_undelivered_packages_in_close = {
                                 },
                                 "negate": False,
                                 "type": "field_condition"
+                            },
+                            {
+                                "_comment": "Date & Location Mailer Delivered: Not Present",
+                                "condition": {
+                                    "type": "exists"
+                                },
+                                "field": {
+                                    "custom_field_id": "cf_DTgmXXPozUH3707H1MYu2PhhDznJjWbtmDcb7zme5a9",
+                                    "type": "custom_field"
+                                },
+                                "negate": True,
+                                "type": "field_condition"
                             }
                         ],
                         "type": "and"
@@ -231,15 +158,24 @@ query_leads_with_undelivered_packages_in_close = {
         "type": "and"
     },
     "_fields": {
-        "lead": ["name", "custom.cf_iSOPYKzS9IPK20gJ8eH9Q74NT7grCQW9psqo4lZR3Ii"]
+        "lead": [
+            "name",
+            "id",
+            "custom.cf_iSOPYKzS9IPK20gJ8eH9Q74NT7grCQW9psqo4lZR3Ii",
+            "custom.cf_2QQR5e6vJUyGzlYBtHddFpdqNp5393nEnUiZk1Ukl9l",
+            "custom.cf_DTgmXXPozUH3707H1MYu2PhhDznJjWbtmDcb7zme5a9"
+        ]
     },
     "include_counts": True
 }
 leads_with_package_undelivered_in_close = post_query_to_close(query_leads_with_undelivered_packages_in_close)
 
-tracking_number = "9400136105536731108085"
-carrier = "USPS"
-tracking_data = get_tracking_data_from_easypost(tracking_number, carrier)
-if tracking_data['status'] == "delivered":
-    delivery_information = parse_delivery_information(tracking_data)
-    print(delivery_information)
+for lead in leads_with_package_undelivered_in_close:
+    tracking_number = lead['custom.cf_iSOPYKzS9IPK20gJ8eH9Q74NT7grCQW9psqo4lZR3Ii']
+    carrier = lead['custom.cf_2QQR5e6vJUyGzlYBtHddFpdqNp5393nEnUiZk1Ukl9l'][0]
+    tracking_data = get_tracking_data_from_easypost(tracking_number, carrier)
+    if tracking_data['status'] == "delivered":
+        delivery_information = parse_delivery_information(tracking_data)
+        print(tracking_number, carrier, delivery_information)
+    else:
+        print(f"{carrier} tracking number {tracking_number} is not yet delivered")
