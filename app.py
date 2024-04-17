@@ -9,7 +9,7 @@ def transform_data(data):
     return data['user'].upper()
 
 
-@app.route('/webhook', methods=['POST'])
+@app.route('/delivery_status', methods=['POST'])
 def webhook():
     data = request.json
     print("Received webhook data:", data)
