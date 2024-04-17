@@ -199,14 +199,15 @@ def webhook():
         "sort": []
     }
     close_leads = post_query_to_close(close_query_to_find_leads_with_tracking_number)
-    if len(close_leads) > 1:  # this would mean there are two leads with the same tracking number
-        logger.error("More than one lead found with the same tracking number")
-        raise Exception("More than one lead found with the same tracking number")
     try:
+        if len(close_leads) > 1:  # this would mean there are two leads with the same tracking number
+            logger.error("More than one lead found with the same tracking number")
+            raise Exception("More than one lead found with the same tracking number")
         update_close_lead = update_delivery_information_for_lead(close_leads[0]["id"], delivery_information)
         logger.info(f"Close lead update: {update_close_lead}")
         return jsonify({"status": "success", "close_lead_update": update_close_lead}), 200
     except Exception as e:
+        logger.error(f"Error updating Close lead: {e}")
         return jsonify({"status": "error", "message": str(e)}), 400
 
 
