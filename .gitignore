@@ -1,3 +1,5 @@
 cache.sqlite
 .flake8
 env/
+*.pyc
+launch.json
