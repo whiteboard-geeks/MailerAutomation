@@ -2,6 +2,7 @@ import os
 import requests
 import requests_cache
 from base64 import b64encode
+from datetime import datetime
 
 
 requests_cache.install_cache('cache')
@@ -121,7 +122,7 @@ def post_query_to_close(query):
     return data_to_return  # Return the aggregated results
 
 
-def get_shipping_status_from_easypost(tracking_number, carrier):
+def get_tracking_data_from_easypost(tracking_number, carrier):
     url = "https://api.easypost.com/v2/trackers"
 
     payload = {
@@ -137,8 +138,19 @@ def get_shipping_status_from_easypost(tracking_number, carrier):
     }
 
     response = requests.post(url, headers=headers, json=payload)
-    print(response.json)
     return response.json()
+
+
+def parse_delivery_information(tracking_data):
+    delivery_information = {}
+    delivery_tracking_data = tracking_data['tracking_details'][-1]
+    delivery_information['delivery_city'] = delivery_tracking_data['tracking_location']['city'].title()
+    delivery_information['delivery_state'] = delivery_tracking_data['tracking_location']['state'].upper()
+
+    delivery_datetime = datetime.strptime(delivery_tracking_data['datetime'], '%Y-%m-%dT%H:%M:%SZ')
+    delivery_information['delivery_date'] = delivery_datetime.date()
+    delivery_information['delivery_date_readable'] = delivery_datetime.strftime('%a %-m/%-d')
+    return delivery_information
 
 
 query_leads_with_undelivered_packages_in_close = {
@@ -224,8 +236,10 @@ query_leads_with_undelivered_packages_in_close = {
     "include_counts": True
 }
 leads_with_package_undelivered_in_close = post_query_to_close(query_leads_with_undelivered_packages_in_close)
-print(leads_with_package_undelivered_in_close)
 
 tracking_number = "9400136105536731108085"
 carrier = "USPS"
-shipping_status = get_shipping_status_from_easypost(tracking_number, carrier)
+tracking_data = get_tracking_data_from_easypost(tracking_number, carrier)
+if tracking_data['status'] == "delivered":
+    delivery_information = parse_delivery_information(tracking_data)
+    print(delivery_information)
