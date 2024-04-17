@@ -113,8 +113,11 @@ def update_delivery_information_for_lead(lead_id, delivery_information):
     response = requests.put(f'https://api.close.com/api/v1/lead/{lead_id}', json=lead_update_data, headers=headers)
     response_data = response.json()
     data_updated = verify_delivery_information_updated(response_data, lead_update_data)
+    if not data_updated:
+        logger.error(f"Delivery information update failed for lead {lead_id}.")
+        raise Exception("Close accepted the lead, but the fields did not update.")
     logger.info(f"Delivery information updated for lead {lead_id}: {data_updated}")
-    return response_data, data_updated
+    return response_data
 
 
 @app.route('/delivery_status', methods=['POST'])
@@ -199,9 +202,12 @@ def webhook():
     if len(close_leads) > 1:  # this would mean there are two leads with the same tracking number
         logger.error("More than one lead found with the same tracking number")
         raise Exception("More than one lead found with the same tracking number")
-    update_close_lead = update_delivery_information_for_lead(close_leads[0]["id"], delivery_information)
-    logger.info(f"Close lead update: {update_close_lead}")
-    return jsonify({"status": "success", "close_lead_update": update_close_lead}), 200
+    try:
+        update_close_lead = update_delivery_information_for_lead(close_leads[0]["id"], delivery_information)
+        logger.info(f"Close lead update: {update_close_lead}")
+        return jsonify({"status": "success", "close_lead_update": update_close_lead}), 200
+    except Exception as e:
+        return jsonify({"status": "error", "message": str(e)}), 400
 
 
 if __name__ == '__main__':
