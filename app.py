@@ -120,6 +120,57 @@ def update_delivery_information_for_lead(lead_id, delivery_information):
     return response_data
 
 
+def create_package_delivered_custom_activity_in_close(lead_id, delivery_information):
+    CLOSE_API_KEY = os.environ['CLOSE_API_KEY']
+    CLOSE_ENCODED_KEY = b64encode(f'{CLOSE_API_KEY}:'.encode()).decode()
+    headers = {
+        'Content-Type': 'application/json',
+        'Authorization': f'Basic {CLOSE_ENCODED_KEY}'
+    }
+
+    custom_activity_field_ids = {
+        "date_and_location_of_mailer_delivered": {
+            "type": "text",
+            "value": "custom.cf_f652JX1NlPz5P5h7Idqs0uOosb9nomncygP3pJ8GcOS"
+        },
+        "state_delivered": {
+            "type": "text",
+            "value": "custom.cf_7wWKPs9vnRZTpgJRdJ79S3NYeT9kq8dCSgRIrVvYe8S"
+        },
+        "city_delivered": {
+            "type": "text",
+            "value": "custom.cf_OJXwT7BAZi0qCfdFvzK0hTcPoUUGTxP6bWGIUpEGqOE"
+        },
+        "date_delivered": {
+            "type": "date",
+            "value": "custom.cf_wS7icPETKthDz764rkbuC1kQYzP0l88CzlMxoJAlOkO"
+        },
+        "date_delivered_readable": {
+            "type": "text",
+            "value": "custom.cf_gUsxB1J9TG1pWG8iC3XYZR9rRXBcHQ86aEJUIFme6LA"
+        },
+        "location_delivered": {
+            "type": "text",
+            "value": "custom.cf_Wzp0dZ2D8PQTCKUiKMGsYUVDnURtisF6g9Lwz72WM8m"
+        }
+    }
+    lead_activity_data = {
+        "lead_id": lead_id,
+        "custom_activity_type_id": "custom.actitype_3KhBfWgjtVfiGYbczbgOWv",  # Activity Type: Mailer Delivered
+        custom_activity_field_ids["date_and_location_of_mailer_delivered"]["value"]: delivery_information["date_and_location_of_mailer_delivered"],
+        custom_activity_field_ids["state_delivered"]["value"]: delivery_information["delivery_state"],
+        custom_activity_field_ids["city_delivered"]["value"]: delivery_information["delivery_city"],
+        custom_activity_field_ids["date_delivered"]["value"]: delivery_information["delivery_date"].isoformat(),
+        custom_activity_field_ids["date_delivered_readable"]["value"]: delivery_information["delivery_date_readable"],
+        custom_activity_field_ids["location_delivered"]["value"]: delivery_information["location_delivered"]
+    }
+
+    response = requests.post('https://api.close.com/api/v1/activity/custom/', json=lead_activity_data, headers=headers)
+    response_data = response.json()
+    logger.info(f"Delivery activity updated for lead {lead_id}: {response.json()}")
+    return response_data
+
+
 @app.route('/delivery_status', methods=['POST'])
 def webhook():
     tracking_data = request.json
@@ -205,6 +256,7 @@ def webhook():
             raise Exception("More than one lead found with the same tracking number")
         update_close_lead = update_delivery_information_for_lead(close_leads[0]["id"], delivery_information)
         logger.info(f"Close lead update: {update_close_lead}")
+        create_package_delivered_custom_activity_in_close(close_leads[0]["id"], delivery_information)
         return jsonify({"status": "success", "close_lead_update": update_close_lead}), 200
     except Exception as e:
         logger.error(f"Error updating Close lead: {e}")
