@@ -17,7 +17,8 @@ def parse_delivery_information(tracking_data):
     delivery_datetime = datetime.strptime(delivery_tracking_data['datetime'], '%Y-%m-%dT%H:%M:%SZ')
     delivery_information['delivery_date'] = delivery_datetime.date()
     delivery_information['delivery_date_readable'] = delivery_datetime.strftime('%a %-m/%-d')
-    delivery_information['']
+    delivery_information["date_and_location_of_mailer_delivered"] = f"{delivery_information['delivery_date_readable']} to {delivery_information['delivery_city']}, {delivery_information['delivery_state']}"
+    delivery_information["location_delivered"] = f"{delivery_information['delivery_city']}, {delivery_information['delivery_state']}"
 
     return delivery_information
 
@@ -46,6 +47,59 @@ def post_query_to_close(query):
         query['cursor'] = cursor  # Update the cursor for the next request
 
     return data_to_return  # Return the aggregated results
+
+
+def update_delivery_information_for_lead(lead_id, delivery_information):
+    CLOSE_API_KEY = os.environ['CLOSE_API_KEY']
+    CLOSE_ENCODED_KEY = b64encode(f'{CLOSE_API_KEY}:'.encode()).decode()
+    headers = {
+        'Content-Type': 'application/json',
+        'Authorization': f'Basic {CLOSE_ENCODED_KEY}'
+    }
+
+    custom_field_ids = {
+        "date_and_location_of_mailer_delivered": {
+            "type": "text",
+            "value": "custom.cf_DTgmXXPozUH3707H1MYu2PhhDznJjWbtmDcb7zme5a9"
+        },
+        "package_delivered": {
+            "type": "dropdown_single",
+            "value": "custom.cf_wkZ5ptOR1Ro3YPxJPYipI35M7ticuYvJHFgp2y4fzdQ"
+        },
+        "state_delivered": {
+            "type": "text",
+            "value": "custom.cf_vxfsYfTrFk6oYrnSx0ViYrUMpE7y5sxi0NnRgTyOf30"
+        },
+        "city_delivered": {
+            "type": "text",
+            "value": "custom.cf_1hWUFxiA6QhUXrYT3lDh96JSWKxVBBAKCB3XO8EXGUW"
+        },
+        "date_delivered": {
+            "type": "date",
+            "value": "custom.cf_jVU4YFLX5bDq2dRjvBapPYAJxGP0iQWid9QC7cQjSCR"
+        },
+        "date_delivered_readable": {
+            "type": "text",
+            "value": "custom.cf_jGC3O9doWfvwFV49NBIRGwA0PFIcKMzE0h8Zf65XLCQ"
+        },
+        "location_delivered": {
+            "type": "text",
+            "value": "custom.cf_hPAtbaFuztYBQcYVqsk4pIFV0hKvnlb696TknlzEERS"
+        }
+    }
+    lead_update_data = {
+        custom_field_ids["date_and_location_of_mailer_delivered"]["value"]: delivery_information["date_and_location_of_mailer_delivered"],
+        custom_field_ids["package_delivered"]["value"]: "Yes",
+        custom_field_ids["state_delivered"]["value"]: delivery_information["delivery_state"],
+        custom_field_ids["city_delivered"]["value"]: delivery_information["delivery_city"],
+        custom_field_ids["date_delivered"]["value"]: delivery_information["delivery_date"].isoformat(),
+        custom_field_ids["date_delivered_readable"]["value"]: delivery_information["delivery_date_readable"],
+        custom_field_ids["location_delivered"]["value"]: delivery_information["location_delivered"]
+    }
+
+    response = requests.put(f'https://api.close.com/api/v1/lead/{lead_id}', json=lead_update_data, headers=headers)
+    response_data = response.json()
+    return response_data
 
 
 @app.route('/delivery_status', methods=['POST'])
@@ -129,7 +183,7 @@ def webhook():
         close_leads = post_query_to_close(close_query_to_find_leads_with_tracking_number)
         if len(close_leads) > 1:  # this would mean there are two leads with the same tracking number
             raise Exception("More than one lead found with the same tracking number")
-
+        update_close_lead = update_delivery_information_for_lead(close_leads[0]["id"], delivery_information)
         print(close_leads)
     else:
         delivery_information = "in transit"
