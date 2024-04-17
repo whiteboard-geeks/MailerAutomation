@@ -1,4 +1,5 @@
 import os
+import logging
 from datetime import datetime
 from base64 import b64encode
 
@@ -6,6 +7,10 @@ import requests
 from flask import Flask, request, jsonify
 
 app = Flask(__name__)
+
+# Configure logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger()
 
 
 def parse_delivery_information(tracking_data):
@@ -20,6 +25,7 @@ def parse_delivery_information(tracking_data):
     delivery_information["date_and_location_of_mailer_delivered"] = f"{delivery_information['delivery_date_readable']} to {delivery_information['delivery_city']}, {delivery_information['delivery_state']}"
     delivery_information["location_delivered"] = f"{delivery_information['delivery_city']}, {delivery_information['delivery_state']}"
 
+    logger.info(f"Delivery information parsed: {delivery_information}")
     return delivery_information
 
 
@@ -43,9 +49,11 @@ def post_query_to_close(query):
         # Update the cursor from the response, or break if no cursor is present
         cursor = response_data.get('cursor')
         if not cursor:
+            logger.info("No more pages to fetch from Close API.")
             break  # Exit the loop if there's no cursor, indicating no more pages
         query['cursor'] = cursor  # Update the cursor for the next request
 
+    logger.info(f"Data returned from Close API: {data_to_return}")
     return data_to_return  # Return the aggregated results
 
 
@@ -105,6 +113,7 @@ def update_delivery_information_for_lead(lead_id, delivery_information):
     response = requests.put(f'https://api.close.com/api/v1/lead/{lead_id}', json=lead_update_data, headers=headers)
     response_data = response.json()
     data_updated = verify_delivery_information_updated(response_data, lead_update_data)
+    logger.info(f"Delivery information updated for lead {lead_id}: {data_updated}")
     return response_data, data_updated
 
 
@@ -112,9 +121,10 @@ def update_delivery_information_for_lead(lead_id, delivery_information):
 def webhook():
     tracking_data = request.json
     if tracking_data.get('status') != "delivered":
+        logger.info("Tracking status is not 'delivered'; webhook did not run.")
         return jsonify({"status": "success", "message": "Tracking status is not 'delivered' so did not run."}), 200
 
-    print("Received webhook data:", tracking_data)
+    logger.info(f"Received webhook data: {tracking_data}")
     delivery_information = parse_delivery_information(tracking_data)
     close_query_to_find_leads_with_tracking_number = {
         "limit": None,
@@ -187,9 +197,10 @@ def webhook():
     }
     close_leads = post_query_to_close(close_query_to_find_leads_with_tracking_number)
     if len(close_leads) > 1:  # this would mean there are two leads with the same tracking number
+        logger.error("More than one lead found with the same tracking number")
         raise Exception("More than one lead found with the same tracking number")
     update_close_lead = update_delivery_information_for_lead(close_leads[0]["id"], delivery_information)
-    print(update_close_lead)
+    logger.info(f"Close lead update: {update_close_lead}")
     return jsonify({"status": "success", "close_lead_update": update_close_lead}), 200
 
 
