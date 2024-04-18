@@ -198,93 +198,99 @@ def create_package_delivered_custom_activity_in_close(lead_id, delivery_informat
 
 @app.route('/delivery_status', methods=['POST'])
 def handle_package_delivery_update():
-    tracking_data = request.json
-    if tracking_data.get('status') != "delivered":
-        logger.info("Tracking status is not 'delivered'; webhook did not run.")
-        return jsonify({"status": "success", "message": "Tracking status is not 'delivered' so did not run."}), 200
-
-    logger.info(f"Received webhook data: {tracking_data}")
-    delivery_information = parse_delivery_information(tracking_data)
-    close_query_to_find_leads_with_tracking_number = {
-        "limit": None,
-        "query": {
-            "negate": False,
-            "queries": [
-                {
-                    "negate": False,
-                    "object_type": "lead",
-                    "type": "object_type"
-                },
-                {
-                    "negate": False,
-                    "queries": [
-                        {
-                            "negate": False,
-                            "queries": [
-                                {
-                                    "condition": {
-                                        "mode": "exact_value",
-                                        "type": "text",
-                                        "value": "123456"
-                                    },
-                                    "field": {
-                                        "custom_field_id": "cf_iSOPYKzS9IPK20gJ8eH9Q74NT7grCQW9psqo4lZR3Ii",
-                                        "type": "custom_field"
-                                    },
-                                    "negate": False,
-                                    "type": "field_condition"
-                                },
-                                {
-                                    "condition": {
-                                        "type": "term",
-                                        "values": [
-                                            "USPS"
-                                        ]
-                                    },
-                                    "field": {
-                                        "custom_field_id": "cf_2QQR5e6vJUyGzlYBtHddFpdqNp5393nEnUiZk1Ukl9l",
-                                        "type": "custom_field"
-                                    },
-                                    "negate": False,
-                                    "type": "field_condition"
-                                },
-                                {
-                                    "condition": {
-                                        "type": "term",
-                                        "values": [
-                                            "Mailer"
-                                        ]
-                                    },
-                                    "field": {
-                                        "custom_field_id": "lcf_m8vYwl21cyOo53d97DYSMQDzFnt6cxoSMQ84pAKIN0e",
-                                        "type": "custom_field"
-                                    },
-                                    "negate": False,
-                                    "type": "field_condition"
-                                }
-                            ],
-                            "type": "and"
-                        }
-                    ],
-                    "type": "and"
-                }
-            ],
-            "type": "and"
-        },
-        "results_limit": None,
-        "sort": []
-    }
-    close_leads = post_query_to_close(close_query_to_find_leads_with_tracking_number)
     try:
-        if len(close_leads) > 1:  # this would mean there are two leads with the same tracking number
-            logger.error("More than one lead found with the same tracking number")
-            raise Exception("More than one lead found with the same tracking number")
-        update_close_lead = update_delivery_information_for_lead(close_leads[0]["id"], delivery_information)
-        logger.info(f"Close lead update: {update_close_lead}")
-        create_package_delivered_custom_activity_in_close(close_leads[0]["id"], delivery_information)
-        return jsonify({"status": "success", "close_lead_update": update_close_lead}), 200
+        tracking_data = request.json
+        if tracking_data.get('status') != "delivered":
+            logger.info("Tracking status is not 'delivered'; webhook did not run.")
+            return jsonify({"status": "success", "message": "Tracking status is not 'delivered' so did not run."}), 200
+
+        logger.info(f"Received webhook data: {tracking_data}")
+        delivery_information = parse_delivery_information(tracking_data)
+        close_query_to_find_leads_with_tracking_number = {
+            "limit": None,
+            "query": {
+                "negate": False,
+                "queries": [
+                    {
+                        "negate": False,
+                        "object_type": "lead",
+                        "type": "object_type"
+                    },
+                    {
+                        "negate": False,
+                        "queries": [
+                            {
+                                "negate": False,
+                                "queries": [
+                                    {
+                                        "condition": {
+                                            "mode": "exact_value",
+                                            "type": "text",
+                                            "value": tracking_data["tracking_code"]
+                                        },
+                                        "field": {
+                                            "custom_field_id": "cf_iSOPYKzS9IPK20gJ8eH9Q74NT7grCQW9psqo4lZR3Ii",
+                                            "type": "custom_field"
+                                        },
+                                        "negate": False,
+                                        "type": "field_condition"
+                                    },
+                                    {
+                                        "condition": {
+                                            "type": "term",
+                                            "values": [
+                                                tracking_data['carrier']
+                                            ]
+                                        },
+                                        "field": {
+                                            "custom_field_id": "cf_2QQR5e6vJUyGzlYBtHddFpdqNp5393nEnUiZk1Ukl9l",
+                                            "type": "custom_field"
+                                        },
+                                        "negate": False,
+                                        "type": "field_condition"
+                                    },
+                                    {
+                                        "condition": {
+                                            "type": "term",
+                                            "values": [
+                                                "Mailer"
+                                            ]
+                                        },
+                                        "field": {
+                                            "custom_field_id": "lcf_m8vYwl21cyOo53d97DYSMQDzFnt6cxoSMQ84pAKIN0e",
+                                            "type": "custom_field"
+                                        },
+                                        "negate": False,
+                                        "type": "field_condition"
+                                    }
+                                ],
+                                "type": "and"
+                            }
+                        ],
+                        "type": "and"
+                    }
+                ],
+                "type": "and"
+            },
+            "results_limit": None,
+            "sort": []
+        }
+        close_leads = post_query_to_close(close_query_to_find_leads_with_tracking_number)
+        try:
+            if len(close_leads) > 1:  # this would mean there are two leads with the same tracking number
+                logger.error("More than one lead found with the same tracking number")
+                raise Exception("More than one lead found with the same tracking number")
+            update_close_lead = update_delivery_information_for_lead(close_leads[0]["id"], delivery_information)
+            logger.info(f"Close lead update: {update_close_lead}")
+            create_package_delivered_custom_activity_in_close(close_leads[0]["id"], delivery_information)
+            return jsonify({"status": "success", "close_lead_update": update_close_lead}), 200
+        except Exception as e:
+            error_message = f"Error updating Close lead: {e}, lead_id={close_leads[0]['id']}"
+            logger.error(error_message)
+            send_error_email(error_message)  # Send an email when an error occurs
+            return jsonify({"status": "error", "message": str(e)}), 400
     except Exception as e:
-        error_message = f"Error updating Close lead: {e}, lead_id={close_leads[0]['id']}"
+        error_message = f"Error. {e}, tracking_code={tracking_data['tracking_code']}, carrier={tracking_data['carrier']}"
         logger.error(error_message)
         send_error_email(error_message)  # Send an email when an error occurs
         return jsonify({"status": "error", "message": str(e)}), 400
