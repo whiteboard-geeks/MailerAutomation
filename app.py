@@ -5,12 +5,33 @@ from base64 import b64encode
 
 import requests
 from flask import Flask, request, jsonify
+import pytz
 
 app = Flask(__name__)
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger()
+
+
+def send_error_email(error_message):
+    MAILGUN_API_KEY = os.environ.get('MAILGUN_API_KEY')
+    central_time_zone = pytz.timezone('America/Chicago')
+    central_time_now = datetime.now(central_time_zone)
+    time_now_formatted = central_time_now.strftime("%Y-%m-%d %H:%M:%S%z")
+
+    mailgun_email_response = requests.post(
+        "https://api.mailgun.net/v3/sandbox66451c576acc426db15db39f4a76b250.mailgun.org/messages",
+        auth=("api", MAILGUN_API_KEY),
+        data={
+            "from": "MailerAutomation App <postmaster@sandbox66451c576acc426db15db39f4a76b250.mailgun.org>",
+            "to": "Lance Johnson <lance@whiteboardgeeks.com>",
+            "subject": f"Package Delivery Webhook Error {time_now_formatted}",
+            "text": error_message
+        }
+    )
+
+    return mailgun_email_response.json()
 
 
 def parse_delivery_information(tracking_data):
@@ -114,7 +135,9 @@ def update_delivery_information_for_lead(lead_id, delivery_information):
     response_data = response.json()
     data_updated = verify_delivery_information_updated(response_data, lead_update_data)
     if not data_updated:
-        logger.error(f"Delivery information update failed for lead {lead_id}.")
+        error_message = f"Delivery information update failed for lead {lead_id}."
+        logger.error(error_message)
+        send_error_email(error_message)  # Send an email when an error occurs
         raise Exception("Close accepted the lead, but the fields did not update.")
     logger.info(f"Delivery information updated for lead {lead_id}: {data_updated}")
     return response_data
@@ -259,7 +282,9 @@ def webhook():
         create_package_delivered_custom_activity_in_close(close_leads[0]["id"], delivery_information)
         return jsonify({"status": "success", "close_lead_update": update_close_lead}), 200
     except Exception as e:
-        logger.error(f"Error updating Close lead: {e}")
+        error_message = f"Error updating Close lead: {e}, lead_id={close_leads[0]['id']}"
+        logger.error(error_message)
+        send_error_email(error_message)  # Send an email when an error occurs
         return jsonify({"status": "error", "message": str(e)}), 400
 
 
