@@ -193,7 +193,7 @@ def create_package_delivered_custom_activity_in_close(lead_id, delivery_informat
 
 
 @app.route('/delivery_status', methods=['POST'])
-def webhook():
+def handle_package_delivery_update():
     tracking_data = request.json
     if tracking_data.get('status') != "delivered":
         logger.info("Tracking status is not 'delivered'; webhook did not run.")
