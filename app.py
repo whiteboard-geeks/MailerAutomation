@@ -55,29 +55,33 @@ def parse_delivery_information(tracking_data):
 
 
 def post_query_to_close(query):
-    headers = {
-        'Content-Type': 'application/json',
-        'Authorization': f'Basic {CLOSE_ENCODED_KEY}'
-    }
+    try:
+        headers = {
+            'Content-Type': 'application/json',
+            'Authorization': f'Basic {CLOSE_ENCODED_KEY}'
+        }
 
-    data_to_return = []
-    while True:
-        # Make the request
-        response = requests.post('https://api.close.com/api/v1/data/search/', json=query, headers=headers)
-        response_data = response.json()
+        data_to_return = []
+        while True:
+            # Make the request
+            response = requests.post('https://api.close.com/api/v1/data/search/', json=query, headers=headers)
+            response_data = response.json()
 
-        if 'data' in response_data:
-            data_to_return.extend(response_data['data'])  # Use extend to flatten the list
+            if 'data' in response_data:
+                data_to_return.extend(response_data['data'])  # Use extend to flatten the list
 
-        # Update the cursor from the response, or break if no cursor is present
-        cursor = response_data.get('cursor')
-        if not cursor:
-            logger.info("No more pages to fetch from Close API.")
-            break  # Exit the loop if there's no cursor, indicating no more pages
-        query['cursor'] = cursor  # Update the cursor for the next request
+            # Update the cursor from the response, or break if no cursor is present
+            cursor = response_data.get('cursor')
+            if not cursor:
+                logger.info("No more pages to fetch from Close API.")
+                break  # Exit the loop if there's no cursor, indicating no more pages
+            query['cursor'] = cursor  # Update the cursor for the next request
 
-    logger.info(f"Data returned from Close API: {data_to_return}")
-    return data_to_return  # Return the aggregated results
+        return data_to_return  # Return the aggregated results
+    except requests.exceptions.RequestException as e:
+        logger.error(f"Failed to post query to Close: {e}")
+        send_error_email(f"Failed to post query to Close: {e}")  # Hypothetical function to send error emails
+        return None
 
 
 def update_delivery_information_for_lead(lead_id, delivery_information):
