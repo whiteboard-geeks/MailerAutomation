@@ -13,9 +13,13 @@ app = Flask(__name__)
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger()
 
+# API Keys
+MAILGUN_API_KEY = os.environ.get('MAILGUN_API_KEY')
+CLOSE_API_KEY = os.environ['CLOSE_API_KEY']
+CLOSE_ENCODED_KEY = b64encode(f'{CLOSE_API_KEY}:'.encode()).decode()
+
 
 def send_error_email(error_message):
-    MAILGUN_API_KEY = os.environ.get('MAILGUN_API_KEY')
     central_time_zone = pytz.timezone('America/Chicago')
     central_time_now = datetime.now(central_time_zone)
     time_now_formatted = central_time_now.strftime("%Y-%m-%d %H:%M:%S%z")
@@ -51,8 +55,6 @@ def parse_delivery_information(tracking_data):
 
 
 def post_query_to_close(query):
-    CLOSE_API_KEY = os.environ['CLOSE_API_KEY']
-    CLOSE_ENCODED_KEY = b64encode(f'{CLOSE_API_KEY}:'.encode()).decode()
     headers = {
         'Content-Type': 'application/json',
         'Authorization': f'Basic {CLOSE_ENCODED_KEY}'
@@ -84,8 +86,6 @@ def update_delivery_information_for_lead(lead_id, delivery_information):
             if key not in response_data or response_data[key] != value:
                 return False
         return True
-    CLOSE_API_KEY = os.environ['CLOSE_API_KEY']
-    CLOSE_ENCODED_KEY = b64encode(f'{CLOSE_API_KEY}:'.encode()).decode()
     headers = {
         'Content-Type': 'application/json',
         'Authorization': f'Basic {CLOSE_ENCODED_KEY}'
@@ -144,8 +144,6 @@ def update_delivery_information_for_lead(lead_id, delivery_information):
 
 
 def create_package_delivered_custom_activity_in_close(lead_id, delivery_information):
-    CLOSE_API_KEY = os.environ['CLOSE_API_KEY']
-    CLOSE_ENCODED_KEY = b64encode(f'{CLOSE_API_KEY}:'.encode()).decode()
     headers = {
         'Content-Type': 'application/json',
         'Authorization': f'Basic {CLOSE_ENCODED_KEY}'
