@@ -171,57 +171,6 @@ def create_package_delivered_custom_activity_in_close(lead_id, delivery_informat
     return response_data
 
 
-def enroll_lead_in_sequence(lead_id):
-    CLOSE_API_KEY = os.environ['CLOSE_API_KEY']
-    CLOSE_ENCODED_KEY = b64encode(f'{CLOSE_API_KEY}:'.encode()).decode()
-    headers = {
-        'Content-Type': 'application/json',
-        'Authorization': f'Basic {CLOSE_ENCODED_KEY}'
-    }
-    lead = requests.get(f'https://api.close.com/api/v1/lead/{lead_id}', headers=headers).json()
-    first_contact_id = lead['contacts'][0]['id']  # cont_ELEYWa3c32W9J1O6SJbIOhK4M0FIOeM6LMyifXwrpZZ
-    contact_email = lead['contacts'][0]['emails'][0]['email']  # lancejwork@gmail.com
-    consultant = lead['custom.lcf_TRIulkQaxJArdGl2k89qY6NKR0ZTYkzjRdeILo1h5fi']  # Barbara Pigg
-    consultant_first_name = consultant.split()[0]  # Barbara
-    consultant_last_name = consultant.split()[1]  # Pigg
-    close_users = requests.get('https://api.close.com/api/v1/user/', headers=headers).json()
-    consultant_close_user_data = next((user for user in close_users['data'] if user['first_name'] == consultant_first_name and user['last_name'] == consultant_last_name), None)
-    consultant_email = consultant_close_user_data['email']
-    consultant_connected_accounts = requests.get(f"https://api.close.com/api/v1/connected_account/?user_id={consultant_close_user_data['id']}", headers=headers).json()
-
-    matched_email_account_data = None
-    for account in consultant_connected_accounts['data']:
-        if account['email'] == consultant_email:
-            matched_email_account_data = account
-            break
-
-    if matched_email_account_data:
-        # Found the account, proceed with further processing
-        print(f"Matched account: {matched_email_account_data}")
-    else:
-        # No account matched
-        print("No matching account found.")
-    sender_account_id = matched_email_account_data['id']
-    # fn to find consultant's email id (the cold email one)
-    # call to enroll them in the sequence
-    # verify the sequence subscription response somehow
-
-    sequence_subscription_payload = {
-        "sequence_id": "seq_1BTljGuCooX0nbFoPihl07",
-        "contact_id": first_contact_id,
-        "contact_email": contact_email,  # lancejwork@gmail.com
-        "sender_account_id": sender_account_id,  # emailacct_jXylsvGnN2kX4tyz2OCkkjqXiRCf5SlVCwcTPv0zesf
-        "sender_name": consultant,  # Barbara Pigg
-        "sender_email": consultant_email,  # barbara.pigg@whiteboardgeeks.com
-        "calls_assigned_to": [consultant_close_user_data['id']],  # user_8HHUh3SH67YzD8IMakjKoJ9SWputzlUdaihCG95g7as
-    }
-
-    response = requests.post('https://api.close.com/api/v1/data/search/', json=sequence_subscription_payload, headers=headers)
-    response_data = response.json()
-    logger.info(f"Sequence subscription response: {response_data}")
-    return response_data
-
-
 @app.route('/delivery_status', methods=['POST'])
 def webhook():
     tracking_data = request.json
@@ -308,8 +257,7 @@ def webhook():
         update_close_lead = update_delivery_information_for_lead(close_leads[0]["id"], delivery_information)
         logger.info(f"Close lead update: {update_close_lead}")
         create_package_delivered_custom_activity_in_close(close_leads[0]["id"], delivery_information)
-        lead_enrollment_response = enroll_lead_in_sequence(close_leads[0]["id"])
-        return jsonify({"status": "success", "close_lead_update": update_close_lead, "lead_enrollment_response": lead_enrollment_response}), 200
+        return jsonify({"status": "success", "close_lead_update": update_close_lead}), 200
     except Exception as e:
         logger.error(f"Error updating Close lead: {e}")
         return jsonify({"status": "error", "message": str(e)}), 400
