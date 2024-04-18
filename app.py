@@ -180,8 +180,28 @@ def enroll_lead_in_sequence(lead_id):
     }
     lead = requests.get(f'https://api.close.com/api/v1/lead/{lead_id}', headers=headers).json()
     first_contact_id = lead['contacts'][0]['id']  # cont_ELEYWa3c32W9J1O6SJbIOhK4M0FIOeM6LMyifXwrpZZ
+    contact_email = lead['contacts'][0]['emails'][0]['email']  # lancejwork@gmail.com
     consultant = lead['custom.lcf_TRIulkQaxJArdGl2k89qY6NKR0ZTYkzjRdeILo1h5fi']  # Barbara Pigg
-    # fn to find consultant's user id - this is who the calls will be assigned to
+    consultant_first_name = consultant.split()[0]  # Barbara
+    consultant_last_name = consultant.split()[1]  # Pigg
+    close_users = requests.get('https://api.close.com/api/v1/user/', headers=headers).json()
+    consultant_close_user_data = next((user for user in close_users['data'] if user['first_name'] == consultant_first_name and user['last_name'] == consultant_last_name), None)
+    consultant_email = consultant_close_user_data['email']
+    consultant_connected_accounts = requests.get(f"https://api.close.com/api/v1/connected_account/?user_id={consultant_close_user_data['id']}", headers=headers).json()
+
+    matched_email_account_data = None
+    for account in consultant_connected_accounts['data']:
+        if account['email'] == consultant_email:
+            matched_email_account_data = account
+            break
+
+    if matched_email_account_data:
+        # Found the account, proceed with further processing
+        print(f"Matched account: {matched_email_account_data}")
+    else:
+        # No account matched
+        print("No matching account found.")
+    sender_account_id = matched_email_account_data['id']
     # fn to find consultant's email id (the cold email one)
     # call to enroll them in the sequence
     # verify the sequence subscription response somehow
@@ -189,11 +209,11 @@ def enroll_lead_in_sequence(lead_id):
     sequence_subscription_payload = {
         "sequence_id": "seq_1BTljGuCooX0nbFoPihl07",
         "contact_id": first_contact_id,
-        "contact_email": "contact@example.org",
-        "sender_account_id": "emailacct_0oCdHYhxtl5sV9j3ZwrJI1sUhbOK4FoZjDuTG9I2hej",
-        "sender_name": "John Doe",
-        "sender_email": "john@salesteam.com",
-        "calls_assigned_to": ["user_5nBeMSPhq2qP2sSQMiqupxdEUkRetu79kqXubkhPh22"],
+        "contact_email": contact_email,  # lancejwork@gmail.com
+        "sender_account_id": sender_account_id,  # emailacct_jXylsvGnN2kX4tyz2OCkkjqXiRCf5SlVCwcTPv0zesf
+        "sender_name": consultant,  # Barbara Pigg
+        "sender_email": consultant_email,  # barbara.pigg@whiteboardgeeks.com
+        "calls_assigned_to": [consultant_close_user_data['id']],  # user_8HHUh3SH67YzD8IMakjKoJ9SWputzlUdaihCG95g7as
     }
 
     response = requests.post('https://api.close.com/api/v1/data/search/', json=sequence_subscription_payload, headers=headers)
