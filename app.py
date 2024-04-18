@@ -171,6 +171,37 @@ def create_package_delivered_custom_activity_in_close(lead_id, delivery_informat
     return response_data
 
 
+def enroll_lead_in_sequence(lead):
+    CLOSE_API_KEY = os.environ['CLOSE_API_KEY']
+    CLOSE_ENCODED_KEY = b64encode(f'{CLOSE_API_KEY}:'.encode()).decode()
+    headers = {
+        'Content-Type': 'application/json',
+        'Authorization': f'Basic {CLOSE_ENCODED_KEY}'
+    }
+    # fn to find the first contact id & consultant - should be Lance Test 2 & consultant Barbara Pigg
+    first_contact_id = lead['contacts'][0]['id']  # Lance Test 2
+    consultant = lead['custom.lcf_TRIulkQaxJArdGl2k89qY6NKR0ZTYkzjRdeILo1h5fi']  # Barbara Pigg
+    # fn to find consultant's user id - this is who the calls will be assigned to
+    # fn to find consultant's email id (the cold email one)
+    # call to enroll them in the sequence
+    # verify the sequence subscription response somehow
+
+    sequence_subscription_payload = {
+        "sequence_id": "seq_1BTljGuCooX0nbFoPihl07",
+        "contact_id": first_contact_id,
+        "contact_email": "contact@example.org",
+        "sender_account_id": "emailacct_0oCdHYhxtl5sV9j3ZwrJI1sUhbOK4FoZjDuTG9I2hej",
+        "sender_name": "John Doe",
+        "sender_email": "john@salesteam.com",
+        "calls_assigned_to": ["user_5nBeMSPhq2qP2sSQMiqupxdEUkRetu79kqXubkhPh22"],
+    }
+
+    response = requests.post('https://api.close.com/api/v1/data/search/', json=sequence_subscription_payload, headers=headers)
+    response_data = response.json()
+    logger.info(f"Sequence subscription response: {response_data}")
+    return response_data
+
+
 @app.route('/delivery_status', methods=['POST'])
 def webhook():
     tracking_data = request.json
@@ -257,6 +288,7 @@ def webhook():
         update_close_lead = update_delivery_information_for_lead(close_leads[0]["id"], delivery_information)
         logger.info(f"Close lead update: {update_close_lead}")
         create_package_delivered_custom_activity_in_close(close_leads[0]["id"], delivery_information)
+        enroll_lead_in_sequence(close_leads[0]["id"])
         return jsonify({"status": "success", "close_lead_update": update_close_lead}), 200
     except Exception as e:
         logger.error(f"Error updating Close lead: {e}")
