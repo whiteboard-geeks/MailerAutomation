@@ -1,3 +1,4 @@
+import json
 import os
 import logging
 from datetime import datetime
@@ -32,6 +33,25 @@ def send_error_email(error_message):
             "to": "Lance Johnson <lance@whiteboardgeeks.com>",
             "subject": f"Package Delivery Webhook Error {time_now_formatted}",
             "text": error_message
+        }
+    )
+
+    return mailgun_email_response.json()
+
+
+def send_processing_email(tracking_data):
+    central_time_zone = pytz.timezone('America/Chicago')
+    central_time_now = datetime.now(central_time_zone)
+    time_now_formatted = central_time_now.strftime("%Y-%m-%d %H:%M:%S%z")
+
+    mailgun_email_response = requests.post(
+        "https://api.mailgun.net/v3/sandbox66451c576acc426db15db39f4a76b250.mailgun.org/messages",
+        auth=("api", MAILGUN_API_KEY),
+        data={
+            "from": "MailerAutomation App <postmaster@sandbox66451c576acc426db15db39f4a76b250.mailgun.org>",
+            "to": "Lance Johnson <lance@whiteboardgeeks.com>",
+            "subject": f"Package Delivered {time_now_formatted}: Check Manually",
+            "text": tracking_data
         }
     )
 
@@ -206,6 +226,7 @@ def handle_package_delivery_update():
         if tracking_data['tracking_details'][-1]['message'] == "Delivered, To Original Sender":
             logger.info("Tracking status is 'delivered', but it is delivered to the original sender; webhook did not run.")
             return jsonify({"status": "success", "message": "Tracking status is 'delivered', but it is delivered to the original sender; webhook did not run."}), 200
+        send_processing_email(json.dumps(request.json))
         delivery_information = parse_delivery_information(tracking_data)
         close_query_to_find_leads_with_tracking_number = {
             "limit": None,
