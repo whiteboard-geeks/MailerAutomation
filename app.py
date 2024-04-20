@@ -3,6 +3,7 @@ import os
 import logging
 from datetime import datetime
 from base64 import b64encode
+from urllib.parse import urlencode
 
 import requests
 from flask import Flask, request, jsonify
@@ -18,6 +19,7 @@ logger = logging.getLogger()
 MAILGUN_API_KEY = os.environ.get('MAILGUN_API_KEY')
 CLOSE_API_KEY = os.environ['CLOSE_API_KEY']
 CLOSE_ENCODED_KEY = b64encode(f'{CLOSE_API_KEY}:'.encode()).decode()
+SKYLEAD_API_KEY = os.environ.get('SKYLEAD_API_KEY')
 
 
 def send_error_email(error_message):
@@ -322,7 +324,34 @@ def handle_package_delivery_update():
 
 @app.route('/check_linkedin_connection_status', methods=['POST'])
 def check_linkedin_connection_status():
-    return jsonify({"status": "success"}), 200
+    def add_contact_to_view_profile_campaign_in_skylead(contact):
+        linkedin_url = contact['custom.cf_OKNCGTl08BZyjbiPdhBSrWDTmV4bhEaPmVYFURxQphZ']
+        email = contact['emails'][0]['email']
+
+        # Skylead request
+        headers = {
+            'Content-Type': 'application/x-www-form-urlencoded',
+            'Authorization': SKYLEAD_API_KEY
+        }
+        body = {
+            'email': email,
+            'profileUrl': linkedin_url
+        }
+        encoded_body = urlencode(body)
+        url = 'https://api.multilead.io/api/open-api/v1/campaign/234808/leads'  # 234808 is the campaign number for View Profile
+        skylead_response = requests.post(
+            url=url,
+            headers=headers,
+            data=encoded_body
+        )
+        return skylead_response
+    data = request.json
+    contact = data['event']['data']
+    contact_add_resp_status = add_contact_to_view_profile_campaign_in_skylead(contact)
+    if contact_add_resp_status.status_code == 204:
+        return jsonify({"status": "success", "message": "Contact added to Skylead campaign"}), 200
+    else:
+        return jsonify({"status": "error", "message": "Error adding contact to Skylead campaign"}), 400
 
 
 if __name__ == '__main__':
