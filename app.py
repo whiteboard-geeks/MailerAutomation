@@ -219,8 +219,10 @@ def create_package_delivered_custom_activity_in_close(lead_id, delivery_informat
 @app.route('/delivery_status', methods=['POST'])
 def handle_package_delivery_update():
     try:
-        tracking_data = request.json
-        if tracking_data.get('status') != "delivered":
+        tracking_data = request.json['result']
+        easy_post_event_id = request.json['id']
+        logger.info(f"EasyPost Event ID: {easy_post_event_id}")
+        if tracking_data['status'] != "delivered":
             logger.info("Tracking status is not 'delivered'; webhook did not run.")
             return jsonify({"status": "success", "message": "Tracking status is not 'delivered' so did not run."}), 200
         if tracking_data['tracking_details'][-1]['message'] == "Delivered, To Original Sender":
