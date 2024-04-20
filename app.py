@@ -7,9 +7,17 @@ from urllib.parse import urlencode
 
 import requests
 from flask import Flask, request, jsonify
+from celery import Celery
 import pytz
 
 app = Flask(__name__)
+
+REDISCLOUD_URL = os.environ.get('REDISCLOUD_URL')
+app.config['CELERY_BROKER_URL'] = REDISCLOUD_URL
+app.config['CELERY_RESULT_BACKEND'] = REDISCLOUD_URL
+
+celery = Celery(app.name, broker=app.config['CELERY_BROKER_URL'])
+celery.conf.update(app.config)
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -348,10 +356,33 @@ def check_linkedin_connection_status():
     data = request.json
     contact = data['event']['data']
     contact_add_resp_status = add_contact_to_view_profile_campaign_in_skylead(contact)
+    # schedule an API call for later
+    # query the specific campaign for leads.
+    # find the one lead that has the same linkedinUrl as the contact
+    # parse connection information (1st, 2nd, 3rd+)
+    # update Close with connection status
     if contact_add_resp_status.status_code == 204:
         return jsonify({"status": "success", "message": "Contact added to Skylead campaign"}), 200
     else:
         return jsonify({"status": "error", "message": "Error adding contact to Skylead campaign"}), 400
+
+
+@celery.task
+def add_and_log_numbers(a, b):
+    result = a + b
+    logging.info(f"The sum of {a} and {b} is {result}")
+
+
+@app.route('/webhook', methods=['POST'])
+def webhook():
+    data = request.json
+    a = data.get('number1')
+    b = data.get('number2')
+    if a is not None and b is not None:
+        add_and_log_numbers.apply_async((a, b), countdown=15)
+        return {"message": "Numbers will be added and logged."}, 200
+    else:
+        return {"error": "Invalid data. Please send 'number1' and 'number2'."}, 400
 
 
 if __name__ == '__main__':
