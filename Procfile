@@ -1,3 +1,2 @@
 web: python app.py
-worker: celery -A app.celery worker --loglevel=info
-flower: celery -A app.celery flower --port=$PORT
+worker: celery -A app.celery worker --loglevel=debug
