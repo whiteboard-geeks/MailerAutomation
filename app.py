@@ -330,6 +330,11 @@ def handle_package_delivery_update():
         return jsonify({"status": "error", "message": str(e)}), 400
 
 
+@celery.task
+def check_skylead_for_viewed_profile(contact):
+    pass
+
+
 @app.route('/check_linkedin_connection_status', methods=['POST'])
 def check_linkedin_connection_status():
     def add_contact_to_view_profile_campaign_in_skylead(contact):
@@ -356,11 +361,23 @@ def check_linkedin_connection_status():
     data = request.json
     contact = data['event']['data']
     contact_add_resp_status = add_contact_to_view_profile_campaign_in_skylead(contact)
-    # schedule an API call for later
+    # TO-DO FN figure out how long to wait before checking skylead for the profile
+    # Must be at least 30 minutes after the intial call
+    # Must be during the hours the profile is active (7-5pm CT)
+    # On weekdays (unless in debug mode)
+    # If the request isn’t received on a weekday
+
+    # TO-DO FN call check_skylead_for_viewed_profile
     # query the specific campaign for leads.
     # find the one lead that has the same linkedinUrl as the contact
     # parse connection information (1st, 2nd, 3rd+)
+
+    # TO-DO FN update Close with connection status
     # update Close with connection status
+
+    # TO-DO Success message. Log the success message somwhere.
+    # Maybe email me the success?
+
     if contact_add_resp_status.status_code == 204:
         return jsonify({"status": "success", "message": "Contact added to Skylead campaign"}), 200
     else:
