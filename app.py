@@ -1,7 +1,7 @@
 import json
 import os
 import logging
-from datetime import datetime
+from datetime import datetime, timedelta
 from base64 import b64encode
 from urllib.parse import urlencode
 
@@ -358,14 +358,39 @@ def check_linkedin_connection_status():
             data=encoded_body
         )
         return skylead_response
+
+    def schedule_skylead_check(contact):
+        # Define the timezone
+        central = pytz.timezone('America/Chicago')
+
+        # Get the current time in Central Time
+        now = datetime.now(central)
+
+        # Calculate the next possible time to check, at least 60 minutes from now
+        next_check_time = now + timedelta(minutes=60)
+
+        # If it's past 5 PM, or before 7 AM, or on a weekend, adjust the time
+        if next_check_time.hour >= 17 or next_check_time.hour < 7 or next_check_time.weekday() >= 5:
+            # If it's a weekend or past business hours, move to next weekday at 8 AM
+            days_ahead = 0 if next_check_time.weekday() < 5 else 7 - next_check_time.weekday()
+            next_check_time = next_check_time + timedelta(days=days_ahead)
+            next_check_time = next_check_time.replace(hour=8, minute=0, second=0, microsecond=0)
+
+        # Calculate the delay in seconds
+        delay = (next_check_time - now).total_seconds()
+
+        # Schedule the Celery task
+        check_skylead_for_viewed_profile.apply_async((contact,), countdown=delay)
+
     data = request.json
     contact = data['event']['data']
     contact_add_resp_status = add_contact_to_view_profile_campaign_in_skylead(contact)
+    schedule_skylead_check(contact)
     # TO-DO FN figure out how long to wait before checking skylead for the profile
-    # Must be at least 30 minutes after the intial call
+    # Must be at least 30 minutes after the intial call. Use 60 minutes to be on the safe side.
     # Must be during the hours the profile is active (7-5pm CT)
     # On weekdays (unless in debug mode)
-    # If the request isn’t received on a weekday
+    # If the request isn’t received on a weekday, wait until the next weekday at 8:00 AM CT.
 
     # TO-DO FN call check_skylead_for_viewed_profile
     # query the specific campaign for leads.
