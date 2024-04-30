@@ -449,17 +449,20 @@ def check_skylead_for_viewed_profile(contact):
     skylead_lead_status_text = skylead_lead_statuses[skylead_lead_status]
 
     skylead_viewed = skylead_lead_status_text != "Unknown"  # If the status is anything other than Unknown it has been viewed
-    skylead_viewed = False
     if not skylead_viewed:
         schedule_skylead_check(contact)
         return {"status": "scheduled", "message": "Skylead check scheduled for later."}
+
     # TODO compare the status to Close's status
-    # TODO double-check the linkedin URL matches
-    
+    skylead_li_connection_status = skylead_lead['connectionDegree']  # values can be 1, 2, or 3
+    is_skylead_connected = True if skylead_li_connection_status == 1 else False
+    close_li_connection_status = contact.get("cf_s0FhlghQeJvtaJlUQnWJg2PYbfbUQTq17NyvNNbtqJN")  # this is the custom field for LinkedIn Connection Status in Close. Options are 1, 2, 3
+    is_close_connected = True if close_li_connection_status == "1" else False  # close returns a string. Skylead returns an int
+    is_li_connection_status_match = is_skylead_connected == is_close_connected
+
     # TODO update Close with connection status
     # TODO verify Close updated the status correctly
     # TODO log success and send success email
-    return skylead_response
 
 
 @app.route('/check_linkedin_connection_status', methods=['POST'])
