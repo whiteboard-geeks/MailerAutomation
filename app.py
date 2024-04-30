@@ -226,6 +226,42 @@ def create_package_delivered_custom_activity_in_close(lead_id, delivery_informat
     return response_data
 
 
+def schedule_skylead_check(contact):
+    # Define the timezone
+    central = pytz.timezone('America/Chicago')
+
+    # Get the current time in Central Time
+    now = datetime.now(central)
+
+    # Calculate the next possible time to check, at least 60 minutes from now
+    next_check_time = now + timedelta(minutes=60)
+
+    # If it's past 5 PM, or before 7 AM, Monday through Thursday
+    if (next_check_time.hour >= 17 or next_check_time.hour < 7) and (next_check_time.weekday() < 4):
+        # If it's a weekend or past business hours, move to next weekday at 8 AM
+        days_ahead = 1 if next_check_time.hour >= 17 else 7 - next_check_time.weekday()
+        next_check_time = next_check_time + timedelta(days=days_ahead)
+        next_check_time = next_check_time.replace(hour=8, minute=0, second=0, microsecond=0)
+    # If it's past 5pm on a Friday
+    elif next_check_time.hour >= 17 and next_check_time.weekday() == 4:
+        # If it's a weekend or past business hours, move to next weekday at 8 AM
+        days_ahead = 3
+        next_check_time = next_check_time + timedelta(days=days_ahead)
+        next_check_time = next_check_time.replace(hour=8, minute=0, second=0, microsecond=0)
+    # If it's a weekend day
+    elif next_check_time.weekday() >= 5:
+        # If it's a weekend, move to next weekday at 8 AM
+        days_ahead = 7 - next_check_time.weekday()
+        next_check_time = next_check_time + timedelta(days=days_ahead)
+        next_check_time = next_check_time.replace(hour=8, minute=0, second=0, microsecond=0)
+
+    # Calculate the delay in seconds
+    delay = (next_check_time - now).total_seconds()
+
+    # Schedule the Celery task
+    check_skylead_for_viewed_profile.apply_async((contact,), countdown=delay)
+
+
 @app.route('/delivery_status', methods=['POST'])
 def handle_package_delivery_update():
     try:
@@ -358,29 +394,6 @@ def check_linkedin_connection_status():
             data=encoded_body
         )
         return skylead_response
-
-    def schedule_skylead_check(contact):
-        # Define the timezone
-        central = pytz.timezone('America/Chicago')
-
-        # Get the current time in Central Time
-        now = datetime.now(central)
-
-        # Calculate the next possible time to check, at least 60 minutes from now
-        next_check_time = now + timedelta(minutes=60)
-
-        # If it's past 5 PM, or before 7 AM, or on a weekend, adjust the time
-        if next_check_time.hour >= 17 or next_check_time.hour < 7 or next_check_time.weekday() >= 5:
-            # If it's a weekend or past business hours, move to next weekday at 8 AM
-            days_ahead = 0 if next_check_time.weekday() < 5 else 7 - next_check_time.weekday()
-            next_check_time = next_check_time + timedelta(days=days_ahead)
-            next_check_time = next_check_time.replace(hour=8, minute=0, second=0, microsecond=0)
-
-        # Calculate the delay in seconds
-        delay = (next_check_time - now).total_seconds()
-
-        # Schedule the Celery task
-        check_skylead_for_viewed_profile.apply_async((contact,), countdown=delay)
 
     data = request.json
     contact = data['event']['data']
