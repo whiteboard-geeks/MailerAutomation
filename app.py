@@ -226,6 +226,29 @@ def create_package_delivered_custom_activity_in_close(lead_id, delivery_informat
     return response_data
 
 
+def add_contact_to_view_profile_campaign_in_skylead(contact):
+    linkedin_url = contact['custom.cf_OKNCGTl08BZyjbiPdhBSrWDTmV4bhEaPmVYFURxQphZ']
+    email = contact['emails'][0]['email']
+
+    # Skylead request
+    headers = {
+        'Content-Type': 'application/x-www-form-urlencoded',
+        'Authorization': SKYLEAD_API_KEY
+    }
+    body = {
+        'email': email,
+        'profileUrl': linkedin_url
+    }
+    encoded_body = urlencode(body)
+    url = 'https://api.multilead.io/api/open-api/v1/campaign/234808/leads'  # 234808 is the campaign number for View Profile
+    skylead_response = requests.post(
+        url=url,
+        headers=headers,
+        data=encoded_body
+    )
+    return skylead_response
+
+
 def schedule_skylead_check(contact):
     # Define the timezone
     central = pytz.timezone('America/Chicago')
@@ -373,28 +396,6 @@ def check_skylead_for_viewed_profile(contact):
 
 @app.route('/check_linkedin_connection_status', methods=['POST'])
 def check_linkedin_connection_status():
-    def add_contact_to_view_profile_campaign_in_skylead(contact):
-        linkedin_url = contact['custom.cf_OKNCGTl08BZyjbiPdhBSrWDTmV4bhEaPmVYFURxQphZ']
-        email = contact['emails'][0]['email']
-
-        # Skylead request
-        headers = {
-            'Content-Type': 'application/x-www-form-urlencoded',
-            'Authorization': SKYLEAD_API_KEY
-        }
-        body = {
-            'email': email,
-            'profileUrl': linkedin_url
-        }
-        encoded_body = urlencode(body)
-        url = 'https://api.multilead.io/api/open-api/v1/campaign/234808/leads'  # 234808 is the campaign number for View Profile
-        skylead_response = requests.post(
-            url=url,
-            headers=headers,
-            data=encoded_body
-        )
-        return skylead_response
-
     data = request.json
     contact = data['event']['data']
     contact_add_resp_status = add_contact_to_view_profile_campaign_in_skylead(contact)
