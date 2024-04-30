@@ -438,8 +438,21 @@ def check_skylead_for_viewed_profile(contact):
     )
     skylead_response_data = skylead_response.json()
     skylead_lead = find_correct_lead_in_skylead(contact, skylead_response_data)
+    skylead_lead_statuses = {
+        0: "Unknown",
+        1: "Discovered",
+        2: "Connection Pending",
+        3: "Connection Accepted",
+        4: "Connection Responded"
+    }
+    skylead_lead_status = skylead_lead['leadStatusId']
+    skylead_lead_status_text = skylead_lead_statuses[skylead_lead_status]
 
-    # TODO figure out the status (connected, not connected, unknown)
+    skylead_viewed = skylead_lead_status_text != "Unknown"  # If the status is anything other than Unknown it has been viewed
+    skylead_viewed = False
+    if not skylead_viewed:
+        schedule_skylead_check(contact)
+        return {"status": "scheduled", "message": "Skylead check scheduled for later."}
     # TODO compare the status to Close's status
     # TODO double-check the linkedin URL matches
     
