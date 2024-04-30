@@ -12,6 +12,8 @@ import pytz
 
 app = Flask(__name__)
 
+env_type = os.getenv('ENV_TYPE', 'development')
+
 REDISCLOUD_URL = os.environ.get('REDISCLOUD_URL')
 app.config['CELERY_BROKER_URL'] = REDISCLOUD_URL
 app.config['CELERY_RESULT_BACKEND'] = REDISCLOUD_URL
@@ -256,8 +258,14 @@ def schedule_skylead_check(contact):
     # Get the current time in Central Time
     now = datetime.now(central)
 
+    # Set delay based on environment
+    if env_type == 'development':
+        minutes_delay = 0  # No delay for development
+    else:
+        minutes_delay = 60  # 60 minutes delay for production
+
     # Calculate the next possible time to check, at least 60 minutes from now
-    next_check_time = now + timedelta(minutes=0)  # TODO: change this to 60 minutes
+    next_check_time = now + timedelta(minutes=minutes_delay)
 
     # If it's past 5 PM, or before 7 AM, Monday through Thursday
     if (next_check_time.hour >= 17 or next_check_time.hour < 7) and (next_check_time.weekday() < 4):
@@ -460,4 +468,7 @@ def webhook():
 
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 8080))
-    app.run(debug=True, host='0.0.0.0', port=port)
+    if env_type == 'development':
+        app.run(debug=True, host='0.0.0.0', port=port)
+    else:
+        app.run(debug=False, host='0.0.0.0', port=port)
