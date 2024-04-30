@@ -399,7 +399,27 @@ def handle_package_delivery_update():
 
 @celery.task
 def check_skylead_for_viewed_profile(contact):
-    linkedin_url = contact['custom.cf_OKNCGTl08BZyjbiPdhBSrWDTmV4bhEaPmVYFURxQphZ']
+    def verify_skylead_linkedin_url_matches_original(contact, skylead_response_data):
+        # check for the right email. Can there be two leads with the same email?
+        email = contact['emails'][0]['email']
+        linkedin_url = contact['custom.cf_OKNCGTl08BZyjbiPdhBSrWDTmV4bhEaPmVYFURxQphZ']
+        email_match = False
+        for item in skylead_response_data['result']['items']:
+            if 'personalEmail' in item and item['personalEmail'] == email:
+                email_match = True
+                break
+
+        if email_match is False:
+            raise Exception("Email does not match")
+
+        skyleadIdentifiers = skylead_response_data['result']['items'][0]['profileIdentifiers']
+        for record in skyleadIdentifiers:
+            if record['identityTypeId'] == 1:
+                skyleadIdentifier = record['identifier']
+
+        linkedin_identifier = linkedin_url.split('/')[-1]
+        return skyleadIdentifier == linkedin_identifier
+
     email = contact['emails'][0]['email']
 
     # Skylead request
@@ -419,8 +439,16 @@ def check_skylead_for_viewed_profile(contact):
         data=encoded_body,
         params=params
     )
-
+    skylead_response_data = skylead_response.json()
+    if verify_skylead_linkedin_url_matches_original(contact, skylead_response_data):
+        print("LinkedIn URL matches")
+    else:
+        print("LinkedIn URL does not match")
     # TODO double-check the linkedin URL matches
+    # TODO figure out the status (connected, not connected, unknown)
+    # TODO update Close with connection status
+    # TODO verify Close updated the status correctly
+    # TODO log success and send success email
     return skylead_response
 
 
