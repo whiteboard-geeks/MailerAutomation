@@ -399,26 +399,23 @@ def handle_package_delivery_update():
 
 @celery.task
 def check_skylead_for_viewed_profile(contact):
-    def verify_skylead_linkedin_url_matches_original(contact, skylead_response_data):
+    def find_correct_lead_in_skylead(contact, skylead_response_data):
         # check for the right email. Can there be two leads with the same email?
         email = contact['emails'][0]['email']
         linkedin_url = contact['custom.cf_OKNCGTl08BZyjbiPdhBSrWDTmV4bhEaPmVYFURxQphZ']
-        email_match = False
-        for item in skylead_response_data['result']['items']:
-            if 'personalEmail' in item and item['personalEmail'] == email:
-                email_match = True
+        for lead in skylead_response_data['result']['items']:
+            if 'personalEmail' in lead and lead['personalEmail'] == email:
+                skylead_lead = lead
                 break
 
-        if email_match is False:
-            raise Exception("Email does not match")
-
-        skyleadIdentifiers = skylead_response_data['result']['items'][0]['profileIdentifiers']
+        skyleadIdentifiers = skylead_lead['profileIdentifiers']
         for record in skyleadIdentifiers:
             if record['identityTypeId'] == 1:
                 skyleadIdentifier = record['identifier']
 
         linkedin_identifier = linkedin_url.split('/')[-1]
-        return skyleadIdentifier == linkedin_identifier
+        skyleadIdentifier == linkedin_identifier
+        return skylead_lead
 
     email = contact['emails'][0]['email']
 
@@ -440,12 +437,12 @@ def check_skylead_for_viewed_profile(contact):
         params=params
     )
     skylead_response_data = skylead_response.json()
-    if verify_skylead_linkedin_url_matches_original(contact, skylead_response_data):
-        print("LinkedIn URL matches")
-    else:
-        print("LinkedIn URL does not match")
-    # TODO double-check the linkedin URL matches
+    skylead_lead = find_correct_lead_in_skylead(contact, skylead_response_data)
+
     # TODO figure out the status (connected, not connected, unknown)
+    # TODO compare the status to Close's status
+    # TODO double-check the linkedin URL matches
+    
     # TODO update Close with connection status
     # TODO verify Close updated the status correctly
     # TODO log success and send success email
