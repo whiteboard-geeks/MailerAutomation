@@ -257,7 +257,7 @@ def schedule_skylead_check(contact):
     now = datetime.now(central)
 
     # Calculate the next possible time to check, at least 60 minutes from now
-    next_check_time = now + timedelta(minutes=60)
+    next_check_time = now + timedelta(minutes=0)  # TODO: change this to 60 minutes
 
     # If it's past 5 PM, or before 7 AM, Monday through Thursday
     if (next_check_time.hour >= 17 or next_check_time.hour < 7) and (next_check_time.weekday() < 4):
@@ -391,7 +391,29 @@ def handle_package_delivery_update():
 
 @celery.task
 def check_skylead_for_viewed_profile(contact):
-    pass
+    linkedin_url = contact['custom.cf_OKNCGTl08BZyjbiPdhBSrWDTmV4bhEaPmVYFURxQphZ']
+    email = contact['emails'][0]['email']
+
+    # Skylead request
+    headers = {
+        'Content-Type': 'application/x-www-form-urlencoded',
+        'Authorization': SKYLEAD_API_KEY
+    }
+    body = ""
+    params = {
+        "search": email  # Use the email as the unique leadId in the campaign
+    }
+    encoded_body = urlencode(body)
+    url = 'https://api.multilead.io/api/open-api/v1/users/24471/accounts/24277/campaigns/234808/leads'  # 234808 is the campaign number for View Profile
+    skylead_response = requests.get(
+        url=url,
+        headers=headers,
+        data=encoded_body,
+        params=params
+    )
+
+    # TODO double-check the linkedin URL matches
+    return skylead_response
 
 
 @app.route('/check_linkedin_connection_status', methods=['POST'])
@@ -401,15 +423,15 @@ def check_linkedin_connection_status():
     contact_add_resp_status = add_contact_to_view_profile_campaign_in_skylead(contact)
     schedule_skylead_check(contact)
 
-    # TO-DO FN call check_skylead_for_viewed_profile
+    # TODO FN call check_skylead_for_viewed_profile
     # query the specific campaign for leads.
     # find the one lead that has the same linkedinUrl as the contact
     # parse connection information (1st, 2nd, 3rd+)
 
-    # TO-DO FN update Close with connection status
+    # TODO FN update Close with connection status
     # update Close with connection status
 
-    # TO-DO Success message. Log the success message somwhere.
+    # TODO Success message. Log the success message somwhere.
     # Maybe email me the success?
 
     if contact_add_resp_status.status_code == 204:
