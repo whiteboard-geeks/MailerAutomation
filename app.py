@@ -32,7 +32,7 @@ CLOSE_ENCODED_KEY = b64encode(f'{CLOSE_API_KEY}:'.encode()).decode()
 SKYLEAD_API_KEY = os.environ.get('SKYLEAD_API_KEY')
 
 
-def send_error_email(error_message):
+def send_email(subject, body, **kwargs):
     central_time_zone = pytz.timezone('America/Chicago')
     central_time_now = datetime.now(central_time_zone)
     time_now_formatted = central_time_now.strftime("%Y-%m-%d %H:%M:%S%z")
@@ -43,27 +43,8 @@ def send_error_email(error_message):
         data={
             "from": "MailerAutomation App <postmaster@sandbox66451c576acc426db15db39f4a76b250.mailgun.org>",
             "to": "Lance Johnson <lance@whiteboardgeeks.com>",
-            "subject": f"Package Delivery Webhook Error {time_now_formatted}",
-            "text": error_message
-        }
-    )
-
-    return mailgun_email_response.json()
-
-
-def send_processing_email(tracking_data):
-    central_time_zone = pytz.timezone('America/Chicago')
-    central_time_now = datetime.now(central_time_zone)
-    time_now_formatted = central_time_now.strftime("%Y-%m-%d %H:%M:%S%z")
-
-    mailgun_email_response = requests.post(
-        "https://api.mailgun.net/v3/sandbox66451c576acc426db15db39f4a76b250.mailgun.org/messages",
-        auth=("api", MAILGUN_API_KEY),
-        data={
-            "from": "MailerAutomation App <postmaster@sandbox66451c576acc426db15db39f4a76b250.mailgun.org>",
-            "to": "Lance Johnson <lance@whiteboardgeeks.com>",
-            "subject": f"Package Delivered {time_now_formatted}: Check Manually",
-            "text": tracking_data
+            "subject": f"{subject} {time_now_formatted}",
+            "text": body
         }
     )
 
@@ -112,7 +93,7 @@ def post_query_to_close(query):
         return data_to_return  # Return the aggregated results
     except requests.exceptions.RequestException as e:
         logger.error(f"Failed to post query to Close: {e}")
-        send_error_email(f"Failed to post query to Close: {e}")  # Hypothetical function to send error emails
+        send_email(subject="Failed to post query to Close", body=f"Failed to post query to Close: {e}")
         return None
 
 
@@ -173,7 +154,7 @@ def update_delivery_information_for_lead(lead_id, delivery_information):
     if not data_updated:
         error_message = f"Delivery information update failed for lead {lead_id}."
         logger.error(error_message)
-        send_error_email(error_message)  # Send an email when an error occurs
+        send_email(subject="Delivery information update failed", body=error_message)
         raise Exception("Close accepted the lead, but the fields did not update.")
     logger.info(f"Delivery information updated for lead {lead_id}: {data_updated}")
     return response_data
@@ -305,7 +286,7 @@ def handle_package_delivery_update():
         if tracking_data['tracking_details'][-1]['message'] == "Delivered, To Original Sender":
             logger.info("Tracking status is 'delivered', but it is delivered to the original sender; webhook did not run.")
             return jsonify({"status": "success", "message": "Tracking status is 'delivered', but it is delivered to the original sender; webhook did not run."}), 200
-        send_processing_email(json.dumps(request.json))
+        send_email(subject=f"Delivery status webhook received, Tracking Number: {tracking_data['tracking_code']}", body=json.dumps(request.json))
         delivery_information = parse_delivery_information(tracking_data)
         close_query_to_find_leads_with_tracking_number = {
             "limit": None,
@@ -388,12 +369,12 @@ def handle_package_delivery_update():
         except Exception as e:
             error_message = f"Error updating Close lead: {e}, lead_id={close_leads[0]['id']}"
             logger.error(error_message)
-            send_error_email(error_message)  # Send an email when an error occurs
+            send_email(subject="Delivery information update failed", body=error_message)
             return jsonify({"status": "error", "message": str(e)}), 400
     except Exception as e:
         error_message = f"Error. {e}, tracking_code={tracking_data['tracking_code']}, carrier={tracking_data['carrier']}"
         logger.error(error_message)
-        send_error_email(error_message)  # Send an email when an error occurs
+        send_email(subject="Delivery information update failed", body=error_message)
         return jsonify({"status": "error", "message": str(e)}), 400
 
 
@@ -431,7 +412,7 @@ def check_skylead_for_viewed_profile(contact):
             return response.json()
         except requests.exceptions.RequestException as e:
             logger.error(f"Failed to post LinkedIn Connection Status to Close: {e}")
-            send_error_email(f"Failed to post LinkedIn Connection Status to Close: {e}")  # Hypothetical function to send error emails
+            send_email(subject="Failed to post LinkedIn Connection Status to Close", body=f"Failed to post LinkedIn Connection Status to Close: {e}")
             return None
 
     email = contact['emails'][0]['email']
@@ -491,26 +472,21 @@ def check_skylead_for_viewed_profile(contact):
 
 @app.route('/check_linkedin_connection_status', methods=['POST'])
 def check_linkedin_connection_status():
-    data = request.json
-    contact = data['event']['data']
-    contact_add_resp_status = add_contact_to_view_profile_campaign_in_skylead(contact)
-    schedule_skylead_check(contact)
+    try:
+        data = request.json
+        contact = data['event']['data']
+        contact_add_resp_status = add_contact_to_view_profile_campaign_in_skylead(contact)
+        schedule_skylead_check(contact)
 
-    # TODO FN call check_skylead_for_viewed_profile
-    # query the specific campaign for leads.
-    # find the one lead that has the same linkedinUrl as the contact
-    # parse connection information (1st, 2nd, 3rd+)
-
-    # TODO FN update Close with connection status
-    # update Close with connection status
-
-    # TODO Success message. Log the success message somwhere.
-    # Maybe email me the success?
-
-    if contact_add_resp_status.status_code == 204:
-        return jsonify({"status": "success", "message": "Contact added to Skylead campaign"}), 200
-    else:
-        return jsonify({"status": "error", "message": "Error adding contact to Skylead campaign"}), 400
+        if contact_add_resp_status.status_code == 204:
+            return jsonify({"status": "success", "message": "Contact added to Skylead campaign. Will run Celery worker after appropriate delay and update in Close when Skylead has the connection status."}), 200
+        else:
+            return jsonify({"status": "error", "message": "Error adding contact to Skylead campaign"}), 400
+    except Exception as e:
+        error_message = f"Error adding contact to Skylead campaign for lead_id: {contact['lead_id']}. Error: {e}"
+        logger.error(error_message)
+        send_email(subject="Error adding contact to Skylead campaign", body=error_message)
+        return jsonify({"status": "error", "message": error_message}), 400
 
 
 @celery.task
