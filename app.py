@@ -259,10 +259,7 @@ def schedule_skylead_check(contact):
     now = datetime.now(central)
 
     # Set delay based on environment
-    if env_type == 'development':
-        minutes_delay = 0  # No delay for development
-    else:
-        minutes_delay = 60  # 60 minutes delay for production
+    minutes_delay = 60  # 60 minutes delay for production
 
     # Calculate the next possible time to check, at least 60 minutes from now
     next_check_time = now + timedelta(minutes=minutes_delay)
@@ -287,7 +284,10 @@ def schedule_skylead_check(contact):
         next_check_time = next_check_time.replace(hour=8, minute=0, second=0, microsecond=0)
 
     # Calculate the delay in seconds
-    delay = (next_check_time - now).total_seconds()
+    if env_type == 'development':
+        delay = 0
+    else:
+        delay = (next_check_time - now).total_seconds()
 
     # Schedule the Celery task
     check_skylead_for_viewed_profile.apply_async((contact,), countdown=delay)
@@ -417,6 +417,23 @@ def check_skylead_for_viewed_profile(contact):
         skyleadIdentifier == linkedin_identifier
         return skylead_lead
 
+    def update_close_contact_with_connection_status(contact, skylead_li_connection_status):
+        try:
+            headers = {
+                'Content-Type': 'application/json',
+                'Authorization': f'Basic {CLOSE_ENCODED_KEY}'
+            }
+
+            data = {
+                "custom.cf_s0FhlghQeJvtaJlUQnWJg2PYbfbUQTq17NyvNNbtqJN": skylead_li_connection_status
+            }
+            response = requests.put(f"https://api.close.com/api/v1/contact/{contact['id']}", json=data, headers=headers)
+            return response.json()
+        except requests.exceptions.RequestException as e:
+            logger.error(f"Failed to post LinkedIn Connection Status to Close: {e}")
+            send_error_email(f"Failed to post LinkedIn Connection Status to Close: {e}")  # Hypothetical function to send error emails
+            return None
+
     email = contact['emails'][0]['email']
 
     # Skylead request
@@ -453,16 +470,21 @@ def check_skylead_for_viewed_profile(contact):
         schedule_skylead_check(contact)
         return {"status": "scheduled", "message": "Skylead check scheduled for later."}
 
-    # TODO compare the status to Close's status
     skylead_li_connection_status = skylead_lead['connectionDegree']  # values can be 1, 2, or 3
     is_skylead_connected = True if skylead_li_connection_status == 1 else False
     close_li_connection_status = contact.get("cf_s0FhlghQeJvtaJlUQnWJg2PYbfbUQTq17NyvNNbtqJN")  # this is the custom field for LinkedIn Connection Status in Close. Options are 1, 2, 3
     is_close_connected = True if close_li_connection_status == "1" else False  # close returns a string. Skylead returns an int
-    is_li_connection_status_match = is_skylead_connected == is_close_connected
 
-    # TODO update Close with connection status
-    # TODO verify Close updated the status correctly
-    # TODO log success and send success email
+    if is_skylead_connected == is_close_connected:
+        return {"status": "success", "message": "Skylead and Close have the same connection status."}, 200
+
+    updated_close_contact = update_close_contact_with_connection_status(contact, skylead_lead['connectionDegree'])
+    updated_close_li_connection_status = updated_close_contact['custom.cf_s0FhlghQeJvtaJlUQnWJg2PYbfbUQTq17NyvNNbtqJN']
+    if int(updated_close_li_connection_status) == int(skylead_li_connection_status):
+        return {"status": "success", "message": "Close updated the status correctly."}, 200
+        # TODO send email on update
+    else:
+        return {"status": "error", "message": "Close did not update the status correctly."}, 400
 
 
 @app.route('/check_linkedin_connection_status', methods=['POST'])
