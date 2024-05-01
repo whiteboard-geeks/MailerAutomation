@@ -32,6 +32,7 @@ CLOSE_ENCODED_KEY = b64encode(f'{CLOSE_API_KEY}:'.encode()).decode()
 SKYLEAD_API_KEY = os.environ.get('SKYLEAD_API_KEY')
 
 
+# General utils
 def send_email(subject, body, **kwargs):
     central_time_zone = pytz.timezone('America/Chicago')
     central_time_now = datetime.now(central_time_zone)
@@ -51,6 +52,7 @@ def send_email(subject, body, **kwargs):
     return mailgun_email_response.json()
 
 
+# /delivery_status
 def parse_delivery_information(tracking_data):
     delivery_information = {}
     delivery_tracking_data = tracking_data['tracking_details'][-1]
@@ -67,7 +69,7 @@ def parse_delivery_information(tracking_data):
     return delivery_information
 
 
-def post_query_to_close(query):
+def search_close_leads(query):
     try:
         headers = {
             'Content-Type': 'application/json',
@@ -209,71 +211,6 @@ def create_package_delivered_custom_activity_in_close(lead_id, delivery_informat
     return response_data
 
 
-def add_contact_to_view_profile_campaign_in_skylead(contact):
-    linkedin_url = contact['custom.cf_OKNCGTl08BZyjbiPdhBSrWDTmV4bhEaPmVYFURxQphZ']
-    email = contact['emails'][0]['email']
-
-    # Skylead request
-    headers = {
-        'Content-Type': 'application/x-www-form-urlencoded',
-        'Authorization': SKYLEAD_API_KEY
-    }
-    body = {
-        'email': email,
-        'profileUrl': linkedin_url
-    }
-    encoded_body = urlencode(body)
-    url = 'https://api.multilead.io/api/open-api/v1/campaign/234808/leads'  # 234808 is the campaign number for View Profile
-    skylead_response = requests.post(
-        url=url,
-        headers=headers,
-        data=encoded_body
-    )
-    return skylead_response
-
-
-def schedule_skylead_check(contact):
-    # Define the timezone
-    central = pytz.timezone('America/Chicago')
-
-    # Get the current time in Central Time
-    now = datetime.now(central)
-
-    # Set delay based on environment
-    minutes_delay = 60  # 60 minutes delay for production
-
-    # Calculate the next possible time to check, at least 60 minutes from now
-    next_check_time = now + timedelta(minutes=minutes_delay)
-
-    # If it's past 5 PM, or before 7 AM, Monday through Thursday
-    if (next_check_time.hour >= 17 or next_check_time.hour < 7) and (next_check_time.weekday() < 4):
-        # If it's a weekend or past business hours, move to next weekday at 8 AM
-        days_ahead = 1 if next_check_time.hour >= 17 else 7 - next_check_time.weekday()
-        next_check_time = next_check_time + timedelta(days=days_ahead)
-        next_check_time = next_check_time.replace(hour=8, minute=0, second=0, microsecond=0)
-    # If it's past 5pm on a Friday
-    elif next_check_time.hour >= 17 and next_check_time.weekday() == 4:
-        # If it's a weekend or past business hours, move to next weekday at 8 AM
-        days_ahead = 3
-        next_check_time = next_check_time + timedelta(days=days_ahead)
-        next_check_time = next_check_time.replace(hour=8, minute=0, second=0, microsecond=0)
-    # If it's a weekend day
-    elif next_check_time.weekday() >= 5:
-        # If it's a weekend, move to next weekday at 8 AM
-        days_ahead = 7 - next_check_time.weekday()
-        next_check_time = next_check_time + timedelta(days=days_ahead)
-        next_check_time = next_check_time.replace(hour=8, minute=0, second=0, microsecond=0)
-
-    # Calculate the delay in seconds
-    if env_type == 'development':
-        delay = 0
-    else:
-        delay = (next_check_time - now).total_seconds()
-
-    # Schedule the Celery task
-    check_skylead_for_viewed_profile.apply_async((contact,), countdown=delay)
-
-
 @app.route('/delivery_status', methods=['POST'])
 def handle_package_delivery_update():
     try:
@@ -357,7 +294,7 @@ def handle_package_delivery_update():
             "results_limit": None,
             "sort": []
         }
-        close_leads = post_query_to_close(close_query_to_find_leads_with_tracking_number)
+        close_leads = search_close_leads(close_query_to_find_leads_with_tracking_number)
         try:
             if len(close_leads) > 1:  # this would mean there are two leads with the same tracking number
                 logger.error("More than one lead found with the same tracking number")
@@ -376,6 +313,72 @@ def handle_package_delivery_update():
         logger.error(error_message)
         send_email(subject="Delivery information update failed", body=error_message)
         return jsonify({"status": "error", "message": str(e)}), 400
+
+
+# /check_linkedin_connection_status
+def add_contact_to_view_profile_campaign_in_skylead(contact):
+    linkedin_url = contact['custom.cf_OKNCGTl08BZyjbiPdhBSrWDTmV4bhEaPmVYFURxQphZ']
+    email = contact['emails'][0]['email']
+
+    # Skylead request
+    headers = {
+        'Content-Type': 'application/x-www-form-urlencoded',
+        'Authorization': SKYLEAD_API_KEY
+    }
+    body = {
+        'email': email,
+        'profileUrl': linkedin_url
+    }
+    encoded_body = urlencode(body)
+    url = 'https://api.multilead.io/api/open-api/v1/campaign/234808/leads'  # 234808 is the campaign number for View Profile
+    skylead_response = requests.post(
+        url=url,
+        headers=headers,
+        data=encoded_body
+    )
+    return skylead_response
+
+
+def schedule_skylead_check(contact):
+    # Define the timezone
+    central = pytz.timezone('America/Chicago')
+
+    # Get the current time in Central Time
+    now = datetime.now(central)
+
+    # Set delay based on environment
+    minutes_delay = 60  # 60 minutes delay for production
+
+    # Calculate the next possible time to check, at least 60 minutes from now
+    next_check_time = now + timedelta(minutes=minutes_delay)
+
+    # If it's past 5 PM, or before 7 AM, Monday through Thursday
+    if (next_check_time.hour >= 17 or next_check_time.hour < 7) and (next_check_time.weekday() < 4):
+        # If it's a weekend or past business hours, move to next weekday at 8 AM
+        days_ahead = 1 if next_check_time.hour >= 17 else 7 - next_check_time.weekday()
+        next_check_time = next_check_time + timedelta(days=days_ahead)
+        next_check_time = next_check_time.replace(hour=8, minute=0, second=0, microsecond=0)
+    # If it's past 5pm on a Friday
+    elif next_check_time.hour >= 17 and next_check_time.weekday() == 4:
+        # If it's a weekend or past business hours, move to next weekday at 8 AM
+        days_ahead = 3
+        next_check_time = next_check_time + timedelta(days=days_ahead)
+        next_check_time = next_check_time.replace(hour=8, minute=0, second=0, microsecond=0)
+    # If it's a weekend day
+    elif next_check_time.weekday() >= 5:
+        # If it's a weekend, move to next weekday at 8 AM
+        days_ahead = 7 - next_check_time.weekday()
+        next_check_time = next_check_time + timedelta(days=days_ahead)
+        next_check_time = next_check_time.replace(hour=8, minute=0, second=0, microsecond=0)
+
+    # Calculate the delay in seconds
+    if env_type == 'development':
+        delay = 0
+    else:
+        delay = (next_check_time - now).total_seconds()
+
+    # Schedule the Celery task
+    check_skylead_for_viewed_profile.apply_async((contact,), countdown=delay)
 
 
 @celery.task
