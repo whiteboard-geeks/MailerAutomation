@@ -489,24 +489,6 @@ def check_linkedin_connection_status():
         return jsonify({"status": "error", "message": error_message}), 400
 
 
-@celery.task
-def add_and_log_numbers(a, b):
-    result = a + b
-    logging.info(f"The sum of {a} and {b} is {result}")
-
-
-@app.route('/webhook', methods=['POST'])
-def webhook():
-    data = request.json
-    a = data.get('number1')
-    b = data.get('number2')
-    if a is not None and b is not None:
-        add_and_log_numbers.apply_async((a, b), countdown=15)
-        return {"message": "Numbers will be added and logged."}, 200
-    else:
-        return {"error": "Invalid data. Please send 'number1' and 'number2'."}, 400
-
-
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 8080))
     if env_type == 'development':
