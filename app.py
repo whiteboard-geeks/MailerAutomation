@@ -481,10 +481,12 @@ def check_skylead_for_viewed_profile(contact):
     updated_close_contact = update_close_contact_with_connection_status(contact, skylead_lead['connectionDegree'])
     updated_close_li_connection_status = updated_close_contact['custom.cf_s0FhlghQeJvtaJlUQnWJg2PYbfbUQTq17NyvNNbtqJN']
     if int(updated_close_li_connection_status) == int(skylead_li_connection_status):
-        return {"status": "success", "message": "Close updated the status correctly."}, 200
+        contact_name = contact['name']
+        contact_id = contact['id']
+        logger.info(f"{contact_name} ({contact_id}) Close updated the status correctly. Skylead status: {skylead_li_connection_status}, Close status: {updated_close_li_connection_status}")
         # TODO send email on update
     else:
-        return {"status": "error", "message": "Close did not update the status correctly."}, 400
+        logger.error(f"{contact_name} ({contact_id}) Close did not update correctly.")
 
 
 @app.route('/check_linkedin_connection_status', methods=['POST'])
