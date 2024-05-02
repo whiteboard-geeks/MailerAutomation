@@ -1,0 +1,669 @@
+{
+    "description": "tracker.updated",
+    "mode": "production",
+    "previous_attributes": {
+      "status": "in_transit"
+    },
+    "created_at": "2024-05-01T16:21:58.000Z",
+    "pending_urls": [
+      "https://mailer-automation-c26722b7119c.herokuapp.com/delivery_status"
+    ],
+    "completed_urls": [],
+    "updated_at": "2024-05-01T16:21:58.000Z",
+    "id": "evt_eec232d407d611efb6263753a4051ee9",
+    "user_id": "user_c33c00b9e6014b4686b75a8e094d2d55",
+    "status": "pending",
+    "object": "Event",
+    "result": {
+      "id": "trk_5e70af9c9d5c48f0ad3291c62a4e67ab",
+      "object": "Tracker",
+      "mode": "production",
+      "tracking_code": "9400136110322883586688",
+      "status": "out_for_delivery",
+      "status_detail": "unknown",
+      "created_at": "2024-04-24T18:29:58Z",
+      "updated_at": "2024-05-01T16:20:58Z",
+      "signed_by": null,
+      "weight": null,
+      "est_delivery_date": null,
+      "shipment_id": "shp_330a8084d1f4443e9e0f27e21283ef54",
+      "carrier": "USPS",
+      "tracking_details": [
+        {
+          "object": "TrackingDetail",
+          "message": "SHIPPING LBL CREATED USPS AWAITS ITEM",
+          "description": "",
+          "status": "pre_transit",
+          "status_detail": "label_created",
+          "datetime": "2024-04-24T18:29:00Z",
+          "source": "USPS",
+          "carrier_code": "GX",
+          "tracking_location": {
+            "object": "TrackingLocation",
+            "city": "CHESTERFIELD",
+            "state": "VA",
+            "country": "US",
+            "zip": "23832"
+          }
+        },
+        {
+          "object": "TrackingDetail",
+          "message": "PRE-SHIPMENT INFO SENT USPS AWAITS ITEM",
+          "description": "",
+          "status": "pre_transit",
+          "status_detail": "status_update",
+          "datetime": "2024-04-25T02:13:00Z",
+          "source": "USPS",
+          "carrier_code": "MA",
+          "tracking_location": {
+            "object": "TrackingLocation",
+            "city": "CHESTERFIELD",
+            "state": "VA",
+            "country": "US",
+            "zip": "23832"
+          }
+        },
+        {
+          "object": "TrackingDetail",
+          "message": "PROCESSED THROUGH USPS FACILITY",
+          "description": "",
+          "status": "in_transit",
+          "status_detail": "status_update",
+          "datetime": "2024-04-26T19:44:00Z",
+          "source": "USPS",
+          "carrier_code": "10",
+          "tracking_location": {
+            "object": "TrackingLocation",
+            "city": null,
+            "state": null,
+            "country": "US",
+            "zip": "22081"
+          }
+        },
+        {
+          "object": "TrackingDetail",
+          "message": "DEPARTED USPS REGIONAL FACILITY",
+          "description": "",
+          "status": "in_transit",
+          "status_detail": "departed_facility",
+          "datetime": "2024-04-26T21:51:00Z",
+          "source": "USPS",
+          "carrier_code": "L1",
+          "tracking_location": {
+            "object": "TrackingLocation",
+            "city": null,
+            "state": null,
+            "country": "US",
+            "zip": "22081"
+          }
+        },
+        {
+          "object": "TrackingDetail",
+          "message": "DEPARTED USPS REGIONAL FACILITY",
+          "description": "",
+          "status": "in_transit",
+          "status_detail": "departed_facility",
+          "datetime": "2024-04-26T22:18:00Z",
+          "source": "USPS",
+          "carrier_code": "T1",
+          "tracking_location": {
+            "object": "TrackingLocation",
+            "city": null,
+            "state": null,
+            "country": "US",
+            "zip": "22081"
+          }
+        },
+        {
+          "object": "TrackingDetail",
+          "message": "ARRIVED AT USPS REGIONAL FACILITY",
+          "description": "",
+          "status": "in_transit",
+          "status_detail": "arrived_at_facility",
+          "datetime": "2024-04-26T23:11:00Z",
+          "source": "USPS",
+          "carrier_code": "A1",
+          "tracking_location": {
+            "object": "TrackingLocation",
+            "city": null,
+            "state": null,
+            "country": "US",
+            "zip": "20799"
+          }
+        },
+        {
+          "object": "TrackingDetail",
+          "message": "ARRIVE USPS FACILITY",
+          "description": "",
+          "status": "in_transit",
+          "status_detail": "arrived_at_facility",
+          "datetime": "2024-04-26T23:53:00Z",
+          "source": "USPS",
+          "carrier_code": "U1",
+          "tracking_location": {
+            "object": "TrackingLocation",
+            "city": null,
+            "state": null,
+            "country": "US",
+            "zip": "20799"
+          }
+        },
+        {
+          "object": "TrackingDetail",
+          "message": "DEPARTED USPS REGIONAL FACILITY",
+          "description": "",
+          "status": "in_transit",
+          "status_detail": "departed_facility",
+          "datetime": "2024-04-27T00:46:00Z",
+          "source": "USPS",
+          "carrier_code": "L1",
+          "tracking_location": {
+            "object": "TrackingLocation",
+            "city": null,
+            "state": null,
+            "country": "US",
+            "zip": "20799"
+          }
+        },
+        {
+          "object": "TrackingDetail",
+          "message": "PROCESSED THROUGH USPS FACILITY",
+          "description": "",
+          "status": "in_transit",
+          "status_detail": "status_update",
+          "datetime": "2024-04-27T01:25:00Z",
+          "source": "USPS",
+          "carrier_code": "10",
+          "tracking_location": {
+            "object": "TrackingLocation",
+            "city": null,
+            "state": null,
+            "country": "US",
+            "zip": "22081"
+          }
+        },
+        {
+          "object": "TrackingDetail",
+          "message": "DEPARTED USPS REGIONAL FACILITY",
+          "description": "",
+          "status": "in_transit",
+          "status_detail": "departed_facility",
+          "datetime": "2024-04-27T01:46:00Z",
+          "source": "USPS",
+          "carrier_code": "L1",
+          "tracking_location": {
+            "object": "TrackingLocation",
+            "city": null,
+            "state": null,
+            "country": "US",
+            "zip": "22081"
+          }
+        },
+        {
+          "object": "TrackingDetail",
+          "message": "DEPARTED USPS REGIONAL FACILITY",
+          "description": "",
+          "status": "in_transit",
+          "status_detail": "departed_facility",
+          "datetime": "2024-04-27T01:46:00Z",
+          "source": "USPS",
+          "carrier_code": "T1",
+          "tracking_location": {
+            "object": "TrackingLocation",
+            "city": null,
+            "state": null,
+            "country": "US",
+            "zip": "22081"
+          }
+        },
+        {
+          "object": "TrackingDetail",
+          "message": "ARRIVED AT USPS REGIONAL FACILITY",
+          "description": "",
+          "status": "in_transit",
+          "status_detail": "arrived_at_facility",
+          "datetime": "2024-04-27T02:54:00Z",
+          "source": "USPS",
+          "carrier_code": "A1",
+          "tracking_location": {
+            "object": "TrackingLocation",
+            "city": null,
+            "state": null,
+            "country": "US",
+            "zip": "20799"
+          }
+        },
+        {
+          "object": "TrackingDetail",
+          "message": "ARRIVED AT USPS REGIONAL FACILITY",
+          "description": "",
+          "status": "in_transit",
+          "status_detail": "arrived_at_facility",
+          "datetime": "2024-04-27T02:54:00Z",
+          "source": "USPS",
+          "carrier_code": "A1",
+          "tracking_location": {
+            "object": "TrackingLocation",
+            "city": null,
+            "state": null,
+            "country": "US",
+            "zip": "20799"
+          }
+        },
+        {
+          "object": "TrackingDetail",
+          "message": "ARRIVE USPS FACILITY",
+          "description": "",
+          "status": "in_transit",
+          "status_detail": "arrived_at_facility",
+          "datetime": "2024-04-27T03:19:00Z",
+          "source": "USPS",
+          "carrier_code": "U1",
+          "tracking_location": {
+            "object": "TrackingLocation",
+            "city": null,
+            "state": null,
+            "country": "US",
+            "zip": "20799"
+          }
+        },
+        {
+          "object": "TrackingDetail",
+          "message": "DEPARTED USPS REGIONAL FACILITY",
+          "description": "",
+          "status": "in_transit",
+          "status_detail": "departed_facility",
+          "datetime": "2024-04-27T03:40:00Z",
+          "source": "USPS",
+          "carrier_code": "T1",
+          "tracking_location": {
+            "object": "TrackingLocation",
+            "city": null,
+            "state": null,
+            "country": "US",
+            "zip": "20799"
+          }
+        },
+        {
+          "object": "TrackingDetail",
+          "message": "DEPARTED USPS REGIONAL FACILITY",
+          "description": "",
+          "status": "in_transit",
+          "status_detail": "departed_facility",
+          "datetime": "2024-04-27T03:41:00Z",
+          "source": "USPS",
+          "carrier_code": "T1",
+          "tracking_location": {
+            "object": "TrackingLocation",
+            "city": null,
+            "state": null,
+            "country": "US",
+            "zip": "20799"
+          }
+        },
+        {
+          "object": "TrackingDetail",
+          "message": "DEPARTED USPS REGIONAL FACILITY",
+          "description": "",
+          "status": "in_transit",
+          "status_detail": "departed_facility",
+          "datetime": "2024-04-27T04:04:00Z",
+          "source": "USPS",
+          "carrier_code": "L1",
+          "tracking_location": {
+            "object": "TrackingLocation",
+            "city": null,
+            "state": null,
+            "country": "US",
+            "zip": "20799"
+          }
+        },
+        {
+          "object": "TrackingDetail",
+          "message": "DEPARTED USPS REGIONAL FACILITY",
+          "description": "",
+          "status": "in_transit",
+          "status_detail": "departed_facility",
+          "datetime": "2024-04-27T05:59:00Z",
+          "source": "USPS",
+          "carrier_code": "T1",
+          "tracking_location": {
+            "object": "TrackingLocation",
+            "city": null,
+            "state": null,
+            "country": "US",
+            "zip": "20799"
+          }
+        },
+        {
+          "object": "TrackingDetail",
+          "message": "DEPARTED USPS REGIONAL FACILITY",
+          "description": "",
+          "status": "in_transit",
+          "status_detail": "departed_facility",
+          "datetime": "2024-04-27T06:00:00Z",
+          "source": "USPS",
+          "carrier_code": "T1",
+          "tracking_location": {
+            "object": "TrackingLocation",
+            "city": null,
+            "state": null,
+            "country": "US",
+            "zip": "20799"
+          }
+        },
+        {
+          "object": "TrackingDetail",
+          "message": "ARRIVED AT USPS REGIONAL FACILITY",
+          "description": "",
+          "status": "in_transit",
+          "status_detail": "arrived_at_facility",
+          "datetime": "2024-04-28T20:32:00Z",
+          "source": "USPS",
+          "carrier_code": "A1",
+          "tracking_location": {
+            "object": "TrackingLocation",
+            "city": null,
+            "state": null,
+            "country": "US",
+            "zip": "85043"
+          }
+        },
+        {
+          "object": "TrackingDetail",
+          "message": "ARRIVED AT USPS REGIONAL FACILITY",
+          "description": "",
+          "status": "in_transit",
+          "status_detail": "arrived_at_facility",
+          "datetime": "2024-04-29T05:53:00Z",
+          "source": "USPS",
+          "carrier_code": "A1",
+          "tracking_location": {
+            "object": "TrackingLocation",
+            "city": null,
+            "state": null,
+            "country": "US",
+            "zip": "85043"
+          }
+        },
+        {
+          "object": "TrackingDetail",
+          "message": "ARRIVE USPS FACILITY",
+          "description": "",
+          "status": "in_transit",
+          "status_detail": "arrived_at_facility",
+          "datetime": "2024-04-29T06:23:00Z",
+          "source": "USPS",
+          "carrier_code": "U1",
+          "tracking_location": {
+            "object": "TrackingLocation",
+            "city": null,
+            "state": null,
+            "country": "US",
+            "zip": "85043"
+          }
+        },
+        {
+          "object": "TrackingDetail",
+          "message": "PROCESSED THROUGH USPS FACILITY",
+          "description": "",
+          "status": "in_transit",
+          "status_detail": "status_update",
+          "datetime": "2024-04-29T23:58:00Z",
+          "source": "USPS",
+          "carrier_code": "10",
+          "tracking_location": {
+            "object": "TrackingLocation",
+            "city": null,
+            "state": null,
+            "country": "US",
+            "zip": "85043"
+          }
+        },
+        {
+          "object": "TrackingDetail",
+          "message": "ARRIVE USPS FACILITY",
+          "description": "",
+          "status": "in_transit",
+          "status_detail": "arrived_at_facility",
+          "datetime": "2024-04-30T14:40:00Z",
+          "source": "USPS",
+          "carrier_code": "U1",
+          "tracking_location": {
+            "object": "TrackingLocation",
+            "city": null,
+            "state": null,
+            "country": "US",
+            "zip": "90052"
+          }
+        },
+        {
+          "object": "TrackingDetail",
+          "message": "DEPARTED USPS REGIONAL FACILITY",
+          "description": "",
+          "status": "in_transit",
+          "status_detail": "departed_facility",
+          "datetime": "2024-04-30T14:41:00Z",
+          "source": "USPS",
+          "carrier_code": "L1",
+          "tracking_location": {
+            "object": "TrackingLocation",
+            "city": null,
+            "state": null,
+            "country": "US",
+            "zip": "90052"
+          }
+        },
+        {
+          "object": "TrackingDetail",
+          "message": "DEPARTED USPS REGIONAL FACILITY",
+          "description": "",
+          "status": "in_transit",
+          "status_detail": "departed_facility",
+          "datetime": "2024-04-30T15:20:00Z",
+          "source": "USPS",
+          "carrier_code": "T1",
+          "tracking_location": {
+            "object": "TrackingLocation",
+            "city": null,
+            "state": null,
+            "country": "US",
+            "zip": "90052"
+          }
+        },
+        {
+          "object": "TrackingDetail",
+          "message": "ARRIVED AT USPS REGIONAL FACILITY",
+          "description": "",
+          "status": "in_transit",
+          "status_detail": "arrived_at_facility",
+          "datetime": "2024-04-30T15:57:00Z",
+          "source": "USPS",
+          "carrier_code": "A1",
+          "tracking_location": {
+            "object": "TrackingLocation",
+            "city": null,
+            "state": null,
+            "country": "US",
+            "zip": "90201"
+          }
+        },
+        {
+          "object": "TrackingDetail",
+          "message": "ARRIVE USPS FACILITY",
+          "description": "",
+          "status": "in_transit",
+          "status_detail": "arrived_at_facility",
+          "datetime": "2024-04-30T17:03:00Z",
+          "source": "USPS",
+          "carrier_code": "U1",
+          "tracking_location": {
+            "object": "TrackingLocation",
+            "city": null,
+            "state": null,
+            "country": "US",
+            "zip": "90201"
+          }
+        },
+        {
+          "object": "TrackingDetail",
+          "message": "PROCESSED THROUGH USPS FACILITY",
+          "description": "",
+          "status": "in_transit",
+          "status_detail": "status_update",
+          "datetime": "2024-05-01T01:18:00Z",
+          "source": "USPS",
+          "carrier_code": "10",
+          "tracking_location": {
+            "object": "TrackingLocation",
+            "city": null,
+            "state": null,
+            "country": "US",
+            "zip": "90201"
+          }
+        },
+        {
+          "object": "TrackingDetail",
+          "message": "DEPARTED USPS REGIONAL FACILITY",
+          "description": "",
+          "status": "in_transit",
+          "status_detail": "departed_facility",
+          "datetime": "2024-05-01T03:38:00Z",
+          "source": "USPS",
+          "carrier_code": "L1",
+          "tracking_location": {
+            "object": "TrackingLocation",
+            "city": null,
+            "state": null,
+            "country": "US",
+            "zip": "90201"
+          }
+        },
+        {
+          "object": "TrackingDetail",
+          "message": "DEPARTED USPS REGIONAL FACILITY",
+          "description": "",
+          "status": "in_transit",
+          "status_detail": "departed_facility",
+          "datetime": "2024-05-01T03:44:00Z",
+          "source": "USPS",
+          "carrier_code": "T1",
+          "tracking_location": {
+            "object": "TrackingLocation",
+            "city": null,
+            "state": null,
+            "country": "US",
+            "zip": "90201"
+          }
+        },
+        {
+          "object": "TrackingDetail",
+          "message": "DEPARTED USPS REGIONAL FACILITY",
+          "description": "",
+          "status": "in_transit",
+          "status_detail": "departed_facility",
+          "datetime": "2024-05-01T04:01:00Z",
+          "source": "USPS",
+          "carrier_code": "T1",
+          "tracking_location": {
+            "object": "TrackingLocation",
+            "city": null,
+            "state": null,
+            "country": "US",
+            "zip": "90201"
+          }
+        },
+        {
+          "object": "TrackingDetail",
+          "message": "ARRIVED AT USPS REGIONAL FACILITY",
+          "description": "",
+          "status": "in_transit",
+          "status_detail": "arrived_at_facility",
+          "datetime": "2024-05-01T04:28:00Z",
+          "source": "USPS",
+          "carrier_code": "A1",
+          "tracking_location": {
+            "object": "TrackingLocation",
+            "city": "LOS ANGELES",
+            "state": "CA",
+            "country": "US",
+            "zip": "90012"
+          }
+        },
+        {
+          "object": "TrackingDetail",
+          "message": "ARRIVE USPS FACILITY",
+          "description": "",
+          "status": "in_transit",
+          "status_detail": "arrived_at_facility",
+          "datetime": "2024-05-01T04:29:00Z",
+          "source": "USPS",
+          "carrier_code": "U1",
+          "tracking_location": {
+            "object": "TrackingLocation",
+            "city": "LOS ANGELES",
+            "state": "CA",
+            "country": "US",
+            "zip": "90012"
+          }
+        },
+        {
+          "object": "TrackingDetail",
+          "message": "ARRIVAL AT UNIT",
+          "description": "",
+          "status": "in_transit",
+          "status_detail": "status_update",
+          "datetime": "2024-05-01T08:32:00Z",
+          "source": "USPS",
+          "carrier_code": "07",
+          "tracking_location": {
+            "object": "TrackingLocation",
+            "city": "LOS ANGELES",
+            "state": "CA",
+            "country": "US",
+            "zip": "90012"
+          }
+        },
+        {
+          "object": "TrackingDetail",
+          "message": "OUT FOR DELIVERY",
+          "description": "",
+          "status": "out_for_delivery",
+          "status_detail": "out_for_delivery",
+          "datetime": "2024-05-01T08:43:00Z",
+          "source": "USPS",
+          "carrier_code": "OF",
+          "tracking_location": {
+            "object": "TrackingLocation",
+            "city": "LOS ANGELES",
+            "state": "CA",
+            "country": "US",
+            "zip": "90012"
+          }
+        }
+      ],
+      "carrier_detail": {
+        "object": "CarrierDetail",
+        "service": "GroundAdvantage",
+        "container_type": null,
+        "est_delivery_date_local": null,
+        "est_delivery_time_local": null,
+        "origin_location": "US, 22081",
+        "origin_tracking_location": {
+          "object": "TrackingLocation",
+          "city": null,
+          "state": null,
+          "country": "US",
+          "zip": "22081"
+        },
+        "destination_location": null,
+        "destination_tracking_location": null,
+        "guaranteed_delivery_date": null,
+        "alternate_identifier": null,
+        "initial_delivery_attempt": null
+      },
+      "finalized": false,
+      "is_return": false,
+      "public_url": "https://track.easypost.com/djE6dHJrXzVlNzBhZjljOWQ1YzQ4ZjBhZDMyOTFjNjJhNGU2N2Fi"
+    }
+  }

@@ -32,6 +32,95 @@ CLOSE_ENCODED_KEY = b64encode(f'{CLOSE_API_KEY}:'.encode()).decode()
 SKYLEAD_API_KEY = os.environ.get('SKYLEAD_API_KEY')
 
 
+# This route is more like `/handle_easy_post_webhook`
+@app.route('/delivery_status', methods=['POST'])
+def handle_package_delivery_update():
+    # What webhooks do you want to handle? If you send all webhooks to one endpoint, it'd be much better to 
+    # come webhook handling code first that decides whether the hook is one you want to handle.
+    # They seem to send you just 2 types of events, but still :))
+
+    tracking_data = request.json['result']
+    easy_post_event_id = request.json['id']
+    EasyPost.handle_webhook
+    MailGun.notify_me
+    CloseClient.handle_in_close
+
+@app.route('/check_linkedin_connection_status', methods=['POST'])
+def check_linkedin_connection_status():
+    try:
+        data = request.json
+        contact = data['event']['data']
+        contact_add_resp_status = add_contact_to_view_profile_campaign_in_skylead(contact)
+        schedule_skylead_check(contact)
+
+        if contact_add_resp_status.status_code == 204:
+            return jsonify({"status": "success", "message": "Contact added to Skylead campaign. Will run Celery worker after appropriate delay and update in Close when Skylead has the connection status."}), 200
+        else:
+            return jsonify({"status": "error", "message": "Error adding contact to Skylead campaign"}), 400
+    except Exception as e:
+        error_message = f"Error adding contact to Skylead campaign for lead_id: {contact['lead_id']}. Error: {e}"
+        logger.error(error_message)
+        send_email(subject="Error adding contact to Skylead campaign", body=error_message)
+        return jsonify({"status": "error", "message": error_message}), 400
+
+
+
+
+
+# Project structure thoughts to make the code more maintainable generally:
+#    - app.py for routes
+#    - Everything else in their own files or in a utils.py file. 
+#        - Especially wrapping API clients into their own files, like SkyLead, mailgun, EasyPost.
+#    - Large JSONs and dicts in their own files.
+
+# Testing kickstart:
+# Minimum: You want all your critical code to be exercised and see it's doing what it's supposed to 
+#   (sensible effort; medium/high value; sensible maintenance cost).
+# Maximum: You want the interaction between your server and third parties 
+#   (high effort; low to highest value - depending on stability of target API; often high maintenance cost).
+#
+# Questions to ask yourself:
+#    - What is the high level behavior of your integration server?
+#       - What inputs (requests/payloads) are you expecting?
+#       - What outputs do you want to produce?
+
+# Logging and error handling:
+#   - You are spot on with sending an email if that's the optimal way to let you know about errors.
+#     - Great helper: Error tracking tools, like Sentry.
+#   - To make the logs most useful, you'll need a tagged logger so you can follow a request's path even 
+#     if many concurrent logs are happening (but Heroku default logs aren't super searchable nor long 🤔).
+# see logging.py
+#     - Great papertrail.
+#   - You can avoid having try-catch blocks in all routes by using a global exception handler.
+#   - Most error handling code is duplicated.
+#   - 500 if unexpected error. 400 in other cases probably fine.
+
+# Security:
+#   - Secrets and payloads look good!
+#   - Receiving endpoints are unprotected.
+
+# Developer Experience + Debugging!
+
+@app.errorhandler(Exception)
+def handle_exception(e):
+    # Capture the traceback
+    tb = traceback.format_exc()
+    
+    # Get the current route from the request object
+    current_route = request.path
+    
+    error_message = f"An error occurred at {current_route}: {str(e)}\nTraceback: {tb}"
+    logger.error(error_message)
+    send_email(subject="Application Error", body=error_message)
+    
+    # Optionally, include the traceback and route in the response for debugging
+    if env_type == 'development':
+        response_body = {"status": "error", "message": str(e), "traceback": tb, "route": current_route}
+    else:
+        response_body = {"status": "error", "message": "An internal server error occurred at " + current_route}
+    
+    return jsonify(response_body), 500
+
 # General utils
 def send_email(subject, body, **kwargs):
     central_time_zone = pytz.timezone('America/Chicago')
@@ -210,9 +299,12 @@ def create_package_delivered_custom_activity_in_close(lead_id, delivery_informat
     logger.info(f"Delivery activity updated for lead {lead_id}: {response.json()}")
     return response_data
 
-
+# This route is more like `/handle_easy_post_webhook`
 @app.route('/delivery_status', methods=['POST'])
 def handle_package_delivery_update():
+    # What webhooks do you want to handle? If you send all webhooks to one endpoint, it'd be much better to 
+    # come webhook handling code first that decides whether the hook is one you want to handle.
+    # They seem to send you just 2 types of events, but still :))
     try:
         tracking_data = request.json['result']
         easy_post_event_id = request.json['id']
@@ -245,7 +337,7 @@ def handle_package_delivery_update():
                                         "condition": {
                                             "mode": "exact_value",
                                             "type": "text",
-                                            "value": tracking_data["tracking_code"]
+                                            "value": tracking_data["tracking_code"] # It would be cool if we could somehow just send that info 😬
                                         },
                                         "field": {
                                             "custom_field_id": "cf_iSOPYKzS9IPK20gJ8eH9Q74NT7grCQW9psqo4lZR3Ii",
@@ -498,3 +590,7 @@ if __name__ == '__main__':
         app.run(debug=True, host='0.0.0.0', port=port)
     else:
         app.run(debug=False, host='0.0.0.0', port=port)
+
+@app.route('/delivery_status', methods=['POST'])
+def handle_package_delivery_update():
+    DeliveryHandler.call
