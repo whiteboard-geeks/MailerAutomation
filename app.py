@@ -1,6 +1,7 @@
 import json
 import os
 import logging
+import traceback
 from datetime import datetime, timedelta
 from base64 import b64encode
 from urllib.parse import urlencode
@@ -33,6 +34,27 @@ SKYLEAD_API_KEY = os.environ.get('SKYLEAD_API_KEY')
 
 
 # General utils
+@app.errorhandler(Exception)
+def handle_exception(e):
+    # Capture the traceback
+    tb = traceback.format_exc()
+
+    # Get the current route from the request object
+    current_route = request.path
+
+    error_message = f"An error occurred at {current_route}: {str(e)}\nTraceback: {tb}"
+    logger.error(error_message)
+    send_email(subject="Application Error", body=error_message)
+
+    # Optionally, include the traceback and route in the response for debugging
+    if env_type == 'development':
+        response_body = {"status": "error", "message": str(e), "traceback": tb, "route": current_route}
+    else:
+        response_body = {"status": "error", "message": "An internal server error occurred at " + current_route}
+
+    return jsonify(response_body), 500
+
+
 def send_email(subject, body, **kwargs):
     central_time_zone = pytz.timezone('America/Chicago')
     central_time_now = datetime.now(central_time_zone)
@@ -475,21 +497,15 @@ def check_skylead_for_viewed_profile(contact):
 
 @app.route('/check_linkedin_connection_status', methods=['POST'])
 def check_linkedin_connection_status():
-    try:
-        data = request.json
-        contact = data['event']['data']
-        contact_add_resp_status = add_contact_to_view_profile_campaign_in_skylead(contact)
-        schedule_skylead_check(contact)
+    data = request.json
+    contact = data['event']['data']
+    contact_add_resp_status = add_contact_to_view_profile_campaign_in_skylead(contact)
+    schedule_skylead_check(contact)
 
-        if contact_add_resp_status.status_code == 204:
-            return jsonify({"status": "success", "message": "Contact added to Skylead campaign. Will run Celery worker after appropriate delay and update in Close when Skylead has the connection status."}), 200
-        else:
-            return jsonify({"status": "error", "message": "Error adding contact to Skylead campaign"}), 400
-    except Exception as e:
-        error_message = f"Error adding contact to Skylead campaign for lead_id: {contact['lead_id']}. Error: {e}"
-        logger.error(error_message)
-        send_email(subject="Error adding contact to Skylead campaign", body=error_message)
-        return jsonify({"status": "error", "message": error_message}), 400
+    if contact_add_resp_status.status_code == 204:
+        return jsonify({"status": "success", "message": "Contact added to Skylead campaign. Will run Celery worker after appropriate delay and update in Close when Skylead has the connection status."}), 200
+    else:
+        return jsonify({"status": "error", "message": "Error adding contact to Skylead campaign"}), 400
 
 
 if __name__ == '__main__':
