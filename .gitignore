@@ -3,3 +3,4 @@ cache.sqlite
 env/
 *.pyc
 launch.json
+.env

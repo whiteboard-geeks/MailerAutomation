@@ -1,3 +1,4 @@
+import csv
 import json
 import os
 import logging
@@ -5,6 +6,7 @@ import traceback
 from datetime import datetime, timedelta
 from base64 import b64encode
 from urllib.parse import urlencode
+from io import StringIO
 
 import requests
 from flask import Flask, request, jsonify
@@ -31,6 +33,7 @@ MAILGUN_API_KEY = os.environ.get('MAILGUN_API_KEY')
 CLOSE_API_KEY = os.environ['CLOSE_API_KEY']
 CLOSE_ENCODED_KEY = b64encode(f'{CLOSE_API_KEY}:'.encode()).decode()
 SKYLEAD_API_KEY = os.environ.get('SKYLEAD_API_KEY')
+WEBHOOK_API_KEY = os.environ.get('WEBHOOK_API_KEY')
 
 
 # General utils
@@ -506,6 +509,34 @@ def check_linkedin_connection_status():
         return jsonify({"status": "success", "message": "Contact added to Skylead campaign. Will run Celery worker after appropriate delay and update in Close when Skylead has the connection status."}), 200
     else:
         return jsonify({"status": "error", "message": "Error adding contact to Skylead campaign"}), 400
+
+
+# /prepare_contact_list_for_address_verification
+def download_csv_as_list_of_dicts(csv_url):
+    response = requests.get(csv_url)
+    response.raise_for_status()  # Ensure the request was successful
+
+    # Use StringIO to convert the text data into a file-like object so csv can read it
+    csv_file = StringIO(response.text)
+
+    # Read the CSV data
+    reader = csv.DictReader(csv_file)
+
+    # Convert the reader to a list of dictionaries
+    list_of_dicts = list(reader)
+
+    return list_of_dicts
+
+
+@app.route('/prepare_contact_list_for_address_verification', methods=['POST'])
+def prepare_contact_list_for_address_verification():
+    api_key = request.headers.get('X-API-KEY')
+    if api_key != WEBHOOK_API_KEY:
+        return jsonify({"status": "error", "message": "Unauthorized access"}), 401
+    data = request.json
+    csv_url = data['webContentLink']
+    contact_list = download_csv_as_list_of_dicts(csv_url)
+    return jsonify({"status": "success", "message": "Contact list prepared for address verification."}), 200
 
 
 if __name__ == '__main__':
