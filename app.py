@@ -528,6 +528,116 @@ def download_csv_as_list_of_dicts(csv_url):
     return list_of_dicts
 
 
+def search_close_for_contact_by_email_or_phone(contact):
+    contact_email = contact['Email']
+    contact_phone_number = contact['Mobile Phone']  # Apollo gives the format '+1 888-888-8888. The ' at the beginning is weird, but seems to work with Close.
+    # I need to find the lead instead of the contact because we set the Consultant field on the lead, not the contact
+    # QUESTION FOR RICH: should I put these big jsons in a file and read them in?
+    close_query_to_find_lead_by_email_or_phone = {
+        "limit": None,
+        "query": {
+            "negate": False,
+            "queries": [
+                {
+                    "negate": False,
+                    "object_type": "lead",
+                    "type": "object_type"
+                },
+                {
+                    "negate": False,
+                    "queries": [
+                        {
+                            "negate": False,
+                            "related_object_type": "contact",
+                            "related_query": {
+                                "negate": False,
+                                "queries": [
+                                    {
+                                        "negate": False,
+                                        "related_object_type": "contact_email",
+                                        "related_query": {
+                                            "negate": False,
+                                            "queries": [
+                                                {
+                                                    "condition": {
+                                                        "mode": "full_words",
+                                                        "type": "text",
+                                                        "value": contact_email
+                                                    },
+                                                    "field": {
+                                                        "field_name": "email",
+                                                        "object_type": "contact_email",
+                                                        "type": "regular_field"
+                                                    },
+                                                    "negate": False,
+                                                    "type": "field_condition"
+                                                }
+                                            ],
+                                            "type": "and"
+                                        },
+                                        "this_object_type": "contact",
+                                        "type": "has_related"
+                                    },
+                                    {
+                                        "negate": False,
+                                        "related_object_type": "contact_phone",
+                                        "related_query": {
+                                            "negate": False,
+                                            "queries": [
+                                                {
+                                                    "condition": {
+                                                        "mode": "exact_value",
+                                                        "type": "text",
+                                                        "value": contact_phone_number
+                                                    },
+                                                    "field": {
+                                                        "field_name": "phone",
+                                                        "object_type": "contact_phone",
+                                                        "type": "regular_field"
+                                                    },
+                                                    "negate": False,
+                                                    "type": "field_condition"
+                                                }
+                                            ],
+                                            "type": "and"
+                                        },
+                                        "this_object_type": "contact",
+                                        "type": "has_related"
+                                    }
+                                ],
+                                "type": "or"
+                            },
+                            "this_object_type": "lead",
+                            "type": "has_related"
+                        }
+                    ],
+                    "type": "and"
+                }
+            ],
+            "type": "and"
+        },
+        "results_limit": None,
+        "sort": []
+    }
+    headers = {
+        'Content-Type': 'application/json',
+        'Authorization': f'Basic {CLOSE_ENCODED_KEY}'
+    }
+    response = requests.post("https://api.close.com/api/v1/data/search", headers=headers, json=close_query_to_find_lead_by_email_or_phone)
+    resp_data = response.json()
+    leads_found = resp_data['data']
+    is_in_close = True if len(leads_found) > 0 else False
+    contact['is_in_close'] = is_in_close
+    return contact
+
+
+def check_if_contacts_present_in_close(contacts):
+    checked_contacts = []
+    for contact in contacts:
+        checked_contacts.append(search_close_for_contact_by_email_or_phone(contact))
+    return checked_contacts
+
+
 @app.route('/prepare_contact_list_for_address_verification', methods=['POST'])
 def prepare_contact_list_for_address_verification():
     api_key = request.headers.get('X-API-KEY')
@@ -536,6 +646,12 @@ def prepare_contact_list_for_address_verification():
     data = request.json
     csv_url = data['webContentLink']
     contact_list = download_csv_as_list_of_dicts(csv_url)
+    # QUESTION FOR RICH: when you are going to loop over a list and perform a few operations do you 1. make a function that
+    # takes a list, or 2. a for loop that goes over the list and performs the operations or 3. a function that takes a list
+    # and then has sub-functions for each step in the loop?
+    contacts_with_close_info = check_if_contacts_present_in_close(contact_list)
+    # QUESTION FOR RICH: since it will take a little while to loop over the list of contacts, should I return a success message
+    # and then send the email with the results later?
     return jsonify({"status": "success", "message": "Contact list prepared for address verification."}), 200
 
 
