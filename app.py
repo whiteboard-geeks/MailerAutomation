@@ -638,6 +638,16 @@ def check_if_contacts_present_in_close(contacts):
     return checked_contacts
 
 
+def check_if_contacts_have_email_and_mobile_phone(contacts):
+    contacts_with_email_and_mobile_phone = [contact for contact in contacts if contact['Email'] and contact['Mobile Phone']]
+    return contacts_with_email_and_mobile_phone
+
+
+def filter_contacts_not_in_close(contacts_with_close_info):
+    # Filter out contacts that are marked as present in Close
+    return [contact for contact in contacts_with_close_info if not contact['is_in_close']]
+
+
 @app.route('/prepare_contact_list_for_address_verification', methods=['POST'])
 def prepare_contact_list_for_address_verification():
     api_key = request.headers.get('X-API-KEY')
@@ -646,12 +656,16 @@ def prepare_contact_list_for_address_verification():
     data = request.json
     csv_url = data['webContentLink']
     contact_list = download_csv_as_list_of_dicts(csv_url)
+    contacts_with_email_and_mobile_phone = check_if_contacts_have_email_and_mobile_phone(contact_list)
     # QUESTION FOR RICH: when you are going to loop over a list and perform a few operations do you 1. make a function that
     # takes a list, or 2. a for loop that goes over the list and performs the operations or 3. a function that takes a list
     # and then has sub-functions for each step in the loop?
-    contacts_with_close_info = check_if_contacts_present_in_close(contact_list)
+    contacts_with_close_info = check_if_contacts_present_in_close(contacts_with_email_and_mobile_phone)
     # QUESTION FOR RICH: since it will take a little while to loop over the list of contacts, should I return a success message
     # and then send the email with the results later?
+    contacts_not_in_close = filter_contacts_not_in_close(contacts_with_close_info)
+    # TODO: arrange the columns the way they would be in the spreadsheet
+    # First Name*	Last Name*	Mobile Phone*	Direct Phone*	Email Address*	Company*	Title*	LinkedIn Link*
     return jsonify({"status": "success", "message": "Contact list prepared for address verification."}), 200
 
 
