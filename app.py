@@ -648,6 +648,23 @@ def filter_contacts_not_in_close(contacts_with_close_info):
     return [contact for contact in contacts_with_close_info if not contact['is_in_close']]
 
 
+def format_contacts_for_spreadsheet(contacts):
+    formatted_contacts = []
+    for contact in contacts:
+        formatted_contact = {
+            "First Name": contact.get("First Name", ""),
+            "Last Name": contact.get("Last Name", ""),
+            "Mobile Phone": contact.get("Mobile Phone", ""),
+            "Direct Phone": contact.get("Direct Phone", ""),
+            "Email Address": contact.get("Email", ""),
+            "Company": contact.get("Company", ""),
+            "Title": contact.get("Title", ""),
+            "LinkedIn Link": contact.get("LinkedIn Link", "")
+        }
+        formatted_contacts.append(formatted_contact)
+    return formatted_contacts
+
+
 @app.route('/prepare_contact_list_for_address_verification', methods=['POST'])
 def prepare_contact_list_for_address_verification():
     api_key = request.headers.get('X-API-KEY')
@@ -664,8 +681,9 @@ def prepare_contact_list_for_address_verification():
     # QUESTION FOR RICH: since it will take a little while to loop over the list of contacts, should I return a success message
     # and then send the email with the results later?
     contacts_not_in_close = filter_contacts_not_in_close(contacts_with_close_info)
-    # TODO: arrange the columns the way they would be in the spreadsheet
-    # First Name*	Last Name*	Mobile Phone*	Direct Phone*	Email Address*	Company*	Title*	LinkedIn Link*
+    formatted_contacts = format_contacts_for_spreadsheet(contacts_not_in_close)
+    # TODO: export to Google Drive
+
     return jsonify({"status": "success", "message": "Contact list prepared for address verification."}), 200
 
 
