@@ -8,6 +8,7 @@ from datetime import datetime, timedelta
 from base64 import b64encode
 from urllib.parse import urlencode
 from io import StringIO
+from time import sleep
 
 import requests
 from flask import Flask, request, jsonify
@@ -630,6 +631,13 @@ def search_close_for_contact_by_email_or_phone(contact):
     resp_data = response.json()
 
     # Check if 'data' key is in response
+    if response.status_code == 429:
+        first_name = contact['First Name']
+        last_name = contact['Last Name']
+        company = contact['Company']
+        logger.error(f"Rate limit exceeded. Response: {resp_data} Contact: {first_name} {last_name} - {company}")
+        sleep(resp_data['rate_reset'])
+        return search_close_for_contact_by_email_or_phone(contact)
     if 'data' not in resp_data:
         logger.error(f"No 'data' key in response. Response: {resp_data} Contact: {contact}")
         return None
