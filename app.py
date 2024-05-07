@@ -628,6 +628,12 @@ def search_close_for_contact_by_email_or_phone(contact):
     }
     response = requests.post("https://api.close.com/api/v1/data/search", headers=headers, json=close_query_to_find_lead_by_email_or_phone)
     resp_data = response.json()
+
+    # Check if 'data' key is in response
+    if 'data' not in resp_data:
+        logger.error(f"No 'data' key in response. Response: {resp_data} Contact: {contact}")
+        return None
+
     leads_found = resp_data['data']
     is_in_close = True if len(leads_found) > 0 else False
     contact['is_in_close'] = is_in_close
