@@ -1,6 +1,7 @@
 import csv
 import json
 import os
+import io
 import logging
 import traceback
 from datetime import datetime, timedelta
@@ -34,6 +35,8 @@ CLOSE_API_KEY = os.environ['CLOSE_API_KEY']
 CLOSE_ENCODED_KEY = b64encode(f'{CLOSE_API_KEY}:'.encode()).decode()
 SKYLEAD_API_KEY = os.environ.get('SKYLEAD_API_KEY')
 WEBHOOK_API_KEY = os.environ.get('WEBHOOK_API_KEY')
+BYTESCALE_ACCOUNT_ID = os.environ.get('BYTESCALE_ACCOUNT_ID')
+BYTESCALE_API_KEY = os.environ.get('BYTESCALE_API_KEY')
 
 
 # General utils
@@ -659,10 +662,30 @@ def format_contacts_for_spreadsheet(contacts):
             "Email Address": contact.get("Email", ""),
             "Company": contact.get("Company", ""),
             "Title": contact.get("Title", ""),
-            "LinkedIn Link": contact.get("LinkedIn Link", "")
+            "LinkedIn Link": contact.get("Person Linkedin Url", "")
         }
         formatted_contacts.append(formatted_contact)
     return formatted_contacts
+
+
+def create_csv_from_contacts(contacts):
+    csv_output = io.StringIO()
+    writer = csv.DictWriter(csv_output, fieldnames=contacts[0].keys())
+    writer.writeheader()
+    writer.writerows(contacts)
+    csv_output.seek(0)  # Rewind the StringIO object after writing to prepare for reading
+    return csv_output.getvalue()  # Return CSV data as a string
+
+
+def upload_to_bytescale(csv_data):
+    url = f"https://api.bytescale.com/v2/accounts/{BYTESCALE_ACCOUNT_ID}/uploads/binary"
+    headers = {
+        'Content-Type': 'text/csv',
+        'Authorization': f'Bearer {BYTESCALE_API_KEY}'
+    }
+    response = requests.request("POST", url, headers=headers, data=csv_data)
+    file_url = response.json()['fileUrl']
+    return file_url
 
 
 @app.route('/prepare_contact_list_for_address_verification', methods=['POST'])
@@ -680,11 +703,16 @@ def prepare_contact_list_for_address_verification():
     contacts_with_close_info = check_if_contacts_present_in_close(contacts_with_email_and_mobile_phone)
     # QUESTION FOR RICH: since it will take a little while to loop over the list of contacts, should I return a success message
     # and then send the email with the results later?
+
+    # Create CSV from formatted contacts and upload it
     contacts_not_in_close = filter_contacts_not_in_close(contacts_with_close_info)
     formatted_contacts = format_contacts_for_spreadsheet(contacts_not_in_close)
-    # TODO: export to Google Drive
+    csv_data = create_csv_from_contacts(formatted_contacts)
+    bytescale_file_url = upload_to_bytescale(csv_data)
 
-    return jsonify({"status": "success", "message": "Contact list prepared for address verification."}), 200
+    # TODO: send fileUrl to a Zapier webhook when complete so it can upload the file 
+
+    return jsonify({"status": "success", "message": "Scrubbed contacts and uploaded to ByteScale.", "file_url": bytescale_file_url}), 200
 
 
 if __name__ == '__main__':
