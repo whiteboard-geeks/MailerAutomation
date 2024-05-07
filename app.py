@@ -715,7 +715,8 @@ def prepare_contact_list_for_address_verification():
     csv_data = create_csv_from_contacts(formatted_contacts)
     bytescale_file_url = upload_to_bytescale(csv_data)
 
-    # TODO: send fileUrl to a Zapier webhook when complete so it can upload the file 
+    # Send the file URL to a Zapier webhook
+    requests.post("https://hooks.zapier.com/hooks/catch/628188/3jtben9/", json={"file_url": bytescale_file_url, "time": datetime.now().strftime("%Y-%m-%d_%H-%M-%S")})
 
     return jsonify({"status": "success", "message": "Scrubbed contacts and uploaded to ByteScale.", "file_url": bytescale_file_url}), 200
 
