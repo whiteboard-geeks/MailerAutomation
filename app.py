@@ -673,8 +673,8 @@ def format_contacts_for_spreadsheet(contacts):
             "Last Name": contact.get("Last Name", ""),
             "Mobile Phone": f"'{contact.get('Mobile Phone', '')}",
             "Direct Phone": f"'{contact.get('Direct Phone', '')}",
-            "Email Address": {contact.get('Email', '')},
-            "Company": {contact.get('Company', '')},
+            "Email Address": contact.get('Email', ''),
+            "Company": contact.get('Company', ''),
             "Title": contact.get("Title", ""),
             "LinkedIn Link": contact.get("Person Linkedin Url", "")
         }
