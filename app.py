@@ -636,7 +636,7 @@ def search_close_for_contact_by_email_or_phone(contact):
         last_name = contact['Last Name']
         company = contact['Company']
         logger.error(f"Rate limit exceeded. Response: {resp_data} Contact: {first_name} {last_name} - {company}")
-        sleep(resp_data['rate_reset'])
+        sleep(float(resp_data['error']['rate_reset']))
         return search_close_for_contact_by_email_or_phone(contact)
     if 'data' not in resp_data:
         logger.error(f"No 'data' key in response. Response: {resp_data} Contact: {contact}")
