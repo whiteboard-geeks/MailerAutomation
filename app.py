@@ -678,12 +678,17 @@ def create_csv_from_contacts(contacts):
 
 
 def upload_to_bytescale(csv_data):
+    current_time = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+    filename = f"cleaned_{current_time}.csv"
     url = f"https://api.bytescale.com/v2/accounts/{BYTESCALE_ACCOUNT_ID}/uploads/binary"
     headers = {
         'Content-Type': 'text/csv',
         'Authorization': f'Bearer {BYTESCALE_API_KEY}'
     }
-    response = requests.request("POST", url, headers=headers, data=csv_data)
+    params = {
+        "fileName": filename
+    }
+    response = requests.request("POST", url, headers=headers, data=csv_data, params=params)
     file_url = response.json()['fileUrl']
     return file_url
 
