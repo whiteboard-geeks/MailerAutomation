@@ -1,0 +1,61 @@
+{
+    "limit": null,
+    "query": {
+        "negate": false,
+        "queries": [
+            {
+                "negate": false,
+                "object_type": "lead",
+                "type": "object_type"
+            },
+            {
+                "negate": false,
+                "queries": [
+                    {
+                        "negate": false,
+                        "queries": [
+                            {
+                                "condition": {
+                                    "type": "exists"
+                                },
+                                "field": {
+                                    "custom_field_id": "cf_iSOPYKzS9IPK20gJ8eH9Q74NT7grCQW9psqo4lZR3Ii",
+                                    "type": "custom_field"
+                                },
+                                "negate": false,
+                                "type": "field_condition"
+                            },
+                            {
+                                "condition": {
+                                    "type": "exists"
+                                },
+                                "field": {
+                                    "custom_field_id": "cf_2QQR5e6vJUyGzlYBtHddFpdqNp5393nEnUiZk1Ukl9l",
+                                    "type": "custom_field"
+                                },
+                                "negate": false,
+                                "type": "field_condition"
+                            },
+                            {
+                                "condition": {
+                                    "type": "exists"
+                                },
+                                "field": {
+                                    "custom_field_id": "cf_wkZ5ptOR1Ro3YPxJPYipI35M7ticuYvJHFgp2y4fzdQ",
+                                    "type": "custom_field"
+                                },
+                                "negate": true,
+                                "type": "field_condition"
+                            }
+                        ],
+                        "type": "and"
+                    }
+                ],
+                "type": "and"
+            }
+        ],
+        "type": "and"
+    },
+    "results_limit": null,
+    "sort": []
+}

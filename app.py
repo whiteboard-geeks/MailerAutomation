@@ -11,6 +11,7 @@ from io import StringIO
 from time import sleep
 
 import requests
+from apscheduler.schedulers.background import BackgroundScheduler
 from flask import Flask, request, jsonify
 from celery import Celery
 import pytz
@@ -79,6 +80,48 @@ def send_email(subject, body, **kwargs):
     )
 
     return mailgun_email_response.json()
+
+
+def load_query(file_name):
+    # Construct the full path to the file
+    base_dir = os.path.dirname(os.path.abspath(__file__))
+    file_path = os.path.join(base_dir, 'close_queries', file_name)
+
+    # Open and load the JSON data
+    with open(file_path, 'r') as file:
+        return json.load(file)
+
+
+# Check delivery status daily
+def check_delivery_status_daily():
+    # Query Close for leads
+    query_leads_with_undelivered_packages_in_close = load_query('undelivered_packages_query.json')  # Tracking Number = Is Present, Carrier = Is Present, Package Delivered = Not Present
+    leads = search_close_leads(query_leads_with_undelivered_packages_in_close)
+
+    # Check each lead's shipment status via EasyPost
+    for lead in leads:
+        tracking_number = lead['custom.cf_iSOPYKzS9IPK20gJ8eH9Q74NT7grCQW9psqo4lZR3Ii']
+        carrier = lead['custom.cf_2QQR5e6vJUyGzlYBtHddFpdqNp5393nEnUiZk1Ukl9l'][0]
+        # tracking_data = get_tracking_data_from_easypost(tracking_number, carrier)
+
+        # If delivered, update the Close lead
+        # if tracking_data['status'] == "delivered":
+        #     delivery_information = parse_delivery_information(tracking_data)
+        #     update_delivery_information_for_lead(lead['id'], delivery_information)
+
+
+def start_scheduler():
+    scheduler = BackgroundScheduler()
+    # Check if the environment is for development and run immediately if true
+    if env_type == 'development':
+        scheduler.add_job(func=check_delivery_status_daily, trigger="date", run_date=datetime.now())
+    # Always schedule the daily job
+    scheduler.add_job(func=check_delivery_status_daily, trigger="interval", days=1)
+    scheduler.start()
+
+
+with app.app_context():
+    start_scheduler()
 
 
 # /delivery_status
