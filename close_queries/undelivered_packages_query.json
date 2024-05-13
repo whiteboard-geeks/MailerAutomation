@@ -1,5 +1,13 @@
 {
     "limit": null,
+    "_fields": {
+        "lead": [
+            "id",
+            "name",
+            "custom.cf_iSOPYKzS9IPK20gJ8eH9Q74NT7grCQW9psqo4lZR3Ii",
+            "custom.cf_2QQR5e6vJUyGzlYBtHddFpdqNp5393nEnUiZk1Ukl9l"
+        ]
+    },
     "query": {
         "negate": false,
         "queries": [
