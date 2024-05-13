@@ -10,6 +10,7 @@ from urllib.parse import urlencode
 from io import StringIO
 from time import sleep
 
+import easypost
 import requests
 from apscheduler.schedulers.background import BackgroundScheduler
 from flask import Flask, request, jsonify
@@ -39,6 +40,10 @@ SKYLEAD_API_KEY = os.environ.get('SKYLEAD_API_KEY')
 WEBHOOK_API_KEY = os.environ.get('WEBHOOK_API_KEY')
 BYTESCALE_ACCOUNT_ID = os.environ.get('BYTESCALE_ACCOUNT_ID')
 BYTESCALE_API_KEY = os.environ.get('BYTESCALE_API_KEY')
+EASYPOST_API_KEY = os.environ.get('EASYPOST_API_KEY')
+
+# Clients
+easypost_client = easypost.EasyPostClient(EASYPOST_API_KEY)
 
 
 # General utils
@@ -102,7 +107,10 @@ def check_delivery_status_daily():
     for lead in leads:
         tracking_number = lead['custom.cf_iSOPYKzS9IPK20gJ8eH9Q74NT7grCQW9psqo4lZR3Ii']
         carrier = lead['custom.cf_2QQR5e6vJUyGzlYBtHddFpdqNp5393nEnUiZk1Ukl9l'][0]
-        # tracking_data = get_tracking_data_from_easypost(tracking_number, carrier)
+        tracker = easypost_client.tracker.create(
+            tracking_code=tracking_number,
+            carrier=carrier
+        )
 
         # If delivered, update the Close lead
         # if tracking_data['status'] == "delivered":
