@@ -98,9 +98,43 @@ def load_query(file_name):
 
 
 # Check delivery status daily
+# TODO: Merge this fn and update_delivery_information_for_lead
+def update_easypost_tracker_id_for_lead(lead_id, update_information):
+    def verify_delivery_information_updated(response_data, lead_update_data):
+        for key, value in lead_update_data.items():
+            if key not in response_data or response_data[key] != value:
+                return False
+        return True
+    headers = {
+        'Content-Type': 'application/json',
+        'Authorization': f'Basic {CLOSE_ENCODED_KEY}'
+    }
+
+    custom_field_ids = {
+        "easypost_tracker_id": {
+            "type": "text",
+            "value": "custom.cf_JsirGUJdp8RrCI6XwW48xFKEccSwulSCwZ7pAZL84vh"
+        }
+    }
+    lead_update_data = {
+        custom_field_ids["easypost_tracker_id"]["value"]: update_information["easypost_tracker_id"],
+    }
+
+    response = requests.put(f'https://api.close.com/api/v1/lead/{lead_id}', json=lead_update_data, headers=headers)
+    response_data = response.json()
+    data_updated = verify_delivery_information_updated(response_data, lead_update_data)
+    if not data_updated:
+        error_message = f"Delivery information update failed for lead {lead_id}."
+        logger.error(error_message)
+        send_email(subject="Delivery information update failed", body=error_message)
+        raise Exception("Close accepted the lead, but the fields did not update.")
+    logger.info(f"Delivery information updated for lead {lead_id}: {data_updated}")
+    return response_data
+
+
 def check_delivery_status_daily():
     # Query Close for leads
-    query_leads_with_undelivered_packages_in_close = load_query('undelivered_packages_query.json')  # Tracking Number = Is Present, Carrier = Is Present, Package Delivered = Not Present
+    query_leads_with_undelivered_packages_in_close = load_query('undelivered_packages_query.json')  # Tracking Number = Is Present, Carrier = Is Present, Package Delivered = Not Present, EasyPost Tracker ID = Not Present
     leads = search_close_leads(query_leads_with_undelivered_packages_in_close)
 
     # Check each lead's shipment status via EasyPost
@@ -111,11 +145,8 @@ def check_delivery_status_daily():
             tracking_code=tracking_number,
             carrier=carrier
         )
-
-        # If delivered, update the Close lead
-        # if tracking_data['status'] == "delivered":
-        #     delivery_information = parse_delivery_information(tracking_data)
-        #     update_delivery_information_for_lead(lead['id'], delivery_information)
+        update_easypost_tracker_id_for_lead(lead['id'], {"easypost_tracker_id": tracker.id})
+        logger.info(f"EasyPost Tracker Created: {tracker} for lead {lead['id']}")
 
 
 def start_scheduler():
