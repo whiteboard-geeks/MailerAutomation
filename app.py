@@ -758,7 +758,7 @@ def format_contacts_for_spreadsheet(contacts):
             "Email Address": contact.get('Email', ''),
             "Company": contact.get('Company', ''),
             "Title": contact.get("Title", ""),
-            "LinkedIn Link": contact.get("Person Linkedin Url", "")
+            "Contact LinkedIn URL": contact.get("Person Linkedin Url", "")
         }
         formatted_contacts.append(formatted_contact)
     return formatted_contacts
