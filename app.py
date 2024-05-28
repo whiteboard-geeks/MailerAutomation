@@ -334,7 +334,6 @@ def handle_package_delivery_update():
         if tracking_data['tracking_details'][-1]['message'] == "Delivered, To Original Sender":
             logger.info("Tracking status is 'delivered', but it is delivered to the original sender; webhook did not run.")
             return jsonify({"status": "success", "message": "Tracking status is 'delivered', but it is delivered to the original sender; webhook did not run."}), 200
-        send_email(subject=f"Delivery status webhook received, Tracking Number: {tracking_data['tracking_code']}", body=json.dumps(request.json))
         delivery_information = parse_delivery_information(tracking_data)
         close_query_to_find_leads_with_tracking_number = {
             "limit": None,
