@@ -62,21 +62,6 @@
                                 },
                                 "negate": true,
                                 "type": "field_condition"
-                            },
-                            {
-                                "_comment": "lead_source = Mailer",
-                                "condition": {
-                                    "type": "term",
-                                    "values": [
-                                        "Mailer"
-                                    ]
-                                },
-                                "field": {
-                                    "custom_field_id": "lcf_m8vYwl21cyOo53d97DYSMQDzFnt6cxoSMQ84pAKIN0e",
-                                    "type": "custom_field"
-                                },
-                                "negate": false,
-                                "type": "field_condition"
                             }
                         ],
                         "type": "and"

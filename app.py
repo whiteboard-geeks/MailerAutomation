@@ -377,20 +377,6 @@ def handle_package_delivery_update():
                                         },
                                         "negate": False,
                                         "type": "field_condition"
-                                    },
-                                    {
-                                        "condition": {
-                                            "type": "term",
-                                            "values": [
-                                                "Mailer"
-                                            ]
-                                        },
-                                        "field": {
-                                            "custom_field_id": "lcf_m8vYwl21cyOo53d97DYSMQDzFnt6cxoSMQ84pAKIN0e",
-                                            "type": "custom_field"
-                                        },
-                                        "negate": False,
-                                        "type": "field_condition"
                                     }
                                 ],
                                 "type": "and"
