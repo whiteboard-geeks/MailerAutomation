@@ -97,6 +97,31 @@ def load_query(file_name):
         return json.load(file)
 
 
+# Manual delivery status update
+@app.route('/manual_delivery_status_update', methods=['GET'])
+def manual_delivery_status_update():
+    # Query Close for leads
+    query_leads_with_undelivered_packages_in_close = load_query('undelivered_package_with_easypost_tracker_id.json')  # Tracking Number = Is Present, Carrier = Is Present, Package Delivered = Not Present, EasyPost Tracker ID = Present
+    leads = search_close_leads(query_leads_with_undelivered_packages_in_close)
+
+    # Check each lead's shipment status via EasyPost
+    for lead in leads:
+        easypost_tracker_id = lead['custom.cf_JsirGUJdp8RrCI6XwW48xFKEccSwulSCwZ7pAZL84vh']
+        tracker = easypost_client.tracker.retrieve(easypost_tracker_id)
+        tracking_data = tracker
+        if tracking_data['status'] != "delivered":
+            logger.info(f"Lead {lead['id']}: Tracking status is not 'delivered'; webhook did not run.")
+            continue
+        if tracking_data['tracking_details'][-1]['message'] == "Delivered, To Original Sender":
+            logger.info("Lead {lead['id']}: Tracking status is 'delivered', but it is delivered to the original sender; webhook did not run.")
+            continue
+        delivery_information = parse_delivery_information(tracking_data)
+        update_close_lead = update_delivery_information_for_lead(lead["id"], delivery_information)
+        logger.info(f"Close lead update: {update_close_lead}")
+        create_package_delivered_custom_activity_in_close(lead["id"], delivery_information)
+    return jsonify({"status": "success", "message": "All leads updated."}), 200
+
+
 # Check delivery status daily
 # TODO: Merge this fn and update_delivery_information_for_lead
 def update_easypost_tracker_id_for_lead(lead_id, update_information):
