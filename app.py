@@ -323,10 +323,8 @@ def search_close_leads(query):
                 )
                 raise Exception("Invalid response format from Close API")
 
-            number_of_leads_found = response_data["count"]
             number_of_leads_retrieved = len(response_data["data"])
             logger.info(
-                f"Number of leads found in Close: {number_of_leads_found}, "
                 f"Number of leads retrieved: {number_of_leads_retrieved}, "
                 f"Current cursor: {cursor}"
             )
