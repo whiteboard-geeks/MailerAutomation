@@ -105,9 +105,9 @@ def load_query(file_name):
         return json.load(file)
 
 
-# Manual delivery status update
-@app.route("/manual_delivery_status_update", methods=["GET"])
-def manual_delivery_status_update():
+# /sync_delivery_status_from_easypost
+@app.route("/sync_delivery_status_from_easypost", methods=["GET"])
+def sync_delivery_status_from_easypost():
     # Query Close for leads
     query_leads_with_undelivered_packages_in_close = load_query(
         "undelivered_package_with_easypost_tracker_id.json"
@@ -201,12 +201,12 @@ def update_easypost_tracker_id_for_lead(lead_id, update_information):
     return response_data
 
 
-def check_delivery_status_daily():
-    # Query Close for leads
-    query_leads_with_undelivered_packages_in_close = load_query(
-        "undelivered_packages_query.json"
+def create_missing_easypost_trackers():
+    # Query Close for leads that have tracking info but no EasyPost tracker
+    query_leads_without_easypost_trackers = load_query(
+        "undelivered_package_without_easypost_trackers.json"
     )  # Tracking Number = Is Present, Carrier = Is Present, Package Delivered = Not Present, EasyPost Tracker ID = Not Present
-    leads = search_close_leads(query_leads_with_undelivered_packages_in_close)
+    leads = search_close_leads(query_leads_without_easypost_trackers)
 
     # Check each lead's shipment status via EasyPost
     for lead in leads:
@@ -223,13 +223,20 @@ def check_delivery_status_daily():
 
 def start_scheduler():
     scheduler = BackgroundScheduler()
+
+    # Helper function to run both tasks in sequence
+    def run_easypost_tasks():
+        create_missing_easypost_trackers()
+        sync_delivery_status_from_easypost()
+
     # Check if the environment is for development and run immediately if true
     if env_type == "development":
         scheduler.add_job(
-            func=check_delivery_status_daily, trigger="date", run_date=datetime.now()
+            func=run_easypost_tasks, trigger="date", run_date=datetime.now()
         )
+
     # Always schedule the daily job
-    scheduler.add_job(func=check_delivery_status_daily, trigger="interval", days=1)
+    scheduler.add_job(func=run_easypost_tasks, trigger="interval", days=1)
     scheduler.start()
 
 
