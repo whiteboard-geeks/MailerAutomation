@@ -1,0 +1,26 @@
+{
+    "version": "2.0.0",
+    "tasks": [
+        {
+            "label": "Start Redis",
+            "type": "shell",
+            "command": "redis-server",
+            "isBackground": true,
+            "problemMatcher": {
+                "pattern": {
+                    "regexp": "^.*$"
+                },
+                "background": {
+                    "activeOnStart": true,
+                    "beginsPattern": ".*Ready to accept connections.*",
+                    "endsPattern": ".*"
+                }
+            }
+        },
+        {
+            "label": "Stop Redis",
+            "type": "shell",
+            "command": "pkill redis-server"
+        }
+    ]
+}
