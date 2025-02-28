@@ -9,6 +9,7 @@ from base64 import b64encode
 from urllib.parse import urlencode
 from io import StringIO
 from time import sleep
+import sys
 
 import easypost
 import requests
@@ -16,8 +17,50 @@ from apscheduler.schedulers.background import BackgroundScheduler
 from flask import Flask, request, jsonify
 from celery import Celery
 import pytz
+import pytest
 
-app = Flask(__name__)
+from blueprints.instantly import instantly_bp
+
+flask_app = Flask(__name__)
+
+# Add your project to the Python path
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
+
+
+@pytest.fixture
+def app():
+    # Configure your app for testing
+    flask_app.config.update(
+        {
+            "TESTING": True,
+            "ENV": "test",
+        }
+    )
+    yield flask_app
+
+
+@pytest.fixture
+def client(app):
+    return app.test_client()
+
+
+@pytest.fixture
+def runner(app):
+    return app.test_cli_runner()
+
+
+# Fixture to load mock webhook payloads
+@pytest.fixture
+def close_task_created_payload():
+    with open("tests/fixtures/close_webhook_payloads/task_created.json", "r") as f:
+        return json.load(f)
+
+
+@pytest.fixture
+def instantly_email_sent_payload():
+    with open("tests/fixtures/instantly_webhook_payloads/email_sent.json", "r") as f:
+        return json.load(f)
+
 
 env_type = os.getenv("ENV_TYPE", "development")
 
@@ -93,6 +136,13 @@ def send_email(subject, body, **kwargs):
     )
 
     return mailgun_email_response.json()
+
+
+# Register blueprints after send_email is defined
+app.register_blueprint(instantly_bp, url_prefix="/instantly")
+
+# Expose the send_email function to blueprints
+app.send_email = send_email
 
 
 def load_query(file_name):
