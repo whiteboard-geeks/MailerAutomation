@@ -24,7 +24,7 @@ class TestInstantlyE2E:
         self.test_data["lead_id"] = lead_data["id"]
 
         # 2. Create a task with Instantly campaign name
-        campaign_name = "Test_Campaign"
+        campaign_name = "Test20250227"
         task_data = self.close_api.create_task_for_lead(lead_data["id"], campaign_name)
 
         # 3. Wait for the webhook to be processed

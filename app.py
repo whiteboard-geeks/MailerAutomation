@@ -41,12 +41,12 @@ def app():
 
 @pytest.fixture
 def client(app):
-    return app.test_client()
+    return flask_app.test_client()
 
 
 @pytest.fixture
 def runner(app):
-    return app.test_cli_runner()
+    return flask_app.test_cli_runner()
 
 
 # Fixture to load mock webhook payloads
@@ -65,11 +65,11 @@ def instantly_email_sent_payload():
 env_type = os.getenv("ENV_TYPE", "development")
 
 REDISCLOUD_URL = os.environ.get("REDISCLOUD_URL")
-app.config["CELERY_BROKER_URL"] = REDISCLOUD_URL
-app.config["CELERY_RESULT_BACKEND"] = REDISCLOUD_URL
+flask_app.config["CELERY_BROKER_URL"] = REDISCLOUD_URL
+flask_app.config["CELERY_RESULT_BACKEND"] = REDISCLOUD_URL
 
-celery = Celery(app.name, broker=app.config["CELERY_BROKER_URL"])
-celery.conf.update(app.config)
+celery = Celery(flask_app.name, broker=flask_app.config["CELERY_BROKER_URL"])
+celery.conf.update(flask_app.config)
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -90,7 +90,7 @@ easypost_client = easypost.EasyPostClient(EASYPOST_API_KEY)
 
 
 # General utils
-@app.errorhandler(Exception)
+@flask_app.errorhandler(Exception)
 def handle_exception(e):
     # Capture the traceback
     tb = traceback.format_exc()
@@ -139,10 +139,10 @@ def send_email(subject, body, **kwargs):
 
 
 # Register blueprints after send_email is defined
-app.register_blueprint(instantly_bp, url_prefix="/instantly")
+flask_app.register_blueprint(instantly_bp, url_prefix="/instantly")
 
 # Expose the send_email function to blueprints
-app.send_email = send_email
+flask_app.send_email = send_email
 
 
 def load_query(file_name):
@@ -156,7 +156,7 @@ def load_query(file_name):
 
 
 # /sync_delivery_status_from_easypost
-@app.route("/sync_delivery_status_from_easypost", methods=["GET"])
+@flask_app.route("/sync_delivery_status_from_easypost", methods=["GET"])
 def sync_delivery_status_from_easypost():
     # Query Close for leads
     query_leads_with_undelivered_packages_in_close = load_query(
@@ -290,7 +290,7 @@ def start_scheduler():
     scheduler.start()
 
 
-with app.app_context():
+with flask_app.app_context():
     start_scheduler()
 
 
@@ -549,7 +549,7 @@ def create_package_delivered_custom_activity_in_close(lead_id, delivery_informat
     return response_data
 
 
-@app.route("/delivery_status", methods=["POST"])
+@flask_app.route("/delivery_status", methods=["POST"])
 def handle_package_delivery_update():
     try:
         tracking_data = request.json["result"]
@@ -841,7 +841,7 @@ def check_skylead_for_viewed_profile(contact):
         logger.error(f"{contact_name} ({contact_id}) Close did not update correctly.")
 
 
-@app.route("/check_linkedin_connection_status", methods=["POST"])
+@flask_app.route("/check_linkedin_connection_status", methods=["POST"])
 def check_linkedin_connection_status():
     data = request.json
     contact = data["event"]["data"]
@@ -1092,7 +1092,7 @@ def process_contact_list(csv_url):
     logger.info(f"File URL uploaded to Zapier: {bytescale_file_url}")
 
 
-@app.route("/prepare_contact_list_for_address_verification", methods=["POST"])
+@flask_app.route("/prepare_contact_list_for_address_verification", methods=["POST"])
 def prepare_contact_list_for_address_verification():
     api_key = request.headers.get("X-API-KEY")
     if api_key != WEBHOOK_API_KEY:
@@ -1106,6 +1106,6 @@ def prepare_contact_list_for_address_verification():
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 8080))
     if env_type == "development":
-        app.run(debug=True, host="0.0.0.0", port=port)
+        flask_app.run(debug=True, host="0.0.0.0", port=port)
     else:
-        app.run(debug=False, host="0.0.0.0", port=port)
+        flask_app.run(debug=False, host="0.0.0.0", port=port)
