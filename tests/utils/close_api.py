@@ -44,6 +44,39 @@ class CloseAPI:
 
         return response.json()
 
+    def create_webhook_to_catch_task_created(self):
+        """Create a webhook to catch task created events."""
+        payload = {
+            "url": "http://locust-pleased-thankfully.ngrok-free.app/instantly/add_task",
+            "events": [
+                {
+                    "object_type": "task.lead",
+                    "action": "created",
+                    "extra_filter": {
+                        "type": "field_accessor",
+                        "field": "data",
+                        "filter": {
+                            "type": "field_accessor",
+                            "field": "text",
+                            "filter": {"type": "contains", "value": "Instantly"},
+                        },
+                    },
+                }
+            ],
+            "verify_ssl": False,
+        }
+
+        response = requests.post(
+            f"{self.base_url}/webhook/", json=payload, headers=self.headers
+        )
+
+        if response.status_code != 201:
+            raise Exception(f"Failed to create webhook: {response.text}")
+
+        webhook_id = response.json()["id"]
+        print(f"Webhook created with ID: {webhook_id}")
+        return webhook_id
+
     def create_task_for_lead(self, lead_id, campaign_name):
         """Create a task with Instantly campaign name for a lead."""
         payload = {
@@ -69,5 +102,16 @@ class CloseAPI:
 
         if response.status_code != 204:
             raise Exception(f"Failed to delete lead: {response.text}")
+
+        return True
+
+    def delete_webhook(self, webhook_id):
+        """Delete a webhook from Close."""
+        response = requests.delete(
+            f"{self.base_url}/webhook/{webhook_id}", headers=self.headers
+        )
+
+        if response.status_code != 200:
+            raise Exception(f"Failed to delete webhook: {response.text}")
 
         return True
