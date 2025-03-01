@@ -63,6 +63,9 @@ def instantly_email_sent_payload():
 
 
 env_type = os.getenv("ENV_TYPE", "development")
+print("=== ENVIRONMENT INFO ===")
+print(f"ENV_TYPE: {env_type}")
+print("=== END ENVIRONMENT INFO ===")
 
 REDISCLOUD_URL = os.environ.get("REDISCLOUD_URL")
 flask_app.config["CELERY_BROKER_URL"] = REDISCLOUD_URL
@@ -117,6 +120,12 @@ def handle_exception(e):
         }
 
     return jsonify(response_body), 500
+
+
+# Check if development scheduling is enabled
+ENABLE_DEV_SCHEDULING = (
+    os.environ.get("ENABLE_DEV_SCHEDULING", "false").lower() == "true"
+)
 
 
 def send_email(subject, body, **kwargs):
@@ -280,7 +289,7 @@ def start_scheduler():
         sync_delivery_status_from_easypost()
 
     # Check if the environment is for development and run immediately if true
-    if env_type == "development":
+    if env_type == "development" and ENABLE_DEV_SCHEDULING:
         scheduler.add_job(
             func=run_easypost_tasks, trigger="date", run_date=datetime.now()
         )
@@ -717,7 +726,7 @@ def schedule_skylead_check(contact):
         )
 
     # Calculate the delay in seconds
-    if env_type == "development":
+    if env_type == "development" and ENABLE_DEV_SCHEDULING:
         delay = 0
     else:
         delay = (next_check_time - now).total_seconds()

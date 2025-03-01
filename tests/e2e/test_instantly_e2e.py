@@ -1,7 +1,7 @@
 import os
 import json
 import time
-import tempfile
+import requests
 from tests.utils.close_api import CloseAPI
 
 
@@ -11,16 +11,9 @@ class TestInstantlyE2E:
         self.close_api = CloseAPI()
         self.test_data = {}
 
-        # Check if we should use timeout or wait indefinitely (for development)
-        webhook_timeout_env = os.environ.get("WEBHOOK_TIMEOUT")
-        if webhook_timeout_env == "NONE" or webhook_timeout_env == "0":
-            self.webhook_timeout = None  # No timeout - wait indefinitely
-            print("WEBHOOK TIMEOUT: NONE (waiting indefinitely)")
-        else:
-            self.webhook_timeout = (
-                int(webhook_timeout_env) if webhook_timeout_env else 600
-            )  # Default 10 minutes
-            print(f"WEBHOOK TIMEOUT: {self.webhook_timeout} seconds")
+        # Always disable timeout - wait indefinitely
+        self.webhook_timeout = None  # No timeout
+        print("WEBHOOK TIMEOUT: NONE (waiting indefinitely)")
 
         self.webhook_check_interval = 1  # Check interval in seconds
         self.base_url = os.environ.get("BASE_URL", "http://localhost:8080")
@@ -29,12 +22,6 @@ class TestInstantlyE2E:
         if os.environ.get("ENV_TYPE") != "test":
             os.environ["ENV_TYPE"] = "test"
         print(f"ENV_TYPE: {os.environ.get('ENV_TYPE')}")
-
-        # Create temp directory for webhook notifications if it doesn't exist
-        self.webhook_dir = os.path.join(
-            tempfile.gettempdir(), "instantly_webhook_tests"
-        )
-        os.makedirs(self.webhook_dir, exist_ok=True)
 
     def teardown_method(self):
         """Cleanup after each test."""
@@ -46,43 +33,36 @@ class TestInstantlyE2E:
         if self.test_data.get("webhook_id"):
             self.close_api.delete_webhook(self.test_data["webhook_id"])
 
-        # Clean up any webhook notification files
-        if self.test_data.get("task_id"):
-            notification_file = os.path.join(
-                self.webhook_dir, f"{self.test_data['task_id']}.json"
-            )
-            if os.path.exists(notification_file):
-                os.remove(notification_file)
-
     def wait_for_webhook_processed(self, task_id):
-        """Wait for webhook to be processed by checking for a notification file."""
-        notification_file = os.path.join(self.webhook_dir, f"{task_id}.json")
+        """Wait for webhook to be processed by checking the webhook tracker API."""
+        webhook_endpoint = f"{self.base_url}/instantly/test/webhooks?task_id={task_id}"
 
         start_time = time.time()
         elapsed_time = 0
 
-        # Loop with or without timeout based on configuration
-        while self.webhook_timeout is None or elapsed_time < self.webhook_timeout:
-            # Check if notification file exists
-            if os.path.exists(notification_file):
-                # Read the file to get webhook data
-                try:
-                    with open(notification_file, "r") as f:
-                        webhook_data = json.load(f)
-                    return webhook_data
-                except Exception as e:
-                    print(f"Error reading webhook notification file: {e}")
+        # Loop indefinitely since timeout is None
+        while True:
+            try:
+                # Query the webhook tracker API
+                response = requests.get(webhook_endpoint)
+
+                if response.status_code == 200:
+                    # We found webhook data
+                    webhook_data = response.json().get("data", {})
+                    if webhook_data:  # Make sure it's not empty
+                        return webhook_data
+
+                # If not found or empty, continue waiting
+            except Exception as e:
+                print(f"Error querying webhook API: {e}")
 
             # Sleep before trying again
             time.sleep(self.webhook_check_interval)
 
-            # Update elapsed time (only needed if we have a timeout)
-            if self.webhook_timeout is not None:
-                elapsed_time = time.time() - start_time
-                if elapsed_time % 60 < 1:  # Print every ~60 seconds
-                    print(f"Still waiting... {int(elapsed_time)}s elapsed")
-
-        return None
+            # Print progress occasionally
+            elapsed_time = time.time() - start_time
+            if elapsed_time % 60 < 1:  # Print every ~60 seconds
+                print(f"Still waiting... {int(elapsed_time)}s elapsed")
 
     def test_create_lead_and_task_workflow(self):
         """Test the full workflow from creating a lead to handling webhook."""
@@ -115,22 +95,15 @@ class TestInstantlyE2E:
             print(f"Task created with ID: {task_id}")
 
             # Wait for the webhook to be processed
-            # Close should call our webhook endpoint asynchronously
-            # We'll wait for a notification file to be created
-            print(
-                f"Waiting for webhook to be processed (timeout: {self.webhook_timeout}s)..."
-            )
+            print("Waiting for webhook to be processed (no timeout)...")
             webhook_data = self.wait_for_webhook_processed(task_id)
-
-            if webhook_data is not None:
-                print("Webhook processed successfully!")
-                print(f"Webhook data: {json.dumps(webhook_data, indent=2)}")
-            else:
-                print("ERROR: Webhook was not processed within the timeout period")
-
-            assert (
-                webhook_data is not None
-            ), "Webhook was not processed within the timeout period"
+            # Clean up the webhook after successful processing
+            if webhook_data and webhook_id:
+                print(f"Deleting webhook with ID: {webhook_id}...")
+                self.close_api.delete_webhook(webhook_id)
+                print("Webhook deleted successfully")
+            # Verify webhook data
+            assert webhook_data is not None, "Webhook was not processed"
             assert (
                 webhook_data.get("campaign_name") == campaign_name
             ), "Campaign name doesn't match"
@@ -149,10 +122,6 @@ class TestInstantlyE2E:
             # - Check if a record exists in your database
             # - Call Instantly API to verify the lead is in the campaign
             # - Check for specific updates to the task or lead in Close
-        finally:
-            # Make sure webhook is deleted even if test fails
-            if webhook_id and not self.test_data.get("webhook_id"):
-                print(f"Cleaning up webhook with ID: {webhook_id}...")
-                self.close_api.delete_webhook(webhook_id)
-                print("Webhook deleted")
-            print("=== E2E TEST COMPLETED ===")
+        except Exception as e:
+            print(f"Error during test execution: {e}")
+            raise

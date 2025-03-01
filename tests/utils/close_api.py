@@ -66,16 +66,46 @@ class CloseAPI:
             "verify_ssl": False,
         }
 
-        response = requests.post(
-            f"{self.base_url}/webhook/", json=payload, headers=self.headers
-        )
+        retry_count = 0
+        max_retries = 1
 
-        if response.status_code != 201:
+        while retry_count <= max_retries:
+            response = requests.post(
+                f"{self.base_url}/webhook/", json=payload, headers=self.headers
+            )
+
+            if response.status_code == 201:
+                webhook_id = response.json()["id"]
+                print(f"Webhook created with ID: {webhook_id}")
+                return webhook_id
+            elif response.status_code == 400 and retry_count < max_retries:
+                # Check if error is due to duplicate webhook
+                error_data = response.json()
+                error_message = error_data.get("message", "")
+
+                if "Duplicate active subscription" in error_message:
+                    # Extract webhook ID using string manipulation
+                    import re
+
+                    webhook_match = re.search(r"whsub_[a-zA-Z0-9]+", error_message)
+
+                    if webhook_match:
+                        duplicate_webhook_id = webhook_match.group(0)
+                        print(f"Found duplicate webhook: {duplicate_webhook_id}")
+
+                        # Delete the duplicate webhook
+                        self.delete_webhook(duplicate_webhook_id)
+                        print(f"Deleted duplicate webhook: {duplicate_webhook_id}")
+
+                        # Increment retry counter
+                        retry_count += 1
+                        continue
+
+            # If we get here, either it's not a duplicate webhook error or we've exceeded retries
             raise Exception(f"Failed to create webhook: {response.text}")
 
-        webhook_id = response.json()["id"]
-        print(f"Webhook created with ID: {webhook_id}")
-        return webhook_id
+        # This should never be reached due to the exception above
+        return None
 
     def create_task_for_lead(self, lead_id, campaign_name):
         """Create a task with Instantly campaign name for a lead."""

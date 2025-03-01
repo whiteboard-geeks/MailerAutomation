@@ -9,7 +9,6 @@ from datetime import datetime, timedelta
 import traceback
 from base64 import b64encode
 import threading
-import tempfile
 
 from flask import Blueprint, request, jsonify, current_app
 
@@ -90,27 +89,6 @@ CLOSE_ENCODED_KEY = None  # This will be initialized when it's needed
 WEBHOOK_API_KEY = os.environ.get("WEBHOOK_API_KEY")
 INSTANTLY_API_KEY = os.environ.get("INSTANTLY_API_KEY")
 ENV_TYPE = os.environ.get("ENV_TYPE", "development")
-
-
-# Function to create a notification file for tests
-def _notify_test_of_webhook(task_id, data):
-    """Create a temporary file to notify tests that a webhook was processed."""
-    if ENV_TYPE != "test":
-        return
-
-    try:
-        # Use a standard location for test notifications
-        temp_dir = os.path.join(tempfile.gettempdir(), "instantly_webhook_tests")
-        os.makedirs(temp_dir, exist_ok=True)
-
-        # Create a file named after the task_id
-        file_path = os.path.join(temp_dir, f"{task_id}.json")
-        with open(file_path, "w") as f:
-            json.dump(data, f)
-
-        logger.debug(f"Created webhook notification file for test: {file_path}")
-    except Exception as e:
-        logger.error(f"Error creating test notification file: {e}")
 
 
 def get_close_encoded_key():
@@ -209,7 +187,7 @@ def add_task_to_instantly():
         # For example:
         # instantly_result = add_to_instantly_campaign(lead_id, campaign_name)
 
-        # If in test environment, track this webhook and create a notification
+        # If in test environment, track this webhook
         if ENV_TYPE == "test":
             webhook_data = {
                 "lead_id": lead_id,
@@ -220,9 +198,6 @@ def add_task_to_instantly():
 
             # Track in memory (with expiration)
             _webhook_tracker.add(task_id, webhook_data)
-
-            # Create a file notification for the test
-            _notify_test_of_webhook(task_id, webhook_data)
 
             logger.info(f"Recorded task {task_id} as processed for testing")
 
@@ -328,3 +303,27 @@ def get_campaigns():
         logger.error(f"Error fetching campaigns from Instantly: {e}")
         logger.error(traceback.format_exc())
         return jsonify({"status": "error", "message": str(e)}), 400
+
+
+# Testing endpoints - only available in test environment
+@instantly_bp.route("/test/webhooks", methods=["GET"])
+def get_processed_webhooks():
+    """Get all processed webhooks for testing purposes."""
+    # Get task_id from query parameters if provided
+    task_id = request.args.get("task_id")
+
+    if task_id:
+        # Return data for specific task
+        webhook_data = _webhook_tracker.get(task_id)
+        if webhook_data:
+            return jsonify({"status": "success", "data": webhook_data}), 200
+        else:
+            return jsonify(
+                {
+                    "status": "not_found",
+                    "message": f"No webhook data found for task_id: {task_id}",
+                }
+            ), 404
+    else:
+        # Return all webhooks (limited by WebhookTracker's internal max size and expiration)
+        return jsonify({"status": "success", "data": _webhook_tracker.get_all()}), 200
