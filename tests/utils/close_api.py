@@ -76,7 +76,6 @@ class CloseAPI:
 
             if response.status_code == 201:
                 webhook_id = response.json()["id"]
-                print(f"Webhook created with ID: {webhook_id}")
                 return webhook_id
             elif response.status_code == 400 and retry_count < max_retries:
                 # Check if error is due to duplicate webhook
