@@ -271,9 +271,9 @@ def campaign_exists(campaign_name):
     campaigns = campaigns_response.get("campaigns", [])
 
     # Look for a campaign with matching name
-    # Case-insensitive comparison for more flexibility
+    # Case-insensitive comparison and trim whitespace for more flexibility
     for campaign in campaigns:
-        if campaign.get("name", "").lower() == campaign_name.lower():
+        if campaign.get("name", "").strip().lower() == campaign_name.strip().lower():
             return {
                 "exists": True,
                 "campaign_id": campaign.get("id"),
