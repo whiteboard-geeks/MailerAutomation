@@ -4,11 +4,11 @@ Blueprint for handling Instantly API integrations.
 
 import logging
 import os
-import json
 from datetime import datetime, timedelta
 import traceback
 from base64 import b64encode
 import threading
+import re
 
 from flask import Blueprint, request, jsonify, current_app
 
@@ -102,6 +102,41 @@ def send_email(subject, body, **kwargs):
     return current_app.send_email(subject, body, **kwargs)
 
 
+def get_instantly_campaign_name(task_text):
+    """
+    Extract the campaign name from a Close task text.
+
+    This function removes "Instantly" and any trailing non-space characters
+    (like ":", "!", "--") and returns the rest of the text as the campaign name.
+
+    Args:
+        task_text (str): The text of the task from Close
+
+    Returns:
+        str: The extracted campaign name
+    """
+    if not task_text:
+        return ""
+
+    # First check if task starts with "Instantly"
+    if not task_text.lower().startswith("instantly"):
+        return task_text
+
+    # Try to match pattern with a separator (Instantly: Test or Instantly:Test)
+    match = re.search(r"^Instantly[:!,\-\s]+(.*)$", task_text)
+    if match:
+        return match.group(1).strip()
+
+    # Handle case where there is no separator (InstantlyTest)
+    # For this case, we want to return empty string
+    if re.match(r"^Instantly[a-zA-Z0-9]", task_text):
+        return ""
+
+    # Fallback - just remove "Instantly" prefix
+    remaining = task_text[len("Instantly") :].strip()
+    return remaining
+
+
 @instantly_bp.route("/add_task", methods=["POST"])
 def add_task_to_instantly():
     """Handle webhooks from Close when a task is created with 'Instantly:' prefix."""
@@ -128,14 +163,22 @@ def add_task_to_instantly():
         lead_id = task_data.get("lead_id")
 
         # Check if this is an Instantly task
-        if not task_text.startswith("Instantly:"):
-            logger.info(f"Task doesn't start with 'Instantly:': {task_text}")
+        if not task_text.lower().startswith("instantly"):
+            logger.info(f"Task doesn't start with 'Instantly': {task_text}")
             return jsonify(
                 {"status": "success", "message": "Not an Instantly task"}
             ), 200
 
-        # Extract campaign name - everything after "Instantly: "
-        campaign_name = task_text[len("Instantly:") :].strip()
+        # Extract campaign name using our helper function
+        campaign_name = get_instantly_campaign_name(task_text)
+
+        # Make sure we have a campaign name
+        if not campaign_name:
+            logger.warning(f"Could not extract campaign name from task: {task_text}")
+            return jsonify(
+                {"status": "error", "message": "No campaign name found in task text"}
+            ), 400
+
         logger.info(
             f"Processing Instantly campaign: {campaign_name} for lead: {lead_id}"
         )

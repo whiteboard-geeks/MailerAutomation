@@ -86,7 +86,7 @@ class TestInstantlyE2E:
             campaign_name = "Test20250227"
             print(f"Creating task for lead with campaign name: {campaign_name}...")
             task_data = self.close_api.create_task_for_lead(
-                lead_data["id"], f"Instantly: {campaign_name}"
+                lead_data["id"], campaign_name
             )
 
             # Store the task ID for verification

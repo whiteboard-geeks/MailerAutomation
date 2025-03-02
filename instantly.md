@@ -33,3 +33,11 @@ Create test lead in Close.
 6. Have it create a test lead and catch the webhook on webhook.site.
 7. Add the task_created_data to the integration test. See if there are any potential variables to add to test response.
 8. Add next steps and continue development!
+
+Find campaign in Instantly
+
+1. Create fn to parse out campaign name from task payload received and find campaign in Instantly. Will need to run the e2e test to have the webhook payload to work with when the task is created.
+2. define fn to parse out campaign from task text (take out what comes after Instantly:)
+3. env var for instantly api key
+4. compare campaign name to list of instantly campaigns (trim and lower all names and name from Close task); may need to paginate.
+5. Get campaignId if there's a campaign name match. If not send an error.
