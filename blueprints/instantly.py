@@ -14,6 +14,8 @@ import time
 
 from flask import Blueprint, request, jsonify, current_app
 
+from close_utils import get_lead_by_id
+
 # Set up blueprint
 instantly_bp = Blueprint("instantly", __name__)
 
@@ -342,8 +344,14 @@ def add_task_to_instantly():
         campaign_id = campaign_check.get("campaign_id")
         logger.info(f"Found Instantly campaign: {campaign_name} with ID: {campaign_id}")
 
-        # Get lead details from Close if needed
-        # This would depend on what data you need to send to Instantly
+        # Get lead details from Close
+        lead_details = get_lead_by_id(lead_id)
+        if not lead_details:
+            error_msg = f"Could not retrieve lead details for lead ID: {lead_id}"
+            logger.warning(error_msg)
+            return jsonify({"status": "error", "message": error_msg}), 404
+
+        logger.info(f"Retrieved lead details for lead ID: {lead_id}")
 
         # Add to Instantly campaign
         # Implement the logic to add this lead to the Instantly campaign
