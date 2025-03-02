@@ -9,6 +9,8 @@ import traceback
 from base64 import b64encode
 import threading
 import re
+import requests
+import time
 
 from flask import Blueprint, request, jsonify, current_app
 
@@ -137,6 +139,148 @@ def get_instantly_campaign_name(task_text):
     return remaining
 
 
+def get_instantly_campaigns(limit=100, starting_after=None, fetch_all=False):
+    """
+    Get campaigns from Instantly with cursor-based pagination support.
+
+    Args:
+        limit (int): Maximum number of items to return
+        starting_after (str): Cursor for fetching the next page (campaign ID)
+        fetch_all (bool): Whether to fetch all pages
+
+    Returns:
+        dict: A dictionary containing all campaigns with their details
+              or an error message if the request failed
+    """
+    # Correct endpoint URL based on the API documentation
+    url = "https://api.instantly.ai/api/v2/campaigns"
+
+    if not INSTANTLY_API_KEY:
+        error_msg = "Instantly API key is not configured"
+        logger.error(error_msg)
+        return {"status": "error", "message": error_msg}
+
+    headers = {
+        "accept": "application/json",
+        "Authorization": f"Bearer {INSTANTLY_API_KEY}",
+    }
+
+    # Parameters for cursor-based pagination
+    params = {"limit": limit}
+
+    # Add starting_after parameter if provided
+    if starting_after:
+        params["starting_after"] = starting_after
+
+    try:
+        if fetch_all:
+            # Fetch all pages using cursor-based pagination
+            all_campaigns = []
+            current_cursor = starting_after
+            has_more = True
+
+            while has_more:
+                # Update cursor for next page
+                if current_cursor:
+                    params["starting_after"] = current_cursor
+                elif "starting_after" in params and not current_cursor:
+                    # Remove starting_after for first page if cursor is None
+                    del params["starting_after"]
+
+                # Make request
+                response = requests.get(url, headers=headers, params=params)
+                response.raise_for_status()
+                data = response.json()
+
+                # Extract campaigns from this page
+                page_campaigns = data.get("items", [])
+                all_campaigns.extend(page_campaigns)
+
+                # Get cursor for next page
+                current_cursor = data.get("next_starting_after")
+
+                # If no next cursor, we've reached the end
+                if not current_cursor:
+                    has_more = False
+                else:
+                    # Add a small delay to avoid rate limiting
+                    time.sleep(0.5)
+
+            # Return combined results
+            return {
+                "status": "success",
+                "campaigns": all_campaigns,
+                "count": len(all_campaigns),
+            }
+        else:
+            # Fetch single page
+            response = requests.get(url, headers=headers, params=params)
+            response.raise_for_status()
+            data = response.json()
+
+            # Extract campaigns from the response
+            campaigns = data.get("items", [])
+            next_cursor = data.get("next_starting_after")
+
+            return {
+                "status": "success",
+                "campaigns": campaigns,
+                "count": len(campaigns),
+                "pagination": {
+                    "limit": limit,
+                    "next_starting_after": next_cursor,
+                    "has_more": bool(next_cursor),
+                },
+            }
+    except requests.exceptions.RequestException as e:
+        error_msg = f"Error fetching campaigns from Instantly: {str(e)}"
+        logger.error(error_msg)
+        return {"status": "error", "message": error_msg}
+
+
+def campaign_exists(campaign_name):
+    """
+    Check if a campaign with the given name exists in Instantly.
+
+    Args:
+        campaign_name (str): The name of the campaign to check
+
+    Returns:
+        dict: A dictionary containing:
+            - exists (bool): Whether the campaign exists
+            - campaign_id (str, optional): The ID of the campaign if it exists
+            - error (str, optional): Error message if an error occurred
+    """
+    if not campaign_name:
+        return {"exists": False, "error": "No campaign name provided"}
+
+    # Get all campaigns from Instantly (fetch all pages)
+    campaigns_response = get_instantly_campaigns(fetch_all=True)
+
+    # Check if there was an error getting campaigns
+    if campaigns_response.get("status") == "error":
+        return {
+            "exists": False,
+            "error": campaigns_response.get("message", "Unknown error occurred"),
+        }
+
+    # Extract campaigns from response
+    campaigns = campaigns_response.get("campaigns", [])
+
+    # Look for a campaign with matching name
+    # Case-insensitive comparison for more flexibility
+    for campaign in campaigns:
+        if campaign.get("name", "").lower() == campaign_name.lower():
+            return {
+                "exists": True,
+                "campaign_id": campaign.get("id"),
+                "campaign_data": campaign,
+            }
+
+    # If we get here, no campaign with that name was found
+    return {"exists": False}
+
+
 @instantly_bp.route("/add_task", methods=["POST"])
 def add_task_to_instantly():
     """Handle webhooks from Close when a task is created with 'Instantly:' prefix."""
@@ -183,6 +327,21 @@ def add_task_to_instantly():
             f"Processing Instantly campaign: {campaign_name} for lead: {lead_id}"
         )
 
+        # Check if the campaign exists in Instantly
+        campaign_check = campaign_exists(campaign_name)
+
+        if not campaign_check.get("exists"):
+            error_msg = f"Campaign '{campaign_name}' does not exist in Instantly"
+            if "error" in campaign_check:
+                error_msg = f"{error_msg}: {campaign_check['error']}"
+
+            logger.warning(error_msg)
+            return jsonify({"status": "error", "message": error_msg}), 404
+
+        # Campaign exists, so get the campaign ID
+        campaign_id = campaign_check.get("campaign_id")
+        logger.info(f"Found Instantly campaign: {campaign_name} with ID: {campaign_id}")
+
         # Get lead details from Close if needed
         # This would depend on what data you need to send to Instantly
 
@@ -191,13 +350,14 @@ def add_task_to_instantly():
         # This might involve calling Instantly's API
 
         # For example:
-        # instantly_result = add_to_instantly_campaign(lead_id, campaign_name)
+        # instantly_result = add_to_instantly_campaign(lead_id, campaign_name, campaign_id)
 
         # If in test environment, track this webhook
         if ENV_TYPE == "test":
             webhook_data = {
                 "lead_id": lead_id,
                 "campaign_name": campaign_name,
+                "campaign_id": campaign_id,
                 "processed": True,
                 "timestamp": datetime.now().isoformat(),
             }
@@ -215,6 +375,7 @@ def add_task_to_instantly():
                 "lead_id": lead_id,
                 "task_id": task_id,
                 "campaign_name": campaign_name,
+                "campaign_id": campaign_id,
             }
         ), 200
 
@@ -258,3 +419,41 @@ def get_processed_webhooks():
     else:
         # Return all webhooks (limited by WebhookTracker's internal max size and expiration)
         return jsonify({"status": "success", "data": _webhook_tracker.get_all()}), 200
+
+
+@instantly_bp.route("/campaigns", methods=["GET"])
+def list_instantly_campaigns():
+    """
+    List all campaigns from Instantly or check if a specific campaign exists.
+
+    Query Parameters:
+        name (optional): The name of a campaign to check for existence
+        limit (optional): Maximum number of items to return (default: 100)
+        starting_after (optional): Campaign ID cursor for pagination
+        fetch_all (optional): Whether to fetch all pages (default: false)
+
+    Returns:
+        JSON response with campaign data or existence check result
+    """
+    campaign_name = request.args.get("name")
+
+    if campaign_name:
+        # Check if specific campaign exists
+        result = campaign_exists(campaign_name)
+        return jsonify(result), 200 if result.get("exists", False) else 404
+    else:
+        # Get pagination parameters
+        try:
+            limit = int(request.args.get("limit", 100))
+            starting_after = request.args.get("starting_after")
+            fetch_all = request.args.get("fetch_all", "").lower() == "true"
+        except ValueError:
+            return jsonify(
+                {"status": "error", "message": "Invalid pagination parameters"}
+            ), 400
+
+        # List campaigns with cursor-based pagination
+        campaigns = get_instantly_campaigns(
+            limit=limit, starting_after=starting_after, fetch_all=fetch_all
+        )
+        return jsonify(campaigns), 200 if campaigns.get("status") != "error" else 500
