@@ -11,6 +11,7 @@ import threading
 import re
 import requests
 import time
+import json
 
 from flask import Blueprint, request, jsonify, current_app
 
@@ -353,12 +354,48 @@ def add_task_to_instantly():
 
         logger.info(f"Retrieved lead details for lead ID: {lead_id}")
 
-        # Add to Instantly campaign
-        # Implement the logic to add this lead to the Instantly campaign
-        # This might involve calling Instantly's API
+        # Extract first and last name from the lead details
+        full_name = lead_details.get("name", "")
+        first_name, last_name = split_name(full_name)
 
-        # For example:
-        # instantly_result = add_to_instantly_campaign(lead_id, campaign_name, campaign_id)
+        # Get contact email
+        email = None
+        contacts = lead_details.get("contacts", [])
+        for contact in contacts:
+            emails = contact.get("emails", [])
+            if emails:
+                email = emails[0].get("email")
+                break
+
+        if not email:
+            error_msg = f"No email found for lead ID: {lead_id}"
+            logger.warning(error_msg)
+            return jsonify({"status": "error", "message": error_msg}), 400
+
+        # Get company name and date & location from custom fields
+        company_name = lead_details.get(
+            "custom.lcf_tRacWU9nMn0l2i0xhizYpewewmw995aWYaJKgDgDb9o", ""
+        )
+        date_location = lead_details.get(
+            "custom.cf_DTgmXXPozUH3707H1MYu2PhhDznJjWbtmDcb7zme5a9", ""
+        )
+
+        # Add to Instantly campaign
+        instantly_result = add_to_instantly_campaign(
+            campaign_id=campaign_id,
+            email=email,
+            first_name=first_name,
+            last_name=last_name,
+            company_name=company_name,
+            date_location=date_location,
+        )
+
+        if instantly_result.get("status") == "error":
+            error_msg = (
+                f"Failed to add lead to Instantly: {instantly_result.get('message')}"
+            )
+            logger.error(error_msg)
+            return jsonify({"status": "error", "message": error_msg}), 500
 
         # If in test environment, track this webhook
         if ENV_TYPE == "test":
@@ -368,6 +405,7 @@ def add_task_to_instantly():
                 "campaign_id": campaign_id,
                 "processed": True,
                 "timestamp": datetime.now().isoformat(),
+                "instantly_result": instantly_result,
             }
 
             # Track in memory (with expiration)
@@ -375,15 +413,15 @@ def add_task_to_instantly():
 
             logger.info(f"Recorded task {task_id} as processed for testing")
 
-        # For now, just return success
         return jsonify(
             {
                 "status": "success",
-                "message": f"Task added to Instantly campaign: {campaign_name}",
+                "message": f"Lead added to Instantly campaign: {campaign_name}",
                 "lead_id": lead_id,
                 "task_id": task_id,
                 "campaign_name": campaign_name,
                 "campaign_id": campaign_id,
+                "instantly_result": instantly_result,
             }
         ), 200
 
@@ -403,6 +441,107 @@ def add_task_to_instantly():
                 "error": str(e),
             }
         ), 500
+
+
+def split_name(full_name):
+    """
+    Split a full name into first name and last name.
+
+    Args:
+        full_name (str): The full name to split
+
+    Returns:
+        tuple: (first_name, last_name)
+    """
+    if not full_name:
+        return "", ""
+
+    # Split the name by spaces
+    parts = full_name.strip().split()
+
+    if len(parts) == 1:
+        # Only one word, assume it's the first name
+        return parts[0], ""
+    else:
+        # Assume last word is last name, everything else is first name
+        return " ".join(parts[:-1]), parts[-1]
+
+
+def add_to_instantly_campaign(
+    campaign_id, email, first_name="", last_name="", company_name="", date_location=""
+):
+    """
+    Add a lead to an Instantly campaign.
+
+    Args:
+        campaign_id (str): Instantly campaign ID
+        email (str): Email address of the lead
+        first_name (str): First name of the lead
+        last_name (str): Last name of the lead
+        company_name (str): Company name of the lead
+        date_location (str): Date & Location Mailer Delivered value
+
+    Returns:
+        dict: API response from Instantly
+    """
+    if not INSTANTLY_API_KEY:
+        error_msg = "Instantly API key is not configured"
+        logger.error(error_msg)
+        return {"status": "error", "message": error_msg}
+
+    url = "https://api.instantly.ai/api/v2/leads"
+
+    headers = {
+        "accept": "application/json",
+        "Content-Type": "application/json",
+        "Authorization": f"Bearer {INSTANTLY_API_KEY}",
+    }
+
+    # Prepare payload
+    payload = {
+        "campaign": campaign_id,
+        "email": email,
+        "first_name": first_name,
+        "last_name": last_name,
+        "company_name": company_name,
+        "custom_variables": {"Date & Location Mailer Delivered": date_location},
+    }
+
+    # Remove empty fields
+    for key, value in list(payload.items()):
+        if value == "" and key not in [
+            "first_name",
+            "last_name",
+        ]:  # Allow empty first/last names
+            del payload[key]
+
+    # Remove empty custom variables
+    if not date_location:
+        del payload["custom_variables"]
+
+    try:
+        response = requests.post(url, headers=headers, json=payload)
+        response.raise_for_status()
+
+        # Parse response
+        data = response.json()
+        return {
+            "status": "success",
+            "lead_id": data.get("id"),
+            "message": "Lead added to Instantly campaign",
+            "response": data,
+        }
+    except requests.exceptions.RequestException as e:
+        error_msg = f"Error adding lead to Instantly: {str(e)}"
+        if hasattr(e, "response") and e.response is not None:
+            try:
+                error_data = e.response.json()
+                error_msg = f"{error_msg} - {error_data}"
+            except (ValueError, json.JSONDecodeError, AttributeError):
+                error_msg = f"{error_msg} - Status code: {e.response.status_code}"
+
+        logger.error(error_msg)
+        return {"status": "error", "message": error_msg}
 
 
 # Testing endpoints - only available in test environment
