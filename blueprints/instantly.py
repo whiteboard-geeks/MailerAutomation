@@ -338,6 +338,26 @@ def add_task_to_instantly():
             if "error" in campaign_check:
                 error_msg = f"{error_msg}: {campaign_check['error']}"
 
+            # Create Close lead URL
+            close_lead_url = f"https://app.close.com/lead/{lead_id}/"
+
+            # Send error email notification
+            email_subject = f"Instantly Campaign Not Found: {campaign_name}"
+            email_body = f"""
+Error: Campaign not found in Instantly
+
+Lead ID: {lead_id}
+Lead URL: {close_lead_url}
+Task Text: {task_text}
+Campaign Name (extracted): {campaign_name}
+
+The campaign name could not be found in Instantly. Please verify the campaign exists or check the task text format.
+
+Error details: {error_msg}
+            """
+
+            send_email(subject=email_subject, body=email_body)
+
             logger.warning(error_msg)
             return jsonify({"status": "error", "message": error_msg}), 404
 
