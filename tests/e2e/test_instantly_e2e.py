@@ -1,5 +1,4 @@
 import os
-import json
 import time
 import requests
 from tests.utils.close_api import CloseAPI
@@ -113,15 +112,10 @@ class TestInstantlyE2E:
             assert (
                 webhook_data.get("processed") is True
             ), "Webhook wasn't marked as processed"
-
+            assert (
+                webhook_data.get("instantly_result", {}).get("status") == "success"
+            ), "Instantly API call failed"
             print("All assertions passed!")
-
-            # 4. Verify the lead was properly processed
-            # In an actual implementation, check if the lead was added to Instantly campaign
-            # For example:
-            # - Check if a record exists in your database
-            # - Call Instantly API to verify the lead is in the campaign
-            # - Check for specific updates to the task or lead in Close
         except Exception as e:
             print(f"Error during test execution: {e}")
             raise
