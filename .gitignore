@@ -2,7 +2,6 @@ cache.sqlite
 .flake8
 env/
 *.pyc
-launch.json
 .env
 *.log
 *.sqlite
