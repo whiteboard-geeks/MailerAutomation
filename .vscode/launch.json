@@ -74,6 +74,24 @@
                 "ENV_TYPE": "test"
             },
             "cwd": "${workspaceFolder}"
+        },
+        {
+            "name": "Instantly Email Sent Integration Tests",
+            "type": "debugpy",
+            "request": "launch",
+            "module": "pytest",
+            "args": [
+                "tests/e2e/test_instantly_email_sent_integration.py",
+                "--verbose",
+                "-s"
+            ],
+            "console": "integratedTerminal",
+            "justMyCode": false,
+            "env": {
+                "PYTHONPATH": "${workspaceFolder}",
+                "ENV_TYPE": "test"
+            },
+            "cwd": "${workspaceFolder}"
         }
     ],
     "compounds": [
@@ -90,17 +108,14 @@
             "postDebugTask": "Stop Redis and ngrok"
         },
         {
-            "name": "Instantly E2E Test Environment",
+            "name": "Instantly E2E",
             "configurations": ["Flask", "Celery Worker", "Instantly E2E Tests"],
-            "preLaunchTask": "Start Redis",
             "stopAll": true
         },
         {
-            "name": "Instantly E2E Test Environment with ngrok",
-            "configurations": ["Flask", "Celery Worker", "Instantly E2E Tests"],
-            "preLaunchTask": "Start Redis and ngrok",
-            "postDebugTask": "Stop Redis and ngrok",
+            "name": "Instantly Email Sent Integration",
+            "configurations": ["Flask", "Celery Worker", "Instantly Email Sent Integration Tests"],
             "stopAll": true
-        }
+        },
     ]
 }

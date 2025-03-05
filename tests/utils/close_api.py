@@ -15,18 +15,29 @@ class CloseAPI:
         }
         self.base_url = "https://api.close.com/api/v1"
 
-    def create_test_lead(self, email_suffix=None):
+    def create_test_lead(
+        self, email=None, first_name=None, last_name=None, email_suffix=None
+    ):
         """Create a test lead in Close."""
         # Generate unique email to avoid conflicts
         timestamp = datetime.now().strftime("%Y%m%d%H%M%S")  # Format as YYYYMMDDhhmmss
         email_suffix = email_suffix or timestamp
-        email = f"lance+instantly{email_suffix}@whiteboardgeeks.com"
+
+        # Use provided email or generate one
+        if not email:
+            email = f"lance+instantly{email_suffix}@whiteboardgeeks.com"
+
+        # Use provided names or generate ones
+        if not first_name:
+            first_name = f"Lance Instantly{timestamp}"
+        if not last_name:
+            last_name = "Test"
 
         payload = {
-            "name": f"Test Instantly{timestamp}",
+            "name": f"{first_name} {last_name}",
             "contacts": [
                 {
-                    "name": f"Lance Instantly{timestamp}",
+                    "name": f"{first_name} {last_name}",
                     "emails": [{"email": email, "type": "office"}],
                 }
             ],

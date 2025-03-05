@@ -7,6 +7,8 @@ import os
 import traceback
 from base64 import b64encode
 from time import sleep
+import json
+import functools
 
 import requests
 
@@ -16,6 +18,49 @@ logger = logging.getLogger(__name__)
 # Get API key from environment
 CLOSE_API_KEY = os.environ.get("CLOSE_API_KEY")
 CLOSE_ENCODED_KEY = b64encode(f"{CLOSE_API_KEY}:".encode()).decode()
+
+
+def retry_with_backoff(max_retries=3, initial_delay=1):
+    """
+    Decorator that adds retry logic with exponential backoff to a function.
+
+    Args:
+        max_retries (int): Maximum number of retry attempts
+        initial_delay (int): Initial delay in seconds before first retry
+
+    Returns:
+        function: Decorated function with retry logic
+    """
+
+    def decorator(func):
+        @functools.wraps(func)
+        def wrapper(*args, **kwargs):
+            delay = initial_delay
+            last_exception = None
+
+            for attempt in range(max_retries + 1):
+                try:
+                    return func(*args, **kwargs)
+                except requests.exceptions.RequestException as e:
+                    last_exception = e
+                    if attempt == max_retries:
+                        logger.error(
+                            f"Max retries ({max_retries}) exceeded for {func.__name__}: {str(e)}"
+                        )
+                        raise last_exception
+
+                    logger.warning(
+                        f"Attempt {attempt + 1}/{max_retries + 1} failed for {func.__name__}. "
+                        f"Retrying in {delay} seconds. Error: {str(e)}"
+                    )
+                    sleep(delay)
+                    delay *= 2  # Exponential backoff
+
+            raise last_exception
+
+        return wrapper
+
+    return decorator
 
 
 def get_close_headers():
@@ -31,6 +76,57 @@ def get_close_headers():
     }
 
 
+@retry_with_backoff(max_retries=3, initial_delay=1)
+def make_close_request(method, url, **kwargs):
+    """
+    Make a request to the Close API with retry logic.
+
+    Args:
+        method (str): HTTP method (get, post, put, delete)
+        url (str): URL to make the request to
+        **kwargs: Additional arguments to pass to requests
+
+    Returns:
+        requests.Response: The response from the Close API
+    """
+    headers = get_close_headers()
+    if "headers" in kwargs:
+        headers.update(kwargs["headers"])
+    kwargs["headers"] = headers
+
+    response = requests.request(method, url, **kwargs)
+    response.raise_for_status()
+    return response
+
+
+def create_email_search_query(email):
+    """
+    Create a Close API query to find leads with a contact that has the given email.
+
+    Args:
+        email (str): The email address to search for.
+
+    Returns:
+        dict: The Close API query.
+    """
+    # Load the query template
+    query_path = os.path.join(
+        os.path.dirname(__file__),
+        "close_queries",
+        "leads_with_contact_with_email.json",
+    )
+    with open(query_path, "r") as f:
+        query_template = json.load(f)
+
+    # Replace the email value in the query
+    query_template["query"]["queries"][1]["queries"][0]["related_query"]["queries"][0][
+        "related_query"
+    ]["queries"][0]["condition"]["value"] = email
+
+    return query_template
+
+
+@retry_with_backoff(max_retries=3, initial_delay=1)
 def search_close_leads(query):
     """
     Search for leads in Close using a query.
@@ -42,40 +138,19 @@ def search_close_leads(query):
         list: A list of leads matching the query, or empty list if none found or error occurs.
     """
     try:
-        headers = get_close_headers()
-
         data_to_return = []
         cursor = None
-        retry_count = 0
-        max_retries = 3
 
         while True:
             if cursor:
                 query["cursor"] = cursor
 
-            # Add retry logic with exponential backoff
-            try:
-                response = requests.post(
-                    "https://api.close.com/api/v1/data/search/",
-                    json=query,
-                    headers=headers,
-                    timeout=30,  # Add timeout
-                )
-                response.raise_for_status()  # Raise exception for non-200 status codes
-
-            except requests.exceptions.RequestException as e:
-                retry_count += 1
-                if retry_count > max_retries:
-                    logger.error(f"Max retries exceeded when querying Close API: {e}")
-                    raise
-
-                sleep_time = 2**retry_count  # Exponential backoff
-                logger.warning(
-                    f"Retrying Close API request in {sleep_time} seconds. Attempt {retry_count} of {max_retries}"
-                )
-                sleep(sleep_time)
-                continue
-
+            response = make_close_request(
+                "post",
+                "https://api.close.com/api/v1/data/search/",
+                json=query,
+                timeout=30,
+            )
             response_data = response.json()
 
             # Log response data for debugging
@@ -114,6 +189,7 @@ def search_close_leads(query):
         return []  # Return empty list instead of None
 
 
+@retry_with_backoff(max_retries=3, initial_delay=1)
 def get_lead_by_id(lead_id):
     """
     Get a lead by its ID from Close.
@@ -128,45 +204,83 @@ def get_lead_by_id(lead_id):
         dict: The lead data or None if not found or error occurs.
     """
     try:
-        headers = get_close_headers()
-
         url = f"https://api.close.com/api/v1/lead/{lead_id}/"
+        response = make_close_request("get", url, timeout=30)
 
-        retry_count = 0
-        max_retries = 3
+        if response.status_code == 404:
+            logger.warning(f"Lead with ID {lead_id} not found")
+            return None
 
-        while retry_count <= max_retries:
-            try:
-                response = requests.get(
-                    url,
-                    headers=headers,
-                    timeout=30,  # Add timeout
-                )
-
-                if response.status_code == 404:
-                    logger.warning(f"Lead with ID {lead_id} not found")
-                    return None
-
-                response.raise_for_status()
-                return response.json()
-
-            except requests.exceptions.RequestException as e:
-                retry_count += 1
-                if retry_count > max_retries:
-                    logger.error(
-                        f"Max retries exceeded when getting lead {lead_id}: {e}"
-                    )
-                    break
-
-                sleep_time = 2**retry_count  # Exponential backoff
-                logger.warning(
-                    f"Retrying Close API request in {sleep_time} seconds. Attempt {retry_count} of {max_retries}"
-                )
-                sleep(sleep_time)
-
-        return None
+        return response.json()
 
     except Exception as e:
         logger.error(f"Failed to get lead {lead_id}: {e}")
+        logger.error(f"Traceback: {traceback.format_exc()}")
+        return None
+
+
+@retry_with_backoff(max_retries=3, initial_delay=1)
+def get_lead_email_activities(lead_id):
+    """
+    Get all email activities for a lead.
+
+    Args:
+        lead_id (str): The ID of the lead to get email activities for.
+
+    Returns:
+        list: A list of email activities, or empty list if none found or error occurs.
+    """
+    try:
+        url = f"https://api.close.com/api/v1/activity/email/?lead_id={lead_id}"
+        response = make_close_request("get", url)
+        data = response.json()
+        return data.get("data", [])
+
+    except Exception as e:
+        logger.error(f"Failed to get email activities for lead {lead_id}: {e}")
+        logger.error(f"Traceback: {traceback.format_exc()}")
+        return []
+
+
+@retry_with_backoff(max_retries=3, initial_delay=1)
+def delete_email_activity(email_id):
+    """
+    Delete an email activity from Close.
+
+    Args:
+        email_id (str): The ID of the email activity to delete.
+
+    Returns:
+        bool: True if successful, False otherwise.
+    """
+    try:
+        url = f"https://api.close.com/api/v1/activity/email/{email_id}/"
+        response = make_close_request("delete", url)
+        return True
+
+    except Exception as e:
+        logger.error(f"Failed to delete email activity {email_id}: {e}")
+        logger.error(f"Traceback: {traceback.format_exc()}")
+        return False
+
+
+@retry_with_backoff(max_retries=3, initial_delay=1)
+def get_task(task_id):
+    """
+    Get a task by its ID from Close.
+
+    Args:
+        task_id (str): The ID of the task to retrieve.
+
+    Returns:
+        dict: The task data or None if not found or error occurs.
+    """
+    try:
+        url = f"https://api.close.com/api/v1/task/{task_id}/"
+        response = make_close_request("get", url)
+        return response.json()
+
+    except Exception as e:
+        logger.error(f"Failed to get task {task_id}: {e}")
         logger.error(f"Traceback: {traceback.format_exc()}")
         return None
