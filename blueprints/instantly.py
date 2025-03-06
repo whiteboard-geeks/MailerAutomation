@@ -553,7 +553,7 @@ def add_to_instantly_campaign(
         "first_name": first_name,
         "last_name": last_name,
         "company_name": company_name,
-        "custom_variables": {"Date & Location Mailer Delivered": date_location},
+        "custom_variables": {"date_and_location_delivered": date_location},
     }
 
     # Remove empty fields

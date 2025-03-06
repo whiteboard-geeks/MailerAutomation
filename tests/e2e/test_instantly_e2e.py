@@ -82,7 +82,7 @@ class TestInstantlyE2E:
             print(f"Webhook created with ID: {webhook_id}")
 
             # Create a task with Instantly campaign name
-            campaign_name = "Test20250227"
+            campaign_name = "Test20250305"
             print(f"Creating task for lead with campaign name: {campaign_name}...")
             task_data = self.close_api.create_task_for_lead(
                 lead_data["id"], campaign_name
