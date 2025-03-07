@@ -63,6 +63,7 @@ jobs:
       - name: Run E2E tests against staging
         env:
           STAGING_URL: "https://mailer-automation-staging-a1a3b6abc50d.herokuapp.com"
+          ENV_TYPE: "staging"
         run: |
           # Set the base URL for tests to point to staging
           export BASE_URL=$STAGING_URL

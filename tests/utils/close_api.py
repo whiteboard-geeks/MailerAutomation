@@ -57,8 +57,19 @@ class CloseAPI:
 
     def create_webhook_to_catch_task_created(self):
         """Create a webhook to catch task created events."""
+        # Get the base URL from environment or use ngrok for development
+        base_url = os.environ.get(
+            "BASE_URL", "http://locust-pleased-thankfully.ngrok-free.app"
+        )
+
+        # Remove trailing slash if present
+        if base_url.endswith("/"):
+            base_url = base_url[:-1]
+
+        webhook_url = f"{base_url}/instantly/add_lead"
+
         payload = {
-            "url": "http://locust-pleased-thankfully.ngrok-free.app/instantly/add_lead",
+            "url": webhook_url,
             "events": [
                 {
                     "object_type": "task.lead",
