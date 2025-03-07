@@ -10,6 +10,13 @@ class CloseAPI:
         self.api_key = api_key or os.environ.get("CLOSE_API_KEY")
         print(f"CLOSE_API_KEY environment variable: {os.environ.get('CLOSE_API_KEY')}")
         print(f"API key being used: {self.api_key}")
+
+        # Check if API key is None or empty
+        if not self.api_key:
+            raise ValueError(
+                "CLOSE_API_KEY is not set. Please set the CLOSE_API_KEY environment variable."
+            )
+
         self.encoded_key = b64encode(f"{self.api_key}:".encode()).decode()
         self.headers = {
             "Content-Type": "application/json",
