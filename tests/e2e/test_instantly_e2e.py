@@ -17,10 +17,9 @@ class TestInstantlyE2E:
         self.webhook_check_interval = 1  # Check interval in seconds
         self.base_url = os.environ.get("BASE_URL", "http://localhost:8080")
 
-        # Make sure ENV_TYPE is set to 'test' for the webhook tracking to work
-        if os.environ.get("ENV_TYPE") != "test":
-            os.environ["ENV_TYPE"] = "test"
-        print(f"ENV_TYPE: {os.environ.get('ENV_TYPE')}")
+        # Save original ENV_TYPE value to restore later
+        self.original_env_type = os.environ.get("ENV_TYPE")
+        print(f"Original ENV_TYPE: {self.original_env_type}")
 
     def teardown_method(self):
         """Cleanup after each test."""
@@ -32,9 +31,17 @@ class TestInstantlyE2E:
             else:
                 print(f"Warning: Lead deletion may have failed: {result}")
 
+        # Restore original ENV_TYPE if it was changed
+        if self.original_env_type:
+            os.environ["ENV_TYPE"] = self.original_env_type
+        elif "ENV_TYPE" in os.environ:
+            del os.environ["ENV_TYPE"]
+
     def wait_for_webhook_processed(self, task_id, route=None):
         """Wait for webhook to be processed by checking the webhook tracker API."""
-        webhook_endpoint = f"{self.base_url}/instantly/test/webhooks?task_id={task_id}"
+        webhook_endpoint = (
+            f"{self.base_url}/instantly/webhooks/status?task_id={task_id}"
+        )
         if route:
             webhook_endpoint += f"&route={route}"
 

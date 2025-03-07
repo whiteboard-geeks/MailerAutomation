@@ -4,14 +4,14 @@ Blueprint for handling Instantly API integrations.
 
 import logging
 import os
-from datetime import datetime, timedelta
+from datetime import datetime
 import traceback
 from base64 import b64encode
-import threading
 import re
 import requests
 import time
 import json
+from redis import Redis
 
 from flask import Blueprint, request, jsonify, current_app
 
@@ -52,65 +52,62 @@ def check_route_response(status_code, response_data, context=None):
     return response_data, status_code
 
 
-# Track processed webhooks for testing purposes (only used in test environment)
-# Using a class to manage lifecycle and memory usage
+# Track processed webhooks using Redis for persistence across environments
 class WebhookTracker:
-    def __init__(self, max_size=100, expiration_minutes=30):
-        self.webhooks = {}
-        self.lock = threading.Lock()
-        self.max_size = max_size
-        self.expiration_minutes = expiration_minutes
-        self.last_cleanup = datetime.now()
+    def __init__(self, expiration_seconds=1800):  # Default 30 minutes
+        self.redis_url = os.environ.get("REDISCLOUD_URL")
+        self.redis = Redis.from_url(self.redis_url) if self.redis_url else None
+        self.expiration_seconds = expiration_seconds
+        self.prefix = "webhook_tracker:"
+
+        if not self.redis:
+            logger.warning(
+                "Redis not configured. WebhookTracker will not persist data."
+            )
+            self.webhooks = {}  # Fallback to in-memory if Redis not available
 
     def add(self, task_id, data):
         """Add a processed webhook to the tracker."""
-        with self.lock:
-            # Add timestamp if not provided
-            if "timestamp" not in data:
-                data["timestamp"] = datetime.now().isoformat()
+        # Add timestamp if not provided
+        if "timestamp" not in data:
+            data["timestamp"] = datetime.now().isoformat()
 
+        if self.redis:
+            # Store in Redis with expiration
+            key = f"{self.prefix}{task_id}"
+            self.redis.setex(key, self.expiration_seconds, json.dumps(data))
+            logger.info(f"Stored webhook data in Redis for task {task_id}")
+        else:
+            # Fallback to in-memory storage
             self.webhooks[task_id] = data
-
-            # Clean up if we've hit max size or it's been a while
-            if len(self.webhooks) > self.max_size or (
-                datetime.now() - self.last_cleanup
-            ) > timedelta(minutes=5):
-                self._cleanup()
+            logger.info(f"Stored webhook data in memory for task {task_id}")
 
     def get(self, task_id):
         """Get information about a processed webhook."""
-        with self.lock:
+        if self.redis:
+            key = f"{self.prefix}{task_id}"
+            data = self.redis.get(key)
+            if data:
+                return json.loads(data)
+            return {}
+        else:
+            # Fallback to in-memory
             return self.webhooks.get(task_id, {})
 
     def get_all(self):
         """Get all processed webhooks (for debugging)."""
-        with self.lock:
+        if self.redis:
+            keys = self.redis.keys(f"{self.prefix}*")
+            result = {}
+            for key in keys:
+                task_id = key.decode("utf-8").replace(self.prefix, "")
+                data = self.redis.get(key)
+                if data:
+                    result[task_id] = json.loads(data)
+            return result
+        else:
+            # Fallback to in-memory
             return {k: v for k, v in self.webhooks.items()}
-
-    def _cleanup(self):
-        """Remove old webhooks to prevent memory leaks."""
-        now = datetime.now()
-        self.last_cleanup = now
-
-        # Convert to list first to avoid modifying dict during iteration
-        to_remove = []
-        for task_id, data in self.webhooks.items():
-            try:
-                # Parse the timestamp and check if it's expired
-                timestamp = datetime.fromisoformat(data["timestamp"])
-                if (now - timestamp) > timedelta(minutes=self.expiration_minutes):
-                    to_remove.append(task_id)
-            except (KeyError, ValueError):
-                # If there's any problem with the timestamp, consider it expired
-                to_remove.append(task_id)
-
-        # Remove expired entries
-        for task_id in to_remove:
-            del self.webhooks[task_id]
-
-        logger.debug(
-            f"Webhook tracker cleanup: removed {len(to_remove)} items, {len(self.webhooks)} remaining"
-        )
 
 
 # Create the webhook tracker instance
@@ -446,22 +443,21 @@ Error details: {error_msg}
             logger.error(error_msg)
             return jsonify({"status": "error", "message": error_msg}), 500
 
-        # If in test environment, track this webhook
-        if ENV_TYPE == "test":
-            webhook_data = {
-                "route": "add_lead",
-                "lead_id": lead_id,
-                "campaign_name": campaign_name,
-                "campaign_id": campaign_id,
-                "processed": True,
-                "timestamp": datetime.now().isoformat(),
-                "instantly_result": instantly_result,
-            }
+        # Track this webhook
+        webhook_data = {
+            "route": "add_lead",
+            "lead_id": lead_id,
+            "campaign_name": campaign_name,
+            "campaign_id": campaign_id,
+            "processed": True,
+            "timestamp": datetime.now().isoformat(),
+            "instantly_result": instantly_result,
+        }
 
-            # Track in memory (with expiration)
-            _webhook_tracker.add(task_id, webhook_data)
+        # Track in Redis (with expiration)
+        _webhook_tracker.add(task_id, webhook_data)
 
-            logger.info(f"Recorded task {task_id} as processed for testing")
+        logger.info(f"Recorded task {task_id} as processed")
 
         return jsonify(
             {
@@ -594,10 +590,10 @@ def add_to_instantly_campaign(
         return {"status": "error", "message": error_msg}
 
 
-# Testing endpoints - only available in test environment
-@instantly_bp.route("/test/webhooks", methods=["GET"])
+# Webhook tracking endpoints - available in all environments
+@instantly_bp.route("/webhooks/status", methods=["GET"])
 def get_processed_webhooks():
-    """Get all processed webhooks for testing purposes."""
+    """Get processed webhooks for testing and monitoring purposes."""
     # Get task_id and route from query parameters if provided
     task_id = request.args.get("task_id")
     route = request.args.get("route")
@@ -742,25 +738,22 @@ def handle_instantly_email_sent():
         )
         complete_response.raise_for_status()
 
-        # If in test environment, track this webhook
-        if ENV_TYPE == "test":
-            webhook_data = {
-                "route": "email_sent",
-                "lead_id": lead_id,
-                "task_id": task_id,
-                "campaign_name": campaign_name,
-                "processed": True,
-                "timestamp": datetime.now().isoformat(),
-                "email_data": {
-                    "subject": email_subject,
-                    "to": lead_email,
-                    "from": data.get("email_account"),
-                },
-            }
-            _webhook_tracker.add(task_id, webhook_data)
-            logger.info(
-                f"Recorded email sent webhook for task {task_id} in test environment"
-            )
+        # Track this webhook
+        webhook_data = {
+            "route": "email_sent",
+            "lead_id": lead_id,
+            "task_id": task_id,
+            "campaign_name": campaign_name,
+            "processed": True,
+            "timestamp": datetime.now().isoformat(),
+            "email_data": {
+                "subject": email_subject,
+                "to": lead_email,
+                "from": data.get("email_account"),
+            },
+        }
+        _webhook_tracker.add(task_id, webhook_data)
+        logger.info(f"Recorded email sent webhook for task {task_id}")
 
         # Get the contact with the matching email
         lead_details = get_lead_by_id(lead_id)
