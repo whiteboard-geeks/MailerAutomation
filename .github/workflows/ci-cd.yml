@@ -68,6 +68,9 @@ jobs:
         env:
           STAGING_URL: "https://mailer-automation-staging-a1a3b6abc50d.herokuapp.com"
           ENV_TYPE: "staging"
+          CLOSE_API_KEY: ${{ secrets.CLOSE_API_KEY }}
+          INSTANTLY_API_KEY: ${{ secrets.INSTANTLY_API_KEY }}
+          WEBHOOK_API_KEY: ${{ secrets.WEBHOOK_API_KEY }}
         run: |
           # Set the base URL for tests to point to staging
           export BASE_URL=$STAGING_URL
