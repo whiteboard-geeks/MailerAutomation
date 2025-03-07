@@ -38,7 +38,7 @@ jobs:
         with:
           heroku_api_key: ${{ secrets.HEROKU_API_KEY }}
           heroku_app_name: "mailer-automation-staging"
-          heroku_email: ${{ secrets.HEROKU_EMAIL }}
+          heroku_email: ${{ vars.HEROKU_EMAIL }}
           
       - name: Wait for deployment to complete
         run: sleep 60  # Wait for the app to fully deploy
@@ -81,4 +81,4 @@ jobs:
         with:
           heroku_api_key: ${{ secrets.HEROKU_API_KEY }}
           heroku_app_name: "mailer-automation"
-          heroku_email: ${{ secrets.HEROKU_EMAIL }}
+          heroku_email: ${{ vars.HEROKU_EMAIL }}
