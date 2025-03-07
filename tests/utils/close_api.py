@@ -8,6 +8,8 @@ class CloseAPI:
     def __init__(self, api_key=None):
         # Use test API key in test environment
         self.api_key = api_key or os.environ.get("CLOSE_API_KEY")
+        print(f"CLOSE_API_KEY environment variable: {os.environ.get('CLOSE_API_KEY')}")
+        print(f"API key being used: {self.api_key}")
         self.encoded_key = b64encode(f"{self.api_key}:".encode()).decode()
         self.headers = {
             "Content-Type": "application/json",
