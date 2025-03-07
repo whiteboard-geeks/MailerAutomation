@@ -64,6 +64,21 @@ jobs:
           pip install -r requirements.txt
           pip install pytest
           
+      - name: Debug environment variables
+        run: |
+          echo "Checking if secrets are available (will show as masked if they are):"
+          echo "CLOSE_API_KEY: ${{ secrets.CLOSE_API_KEY }}"
+          echo "INSTANTLY_API_KEY: ${{ secrets.INSTANTLY_API_KEY }}"
+          echo "WEBHOOK_API_KEY: ${{ secrets.WEBHOOK_API_KEY }}"
+          echo "Checking if environment variables are set:"
+          if [ -n "$CLOSE_API_KEY" ]; then echo "CLOSE_API_KEY is set"; else echo "CLOSE_API_KEY is NOT set"; fi
+          if [ -n "$INSTANTLY_API_KEY" ]; then echo "INSTANTLY_API_KEY is set"; else echo "INSTANTLY_API_KEY is NOT set"; fi
+          if [ -n "$WEBHOOK_API_KEY" ]; then echo "WEBHOOK_API_KEY is set"; else echo "WEBHOOK_API_KEY is NOT set"; fi
+        env:
+          CLOSE_API_KEY: ${{ secrets.CLOSE_API_KEY }}
+          INSTANTLY_API_KEY: ${{ secrets.INSTANTLY_API_KEY }}
+          WEBHOOK_API_KEY: ${{ secrets.WEBHOOK_API_KEY }}
+          
       - name: Run E2E tests against staging
         env:
           STAGING_URL: "https://mailer-automation-staging-a1a3b6abc50d.herokuapp.com"
@@ -74,6 +89,13 @@ jobs:
         run: |
           # Set the base URL for tests to point to staging
           export BASE_URL=$STAGING_URL
+          # Print environment variables for debugging (without revealing secrets)
+          echo "Environment variables set for testing:"
+          if [ -n "$CLOSE_API_KEY" ]; then echo "CLOSE_API_KEY is set"; else echo "CLOSE_API_KEY is NOT set"; fi
+          if [ -n "$INSTANTLY_API_KEY" ]; then echo "INSTANTLY_API_KEY is set"; else echo "INSTANTLY_API_KEY is NOT set"; fi
+          if [ -n "$WEBHOOK_API_KEY" ]; then echo "WEBHOOK_API_KEY is set"; else echo "WEBHOOK_API_KEY is NOT set"; fi
+          echo "BASE_URL: $BASE_URL"
+          echo "ENV_TYPE: $ENV_TYPE"
           pytest tests/e2e
           
   deploy-to-production:
