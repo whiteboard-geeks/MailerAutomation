@@ -24,17 +24,19 @@ class TestInstantlyE2E:
 
     def teardown_method(self):
         """Cleanup after each test."""
-        # Delete the test lead if it was created
+        # Delete the lead if it was created
         if self.test_data.get("lead_id"):
-            self.close_api.delete_lead(self.test_data["lead_id"])
+            result = self.close_api.delete_lead(self.test_data["lead_id"])
+            if result == {}:  # Successful deletion returns empty dict
+                print(f"Deleted lead with ID: {self.test_data['lead_id']}")
+            else:
+                print(f"Warning: Lead deletion may have failed: {result}")
 
-        # Delete the webhook if it was created
-        if self.test_data.get("webhook_id"):
-            self.close_api.delete_webhook(self.test_data["webhook_id"])
-
-    def wait_for_webhook_processed(self, task_id):
+    def wait_for_webhook_processed(self, task_id, route=None):
         """Wait for webhook to be processed by checking the webhook tracker API."""
         webhook_endpoint = f"{self.base_url}/instantly/test/webhooks?task_id={task_id}"
+        if route:
+            webhook_endpoint += f"&route={route}"
 
         start_time = time.time()
         elapsed_time = 0
@@ -61,11 +63,18 @@ class TestInstantlyE2E:
             # Print progress occasionally
             elapsed_time = time.time() - start_time
             if elapsed_time % 60 < 1:  # Print every ~60 seconds
-                print(f"Still waiting... {int(elapsed_time)}s elapsed")
+                waiting_for = (
+                    "email sent webhook"
+                    if route == "email_sent"
+                    else "add_lead webhook"
+                )
+                print(
+                    f"Still waiting for {waiting_for}... {int(elapsed_time)}s elapsed"
+                )
 
-    def test_create_lead_and_task_workflow(self):
-        """Test the full workflow from creating a lead to handling webhook."""
-        print("\n=== STARTING E2E TEST: Create lead and task workflow ===")
+    def test_instantly_e2e(self):
+        """Test the full workflow from creating a lead through email sending."""
+        print("\n=== STARTING E2E TEST: Instantly Full Workflow ===")
 
         # Create a test lead in Close
         print("Creating test lead in Close...")
@@ -93,16 +102,15 @@ class TestInstantlyE2E:
             self.test_data["task_id"] = task_id
             print(f"Task created with ID: {task_id}")
 
-            # Wait for the webhook to be processed
-            print("Waiting for webhook to be processed (no timeout)...")
-            webhook_data = self.wait_for_webhook_processed(task_id)
-            # Clean up the webhook after successful processing
-            if webhook_data and webhook_id:
-                print(f"Deleting webhook with ID: {webhook_id}...")
-                self.close_api.delete_webhook(webhook_id)
-                print("Webhook deleted successfully")
-            # Verify webhook data
-            assert webhook_data is not None, "Webhook was not processed"
+            # Wait for the initial webhook to be processed
+            print("Waiting for add_lead webhook to be processed (no timeout)...")
+            webhook_data = self.wait_for_webhook_processed(task_id, "add_lead")
+
+            # Verify initial webhook data
+            assert webhook_data is not None, "Initial webhook was not processed"
+            assert (
+                webhook_data.get("route") == "add_lead"
+            ), "Webhook route is not add_lead"
             assert (
                 webhook_data.get("campaign_name") == campaign_name
             ), "Campaign name doesn't match"
@@ -111,10 +119,39 @@ class TestInstantlyE2E:
             ), "Lead ID doesn't match"
             assert (
                 webhook_data.get("processed") is True
-            ), "Webhook wasn't marked as processed"
+            ), "Initial webhook wasn't marked as processed"
             assert (
                 webhook_data.get("instantly_result", {}).get("status") == "success"
             ), "Instantly API call failed"
+            print("Initial webhook assertions passed!")
+
+            # Clean up the webhook after successful processing
+            if webhook_data and webhook_id:
+                print(f"Deleting webhook with ID: {webhook_id}...")
+                self.close_api.delete_webhook(webhook_id)
+                print("Webhook deleted successfully")
+
+            # Now wait for the email sent webhook
+            print("\nWaiting for email sent webhook...")
+            email_sent_webhook = self.wait_for_webhook_processed(task_id, "email_sent")
+            # Verify email sent webhook data
+            assert (
+                email_sent_webhook is not None
+            ), "Email sent webhook was not processed"
+            assert (
+                email_sent_webhook.get("route") == "email_sent"
+            ), "Webhook route is not email_sent"
+            assert (
+                email_sent_webhook.get("processed") is True
+            ), "Email sent webhook wasn't marked as processed"
+
+            # Verify task was updated in Close
+            task_data = self.close_api.get_task(task_id)
+            assert (
+                task_data.get("is_complete") is True
+            ), "Task was not marked as completed"
+
+            print("Email sent webhook assertions passed!")
             print("All assertions passed!")
         except Exception as e:
             print(f"Error during test execution: {e}")

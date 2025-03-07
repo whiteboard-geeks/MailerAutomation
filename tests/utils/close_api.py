@@ -58,7 +58,7 @@ class CloseAPI:
     def create_webhook_to_catch_task_created(self):
         """Create a webhook to catch task created events."""
         payload = {
-            "url": "http://locust-pleased-thankfully.ngrok-free.app/instantly/add_task",
+            "url": "http://locust-pleased-thankfully.ngrok-free.app/instantly/add_lead",
             "events": [
                 {
                     "object_type": "task.lead",
@@ -140,7 +140,10 @@ class CloseAPI:
             f"{self.base_url}/lead/{lead_id}/", headers=self.headers
         )
 
-        if response.status_code != 204:
+        try:
+            response_data = response.json()
+            return response_data  # Should be {} for successful deletion
+        except ValueError:  # If response is not JSON
             raise Exception(f"Failed to delete lead: {response.text}")
 
         return True
@@ -155,3 +158,14 @@ class CloseAPI:
             raise Exception(f"Failed to delete webhook: {response.text}")
 
         return True
+
+    def get_task(self, task_id):
+        """Get a task by ID from Close."""
+        response = requests.get(
+            f"{self.base_url}/task/{task_id}/", headers=self.headers
+        )
+
+        if response.status_code != 200:
+            raise Exception(f"Failed to get task: {response.text}")
+
+        return response.json()

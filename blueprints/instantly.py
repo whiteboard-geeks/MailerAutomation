@@ -313,8 +313,8 @@ def campaign_exists(campaign_name):
     return {"exists": False}
 
 
-@instantly_bp.route("/add_task", methods=["POST"])
-def add_task_to_instantly():
+@instantly_bp.route("/add_lead", methods=["POST"])
+def add_lead_to_instantly():
     """Handle webhooks from Close when a task is created with 'Instantly:' prefix."""
     try:
         # Parse the webhook payload
@@ -449,6 +449,7 @@ Error details: {error_msg}
         # If in test environment, track this webhook
         if ENV_TYPE == "test":
             webhook_data = {
+                "route": "add_lead",
                 "lead_id": lead_id,
                 "campaign_name": campaign_name,
                 "campaign_id": campaign_id,
@@ -597,13 +598,22 @@ def add_to_instantly_campaign(
 @instantly_bp.route("/test/webhooks", methods=["GET"])
 def get_processed_webhooks():
     """Get all processed webhooks for testing purposes."""
-    # Get task_id from query parameters if provided
+    # Get task_id and route from query parameters if provided
     task_id = request.args.get("task_id")
+    route = request.args.get("route")
 
     if task_id:
         # Return data for specific task
         webhook_data = _webhook_tracker.get(task_id)
         if webhook_data:
+            # If route is specified, only return data for that route
+            if route and webhook_data.get("route") != route:
+                return jsonify(
+                    {
+                        "status": "not_found",
+                        "message": f"No webhook data found for task_id: {task_id} and route: {route}",
+                    }
+                ), 404
             return jsonify({"status": "success", "data": webhook_data}), 200
         else:
             return jsonify(
@@ -731,6 +741,26 @@ def handle_instantly_email_sent():
             complete_url, headers=headers, json=complete_data
         )
         complete_response.raise_for_status()
+
+        # If in test environment, track this webhook
+        if ENV_TYPE == "test":
+            webhook_data = {
+                "route": "email_sent",
+                "lead_id": lead_id,
+                "task_id": task_id,
+                "campaign_name": campaign_name,
+                "processed": True,
+                "timestamp": datetime.now().isoformat(),
+                "email_data": {
+                    "subject": email_subject,
+                    "to": lead_email,
+                    "from": data.get("email_account"),
+                },
+            }
+            _webhook_tracker.add(task_id, webhook_data)
+            logger.info(
+                f"Recorded email sent webhook for task {task_id} in test environment"
+            )
 
         # Get the contact with the matching email
         lead_details = get_lead_by_id(lead_id)
