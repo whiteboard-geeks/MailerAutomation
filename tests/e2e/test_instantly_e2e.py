@@ -10,9 +10,9 @@ class TestInstantlyE2E:
         self.close_api = CloseAPI()
         self.test_data = {}
 
-        # Always disable timeout - wait indefinitely
-        self.webhook_timeout = None  # No timeout
-        print("WEBHOOK TIMEOUT: NONE (waiting indefinitely)")
+        # Set timeout to 5 minutes (300 seconds)
+        self.webhook_timeout = 300  # 5 minute timeout
+        print("WEBHOOK TIMEOUT: 300 seconds (5 minutes)")
 
         self.webhook_check_interval = 1  # Check interval in seconds
         self.base_url = os.environ.get("BASE_URL", "http://localhost:8080")
@@ -48,8 +48,8 @@ class TestInstantlyE2E:
         start_time = time.time()
         elapsed_time = 0
 
-        # Loop indefinitely since timeout is None
-        while True:
+        # Check for timeout if set
+        while self.webhook_timeout is None or elapsed_time < self.webhook_timeout:
             try:
                 # Query the webhook tracker API
                 response = requests.get(webhook_endpoint)
@@ -78,6 +78,11 @@ class TestInstantlyE2E:
                 print(
                     f"Still waiting for {waiting_for}... {int(elapsed_time)}s elapsed"
                 )
+
+        # If we get here, we've timed out
+        raise TimeoutError(
+            f"Timed out waiting for webhook after {int(elapsed_time)} seconds"
+        )
 
     def test_instantly_e2e(self):
         """Test the full workflow from creating a lead through email sending."""
