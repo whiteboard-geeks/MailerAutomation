@@ -1,0 +1,83 @@
+name: CI/CD Pipeline
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.10'
+          
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install pytest
+          
+      - name: Run unit tests
+        run: |
+          pytest tests/unit
+          
+  deploy-to-staging:
+    needs: test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      
+      - name: Deploy to Heroku Staging
+        uses: akhileshns/heroku-deploy@v3.12.14
+        with:
+          heroku_api_key: ${{ secrets.HEROKU_API_KEY }}
+          heroku_app_name: "mailer-automation-staging"
+          heroku_email: ${{ secrets.HEROKU_EMAIL }}
+          
+      - name: Wait for deployment to complete
+        run: sleep 60  # Wait for the app to fully deploy
+          
+  e2e-tests:
+    needs: deploy-to-staging
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.10'
+          
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install pytest
+          
+      - name: Run E2E tests against staging
+        env:
+          STAGING_URL: "https://mailer-automation-staging-a1a3b6abc50d.herokuapp.com"
+        run: |
+          # Set the base URL for tests to point to staging
+          export BASE_URL=$STAGING_URL
+          pytest tests/e2e
+          
+  deploy-to-production:
+    needs: e2e-tests
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      
+      - name: Deploy to Heroku Production
+        uses: akhileshns/heroku-deploy@v3.12.14
+        with:
+          heroku_api_key: ${{ secrets.HEROKU_API_KEY }}
+          heroku_app_name: "mailer-automation"
+          heroku_email: ${{ secrets.HEROKU_EMAIL }}
