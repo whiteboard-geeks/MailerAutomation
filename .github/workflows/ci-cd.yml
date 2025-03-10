@@ -7,8 +7,32 @@ on:
     branches: [ main ]
 
 jobs:
-  unit-tests:
+  lint:
     runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.10'
+          
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install flake8
+          
+      - name: Run linting
+        run: |
+          flake8 . --count --select=E9,F63,F7,F82 --show-source --statistics
+
+  blueprint-unit-tests:
+    needs: lint
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        blueprint: [instantly]  # Add new blueprints here as you create them
     steps:
       - uses: actions/checkout@v3
       
@@ -23,12 +47,12 @@ jobs:
           pip install -r requirements.txt
           pip install pytest
           
-      - name: Run unit tests
+      - name: Run unit tests for ${{ matrix.blueprint }}
         run: |
-          pytest tests/unit
+          pytest tests/unit/${{ matrix.blueprint }} -v
           
   deploy-to-staging:
-    needs: unit-tests
+    needs: blueprint-unit-tests
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v3
@@ -47,9 +71,17 @@ jobs:
       - name: Wait for deployment to complete
         run: sleep 60  # Wait for the app to fully deploy
           
-  webhook-tracker-tests:
+  blueprint-integration-tests:
     needs: deploy-to-staging
     runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        blueprint: [instantly]  # Add new blueprints here as you create them
+        test: [
+          ["webhook_tracker", "test_webhook_tracker_integration.py"],
+          ["email_sent", "test_instantly_email_sent_integration.py"],
+          ["general", "test_instantly_integration.py"]
+        ]
     steps:
       - uses: actions/checkout@v3
       
@@ -63,7 +95,9 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
           pip install pytest
+          
       - name: Install Heroku CLI and get Redis URL
+        if: matrix.test[0] == 'webhook_tracker'
         run: |
           curl https://cli-assets.heroku.com/install.sh | sh
           
@@ -84,25 +118,28 @@ jobs:
           
           # Set it as an environment variable for subsequent steps
           echo "REDISCLOUD_URL=$REDIS_URL" >> $GITHUB_ENV
-      - name: Run webhook tracker integration tests against staging
+          
+      - name: Run ${{ matrix.test[0] }} integration test for ${{ matrix.blueprint }}
         env:
           STAGING_URL: "https://mailer-automation-staging-a1a3b6abc50d.herokuapp.com"
           ENV_TYPE: "staging"
           CLOSE_API_KEY: ${{ secrets.CLOSE_API_KEY }}
           INSTANTLY_API_KEY: ${{ secrets.INSTANTLY_API_KEY }}
-          # REDISCLOUD_URL is now available from the previous step via GITHUB_ENV
+          WEBHOOK_API_KEY: ${{ secrets.WEBHOOK_API_KEY }}
         run: |
           # Set the base URL for tests to point to staging
           export BASE_URL=$STAGING_URL
           
-          # Run the integration tests against staging
-          # Note: We don't set REDISCLOUD_URL to let it use Heroku's Redis
-          echo "Running webhook tracker integration tests against staging..."
-          pytest tests/integration/test_webhook_tracker_integration.py -v
+          # Run the specific integration test
+          echo "Running ${{ matrix.test[0] }} integration test for ${{ matrix.blueprint }}..."
+          pytest tests/integration/${{ matrix.blueprint }}/${{ matrix.test[1] }} -v
           
-  e2e-tests:
-    needs: webhook-tracker-tests
+  blueprint-e2e-tests:
+    needs: blueprint-integration-tests
     runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        blueprint: [instantly]  # Add new blueprints here as you create them
     steps:
       - uses: actions/checkout@v3
       
@@ -132,7 +169,7 @@ jobs:
           INSTANTLY_API_KEY: ${{ secrets.INSTANTLY_API_KEY }}
           WEBHOOK_API_KEY: ${{ secrets.WEBHOOK_API_KEY }}
           
-      - name: Run E2E tests against staging
+      - name: Run E2E tests for ${{ matrix.blueprint }}
         env:
           STAGING_URL: "https://mailer-automation-staging-a1a3b6abc50d.herokuapp.com"
           ENV_TYPE: "staging"
@@ -142,6 +179,7 @@ jobs:
         run: |
           # Set the base URL for tests to point to staging
           export BASE_URL=$STAGING_URL
+          
           # Print environment variables for debugging (without revealing secrets)
           echo "Environment variables set for testing:"
           if [ -n "$CLOSE_API_KEY" ]; then echo "CLOSE_API_KEY is set"; else echo "CLOSE_API_KEY is NOT set"; fi
@@ -149,10 +187,12 @@ jobs:
           if [ -n "$WEBHOOK_API_KEY" ]; then echo "WEBHOOK_API_KEY is set"; else echo "WEBHOOK_API_KEY is NOT set"; fi
           echo "BASE_URL: $BASE_URL"
           echo "ENV_TYPE: $ENV_TYPE"
-          pytest tests/e2e
+          
+          # Run the E2E tests for this blueprint
+          pytest tests/e2e/${{ matrix.blueprint }} -v
           
   deploy-to-production:
-    needs: e2e-tests
+    needs: blueprint-e2e-tests
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     steps:

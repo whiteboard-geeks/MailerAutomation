@@ -191,3 +191,15 @@ class CloseAPI:
             raise Exception(f"Failed to get task: {response.text}")
 
         return response.json()
+
+    def get_lead_email_activities(self, lead_id):
+        """Get email activities for a lead from Close."""
+        url = f"{self.base_url}/activity/email/"
+        params = {"lead_id": lead_id}
+
+        response = requests.get(url, headers=self.headers, params=params)
+
+        if response.status_code != 200:
+            raise Exception(f"Failed to get email activities: {response.text}")
+
+        return response.json()["data"]

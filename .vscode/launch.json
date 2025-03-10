@@ -63,7 +63,7 @@
             "request": "launch",
             "module": "pytest",
             "args": [
-                "tests/e2e/test_instantly_e2e.py",
+                "tests/e2e/instantly/test_instantly_e2e.py",
                 "--verbose",
                 "-s"
             ],
@@ -81,7 +81,7 @@
             "request": "launch",
             "module": "pytest",
             "args": [
-                "tests/e2e/test_instantly_email_sent_integration.py",
+                "tests/integration/instantly/test_instantly_email_sent_integration.py",
                 "--verbose",
                 "-s"
             ],
@@ -99,7 +99,28 @@
             "request": "launch",
             "module": "pytest",
             "args": [
-                "tests/integration/test_webhook_tracker_integration.py",
+                "tests/integration/instantly/test_webhook_tracker_integration.py",
+                "--verbose",
+                "-s"
+            ],
+            "console": "integratedTerminal",
+            "justMyCode": false,
+            "env": {
+                "PYTHONPATH": "${workspaceFolder}",
+                "ENV_TYPE": "test",
+                "REDISCLOUD_URL": "redis://localhost:6379"
+            },
+            "cwd": "${workspaceFolder}"
+        },
+        {
+            "name": "All Instantly Tests",
+            "type": "debugpy",
+            "request": "launch",
+            "module": "pytest",
+            "args": [
+                "tests/unit/instantly/",
+                "tests/integration/instantly/",
+                "tests/e2e/instantly/",
                 "--verbose",
                 "-s"
             ],
@@ -140,6 +161,15 @@
                 "Flask", 
                 "Celery Worker", 
                 "Instantly Webhook Tracker Integration Tests"
+            ],
+            "stopAll": true
+        },
+        {
+            "name": "All Instantly Tests Compound",
+            "configurations": [
+                "Flask", 
+                "Celery Worker", 
+                "All Instantly Tests"
             ],
             "stopAll": true
         }

@@ -726,7 +726,7 @@ def handle_instantly_email_sent():
             logger.error(error_msg)
             response_data = {"status": "error", "message": error_msg}
             return check_route_response(
-                404, response_data, {"lead_id": lead_id, "campaign_name": campaign_name}
+                401, response_data, {"lead_id": lead_id, "campaign_name": campaign_name}
             )
 
         # Mark the task as complete
@@ -737,23 +737,6 @@ def handle_instantly_email_sent():
             complete_url, headers=headers, json=complete_data
         )
         complete_response.raise_for_status()
-
-        # Track this webhook
-        webhook_data = {
-            "route": "email_sent",
-            "lead_id": lead_id,
-            "task_id": task_id,
-            "campaign_name": campaign_name,
-            "processed": True,
-            "timestamp": datetime.now().isoformat(),
-            "email_data": {
-                "subject": email_subject,
-                "to": lead_email,
-                "from": data.get("email_account"),
-            },
-        }
-        _webhook_tracker.add(task_id, webhook_data)
-        logger.info(f"Recorded email sent webhook for task {task_id}")
 
         # Get the contact with the matching email
         lead_details = get_lead_by_id(lead_id)
