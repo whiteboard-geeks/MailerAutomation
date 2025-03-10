@@ -63,14 +63,34 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
           pip install pytest
+      - name: Install Heroku CLI and get Redis URL
+        run: |
+          curl https://cli-assets.heroku.com/install.sh | sh
           
+          # Login to Heroku using API key
+          cat > ~/.netrc << EOF
+          machine api.heroku.com
+            login ${{ vars.HEROKU_EMAIL }}
+            password ${{ secrets.HEROKU_API_KEY }}
+          machine git.heroku.com
+            login ${{ vars.HEROKU_EMAIL }}
+            password ${{ secrets.HEROKU_API_KEY }}
+          EOF
+          chmod 600 ~/.netrc
+          
+          # Get the Redis URL from Heroku config
+          REDIS_URL=$(heroku config:get REDISCLOUD_URL -a mailer-automation-staging)
+          echo "Retrieved Redis URL from Heroku staging app"
+          
+          # Set it as an environment variable for subsequent steps
+          echo "REDISCLOUD_URL=$REDIS_URL" >> $GITHUB_ENV
       - name: Run webhook tracker integration tests against staging
         env:
           STAGING_URL: "https://mailer-automation-staging-a1a3b6abc50d.herokuapp.com"
           ENV_TYPE: "staging"
           CLOSE_API_KEY: ${{ secrets.CLOSE_API_KEY }}
           INSTANTLY_API_KEY: ${{ secrets.INSTANTLY_API_KEY }}
-          WEBHOOK_API_KEY: ${{ secrets.WEBHOOK_API_KEY }}
+          # REDISCLOUD_URL is now available from the previous step via GITHUB_ENV
         run: |
           # Set the base URL for tests to point to staging
           export BASE_URL=$STAGING_URL

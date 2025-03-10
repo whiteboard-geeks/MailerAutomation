@@ -36,9 +36,8 @@ class TestWebhookTrackerIntegration:
         """Test that we can connect to Redis."""
         print(f"\n=== TESTING REDIS CONNECTION: {self.redis_url} ===")
 
-        # Check if Redis is available
-        if not self.tracker.redis:
-            pytest.skip("Redis is not available - skipping integration test")
+        # Check if Redis is available - fail instead of skip
+        assert self.tracker.redis is not None, "Redis is not available - test failed"
 
         # Try a simple ping operation
         try:
@@ -51,9 +50,8 @@ class TestWebhookTrackerIntegration:
         """Test adding and retrieving webhook data from Redis."""
         print("\n=== TESTING ADD AND GET OPERATIONS ===")
 
-        # Check if Redis is available
-        if not self.tracker.redis:
-            pytest.skip("Redis is not available - skipping integration test")
+        # Check if Redis is available - fail instead of skip
+        assert self.tracker.redis is not None, "Redis is not available - test failed"
 
         # Generate a unique task ID
         task_id = f"task_{uuid.uuid4().hex[:8]}"
@@ -89,9 +87,8 @@ class TestWebhookTrackerIntegration:
         """Test retrieving all webhook data."""
         print("\n=== TESTING GET_ALL OPERATION ===")
 
-        # Check if Redis is available
-        if not self.tracker.redis:
-            pytest.skip("Redis is not available - skipping integration test")
+        # Check if Redis is available - fail instead of skip
+        assert self.tracker.redis is not None, "Redis is not available - test failed"
 
         # Add multiple webhook entries
         task_ids = []
@@ -128,9 +125,8 @@ class TestWebhookTrackerIntegration:
         """Test that webhooks expire after the specified time."""
         print("\n=== TESTING EXPIRATION ===")
 
-        # Check if Redis is available
-        if not self.tracker.redis:
-            pytest.skip("Redis is not available - skipping integration test")
+        # Check if Redis is available - fail instead of skip
+        assert self.tracker.redis is not None, "Redis is not available - test failed"
 
         # Create a tracker with a very short expiration
         short_tracker = WebhookTracker(expiration_seconds=2)
@@ -168,9 +164,8 @@ class TestWebhookTrackerIntegration:
         """Test the webhook status endpoint with real Redis."""
         print("\n=== TESTING WEBHOOK STATUS ENDPOINT ===")
 
-        # Check if Redis is available
-        if not self.tracker.redis:
-            pytest.skip("Redis is not available - skipping integration test")
+        # Check if Redis is available - fail instead of skip
+        assert self.tracker.redis is not None, "Redis is not available - test failed"
 
         # Import Flask and create a test client
         from flask import Flask
