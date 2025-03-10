@@ -794,6 +794,23 @@ def handle_instantly_email_sent():
             f"Successfully processed email sent webhook for lead {lead_id} and task {task_id}"
         )
 
+        # Track this webhook
+        webhook_data = {
+            "route": "email_sent",
+            "lead_id": lead_id,
+            "task_id": task_id,
+            "campaign_name": campaign_name,
+            "processed": True,
+            "timestamp": datetime.now().isoformat(),
+            "email_data": {
+                "subject": email_subject,
+                "to": lead_email,
+                "from": data.get("email_account"),
+            },
+        }
+        _webhook_tracker.add(task_id, webhook_data)
+        logger.info(f"Recorded email sent webhook for task {task_id}")
+
         response_data = {
             "status": "success",
             "message": "Email sent webhook processed successfully",
