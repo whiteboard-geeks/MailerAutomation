@@ -92,7 +92,6 @@ jobs:
           pip install pytest
           
       - name: Install Heroku CLI and get Redis URL
-        if: matrix.test[0] == 'webhook_tracker'
         run: |
           curl https://cli-assets.heroku.com/install.sh | sh
           
