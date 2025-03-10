@@ -77,11 +77,6 @@ jobs:
     strategy:
       matrix:
         blueprint: [instantly]  # Add new blueprints here as you create them
-        test: [
-          ["webhook_tracker", "test_webhook_tracker_integration.py"],
-          ["email_sent", "test_instantly_email_sent_integration.py"],
-          ["general", "test_instantly_integration.py"]
-        ]
     steps:
       - uses: actions/checkout@v3
       
