@@ -10,18 +10,148 @@ from urllib.parse import urlencode
 from io import StringIO
 from time import sleep
 import sys
+import uuid
+import time
 
 import easypost
 import requests
 from apscheduler.schedulers.background import BackgroundScheduler
-from flask import Flask, request, jsonify
+from flask import Flask, request, jsonify, g
 from celery import Celery
 import pytz
 import pytest
+import structlog
 
 from blueprints.instantly import instantly_bp
 
+
+# Configure structlog
+def configure_structlog():
+    """Configure structured logging for the application."""
+    # Set up structlog processors
+    shared_processors = [
+        structlog.contextvars.merge_contextvars,
+        structlog.stdlib.add_logger_name,
+        structlog.stdlib.add_log_level,
+        structlog.stdlib.PositionalArgumentsFormatter(),
+        structlog.processors.TimeStamper(fmt="iso"),
+        structlog.processors.StackInfoRenderer(),
+        structlog.processors.format_exc_info,
+    ]
+
+    # Configure structlog based on environment
+    if os.environ.get("ENV_TYPE") in ["production", "staging"]:
+        # JSON logging for production/staging
+        structlog.configure(
+            processors=shared_processors
+            + [
+                structlog.processors.dict_tracebacks,
+                structlog.processors.JSONRenderer(),
+            ],
+            logger_factory=structlog.stdlib.LoggerFactory(),
+            wrapper_class=structlog.stdlib.BoundLogger,
+            cache_logger_on_first_use=True,
+        )
+    else:
+        # Dev-friendly console logging for local development
+        structlog.configure(
+            processors=shared_processors + [structlog.dev.ConsoleRenderer()],
+            logger_factory=structlog.stdlib.LoggerFactory(),
+            wrapper_class=structlog.stdlib.BoundLogger,
+            cache_logger_on_first_use=True,
+        )
+
+    # Set up stdlib logging to work with structlog
+    handler = logging.StreamHandler()
+
+    # Format as JSON for production/staging environments
+    if os.environ.get("ENV_TYPE") in ["production", "staging"]:
+        # Use structlog's built-in JSON formatting instead of python-json-logger
+        formatter = logging.Formatter("%(message)s")
+        handler.setFormatter(formatter)
+
+    root_logger = logging.getLogger()
+    root_logger.addHandler(handler)
+    root_logger.setLevel(logging.INFO)
+
+    # Suppress excessive logging from third-party libraries
+    logging.getLogger("requests").setLevel(logging.WARNING)
+    logging.getLogger("urllib3").setLevel(logging.WARNING)
+
+
+# Configure structured logging
+configure_structlog()
+
+# Create a logger instance for app.py
+logger = structlog.get_logger("app")
+
 flask_app = Flask(__name__)
+
+
+# Middleware to add request ID to each request
+@flask_app.before_request
+def add_request_id():
+    request_id = request.headers.get("X-Request-ID", str(uuid.uuid4()))
+    g.request_id = request_id
+    # Add request_id to all log entries for this request
+    structlog.contextvars.bind_contextvars(request_id=request_id)
+
+    # For webhook requests, log the start of processing
+    if "/webhook" in request.path or "/email_sent" in request.path:
+        logger.info(
+            "webhook_received",
+            path=request.path,
+            method=request.method,
+            content_type=request.content_type,
+            content_length=request.content_length,
+            params=dict(request.args),
+            remote_addr=request.remote_addr,
+        )
+
+
+@flask_app.after_request
+def log_response(response):
+    """Log the response status for all requests."""
+    # Only log details for webhook endpoints
+    if "/webhook" in request.path or "/email_sent" in request.path:
+        # Calculate request processing time if we have a start time
+        processing_time = None
+        if hasattr(g, "start_time"):
+            processing_time = time.time() - g.start_time
+
+        # Log the response
+        logger.info(
+            "webhook_response_sent",
+            status_code=response.status_code,
+            content_length=response.content_length,
+            content_type=response.content_type,
+            processing_time_ms=processing_time * 1000 if processing_time else None,
+        )
+    return response
+
+
+@flask_app.errorhandler(Exception)
+def handle_exception(e):
+    """Log exceptions from webhook processing."""
+    # Only log detailed errors for webhook endpoints
+    if "/webhook" in request.path or "/email_sent" in request.path:
+        logger.exception(
+            "webhook_processing_error",
+            error_type=type(e).__name__,
+            error_message=str(e),
+            path=request.path,
+            method=request.method,
+        )
+
+    # Return a generic error response
+    return jsonify(
+        {
+            "status": "error",
+            "message": "An internal server error occurred",
+            "error_type": type(e).__name__,
+        }
+    ), 500
+
 
 # Add your project to the Python path
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
@@ -73,10 +203,6 @@ flask_app.config["CELERY_RESULT_BACKEND"] = REDISCLOUD_URL
 
 celery = Celery(flask_app.name, broker=flask_app.config["CELERY_BROKER_URL"])
 celery.conf.update(flask_app.config)
-
-# Configure logging
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger()
 
 # API Keys
 MAILGUN_API_KEY = os.environ.get("MAILGUN_API_KEY")
