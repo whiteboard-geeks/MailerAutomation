@@ -102,7 +102,7 @@
             "postDebugTask": "Stop Redis"
         },
         {
-            "name": "Instantly Add Lead E2E Compound",
+            "name": "Instantly E2E Compound",
             "configurations": ["Flask", "Celery Worker", "Instantly E2E Tests"],
             "stopAll": true
         },

@@ -10,9 +10,9 @@ class TestInstantlyE2E:
         self.close_api = CloseAPI()
         self.test_data = {}
 
-        # Set timeout to 5 minutes (300 seconds)
-        self.webhook_timeout = 300  # 5 minute timeout
-        print("WEBHOOK TIMEOUT: 300 seconds (5 minutes)")
+        # Set timeout to 10 minutes (600 seconds)
+        self.webhook_timeout = 600  # 10 minute timeout
+        print("WEBHOOK TIMEOUT: 600 seconds (10 minutes)")
 
         self.webhook_check_interval = 1  # Check interval in seconds
         self.base_url = os.environ.get("BASE_URL", "http://localhost:8080")

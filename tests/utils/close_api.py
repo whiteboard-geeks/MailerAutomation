@@ -32,9 +32,12 @@ class CloseAPI:
         timestamp = datetime.now().strftime("%Y%m%d%H%M%S")  # Format as YYYYMMDDhhmmss
         email_suffix = email_suffix or timestamp
 
+        # Get environment type for debugging
+        env_type = os.environ.get("ENV_TYPE", "development")
+
         # Use provided email or generate one
         if not email:
-            email = f"lance+instantly{email_suffix}@whiteboardgeeks.com"
+            email = f"lance+{env_type}.instantly{email_suffix}@whiteboardgeeks.com"
 
         # Use provided names or generate ones
         if not first_name:
@@ -94,7 +97,6 @@ class CloseAPI:
                     },
                 }
             ],
-            "verify_ssl": False,
         }
 
         retry_count = 0
