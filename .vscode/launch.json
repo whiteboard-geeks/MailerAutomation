@@ -92,6 +92,25 @@
                 "ENV_TYPE": "test"
             },
             "cwd": "${workspaceFolder}"
+        },
+        {
+            "name": "Instantly Webhook Tracker Integration Tests",
+            "type": "debugpy",
+            "request": "launch",
+            "module": "pytest",
+            "args": [
+                "tests/integration/test_webhook_tracker_integration.py",
+                "--verbose",
+                "-s"
+            ],
+            "console": "integratedTerminal",
+            "justMyCode": false,
+            "env": {
+                "PYTHONPATH": "${workspaceFolder}",
+                "ENV_TYPE": "test",
+                "REDISCLOUD_URL": "redis://localhost:6379"
+            },
+            "cwd": "${workspaceFolder}"
         }
     ],
     "compounds": [
@@ -112,6 +131,15 @@
                 "Flask",
                 "Celery Worker",
                 "Instantly Email Sent Integration Tests"
+            ],
+            "stopAll": true
+        },
+        {
+            "name": "Instantly Webhook Tracker Integration Tests Compound",
+            "configurations": [
+                "Flask", 
+                "Celery Worker", 
+                "Instantly Webhook Tracker Integration Tests"
             ],
             "stopAll": true
         }
