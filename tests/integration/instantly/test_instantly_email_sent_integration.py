@@ -3,6 +3,7 @@ import json
 import requests
 from tests.utils.close_api import CloseAPI
 from datetime import datetime
+from time import sleep
 
 
 class TestInstantlyEmailSentIntegration:
@@ -56,6 +57,9 @@ class TestInstantlyEmailSentIntegration:
         task_data = self.close_api.create_task_for_lead(lead_data["id"], campaign_name)
         self.test_data["task_id"] = task_data["id"]
         print(f"Task created with ID: {task_data['id']}")
+
+        print("Waiting for Close to populate lead and task data for search...")
+        sleep(10)
 
         # Send the mock webhook to our endpoint
         print("Sending mock webhook to endpoint...")
