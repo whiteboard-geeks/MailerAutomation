@@ -94,6 +94,24 @@
             "cwd": "${workspaceFolder}"
         },
         {
+            "name": "Instantly Reply Received Integration Tests",
+            "type": "debugpy",
+            "request": "launch",
+            "module": "pytest",
+            "args": [
+                "tests/integration/instantly/test_instantly_reply_received_integration.py",
+                "--verbose",
+                "-s"
+            ],
+            "console": "integratedTerminal",
+            "justMyCode": false,
+            "env": {
+                "PYTHONPATH": "${workspaceFolder}",
+                "ENV_TYPE": "test"
+            },
+            "cwd": "${workspaceFolder}"
+        },
+        {
             "name": "Instantly Webhook Tracker Integration Tests",
             "type": "debugpy",
             "request": "launch",
@@ -152,6 +170,15 @@
                 "Flask",
                 "Celery Worker",
                 "Instantly Email Sent Integration Tests"
+            ],
+            "stopAll": true
+        },
+        {
+            "name": "Instantly Reply Received Integration Compound",
+            "configurations": [
+                "Flask",
+                "Celery Worker",
+                "Instantly Reply Received Integration Tests"
             ],
             "stopAll": true
         },

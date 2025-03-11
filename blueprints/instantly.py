@@ -640,24 +640,71 @@ def add_to_instantly_campaign(
 # Webhook tracking endpoints - available in all environments
 @instantly_bp.route("/webhooks/status", methods=["GET"])
 def get_processed_webhooks():
-    """Get processed webhooks for testing and monitoring purposes."""
-    # Get task_id and route from query parameters if provided
+    """
+    Get processed webhooks for testing and monitoring purposes.
+
+    Supports filtering by multiple parameters:
+    - task_id: Filter by specific task ID
+    - route: Filter by webhook route (e.g., 'email_sent', 'reply_received')
+    - email_id: Filter by email activity ID
+    - lead_id: Filter by lead ID
+    - lead_email: Filter by lead email
+
+    Returns all webhooks that match ALL provided filter parameters.
+    """
+    # Get filter parameters
     task_id = request.args.get("task_id")
     route = request.args.get("route")
+    email_id = request.args.get("email_id")
+    lead_id = request.args.get("lead_id")
+    lead_email = request.args.get("lead_email")
 
+    # Dictionary of filter parameters that were provided
+    filters = {}
     if task_id:
-        # Return data for specific task
+        filters["task_id"] = task_id
+    if route:
+        filters["route"] = route
+    if email_id:
+        filters["email_id"] = email_id
+    if lead_id:
+        filters["lead_id"] = lead_id
+    if lead_email:
+        filters["lead_email"] = lead_email
+
+    # If task_id is provided, check that specific task first for efficiency
+    if task_id:
         webhook_data = _webhook_tracker.get(task_id)
         if webhook_data:
-            # If route is specified, only return data for that route
-            if route and webhook_data.get("route") != route:
+            # Remove task_id from filters since we already matched on it
+            if "task_id" in filters:
+                del filters["task_id"]
+
+            # Check if the webhook matches all other filters
+            matches_all_filters = True
+            for key, value in filters.items():
+                # Handle special case where task_id could be None for some webhooks
+                if (
+                    key == "task_id"
+                    and webhook_data.get(key) is None
+                    and value.lower() == "none"
+                ):
+                    continue
+
+                if webhook_data.get(key) != value:
+                    matches_all_filters = False
+                    break
+
+            if matches_all_filters:
+                return jsonify({"status": "success", "data": webhook_data}), 200
+            else:
+                filter_str = ", ".join([f"{k}: {v}" for k, v in filters.items()])
                 return jsonify(
                     {
                         "status": "not_found",
-                        "message": f"No webhook data found for task_id: {task_id} and route: {route}",
+                        "message": f"Webhook for task_id: {task_id} doesn't match filters: {filter_str}",
                     }
                 ), 404
-            return jsonify({"status": "success", "data": webhook_data}), 200
         else:
             return jsonify(
                 {
@@ -665,12 +712,43 @@ def get_processed_webhooks():
                     "message": f"No webhook data found for task_id: {task_id}",
                 }
             ), 404
+
+    # If no task_id or multiple filters, get all webhooks and filter
+    all_webhooks = _webhook_tracker.get_all()
+
+    # If no filters, return all webhooks
+    if not filters:
+        return jsonify({"status": "success", "data": all_webhooks}), 200
+
+    # Filter webhooks based on provided parameters
+    filtered_webhooks = {}
+    for task_id, webhook in all_webhooks.items():
+        matches_all_filters = True
+        for key, value in filters.items():
+            # Special handling for None values that might be stored in the webhook data
+            if key in webhook and webhook[key] is None and value.lower() == "none":
+                continue
+
+            if webhook.get(key) != value:
+                matches_all_filters = False
+                break
+
+        if matches_all_filters:
+            filtered_webhooks[task_id] = webhook
+
+    # Return filtered results
+    if filtered_webhooks:
+        return jsonify({"status": "success", "data": filtered_webhooks}), 200
     else:
-        # Return all webhooks (limited by WebhookTracker's internal max size and expiration)
-        return jsonify({"status": "success", "data": _webhook_tracker.get_all()}), 200
+        filter_str = ", ".join([f"{k}: {v}" for k, v in filters.items()])
+        return jsonify(
+            {
+                "status": "not_found",
+                "message": f"No webhooks found matching filters: {filter_str}",
+            }
+        ), 404
 
 
-@instantly_bp.route("/campaigns", methods=["GET"])
 def list_instantly_campaigns():
     """
     List all campaigns from Instantly or check if a specific campaign exists.
@@ -895,3 +973,160 @@ def handle_instantly_email_sent():
             "error": str(e),
         }
         return log_webhook_response(500, response_data, {"error": str(e)})
+
+
+@instantly_bp.route("/reply_received", methods=["POST"])
+def handle_instantly_reply_received():
+    """Handle webhooks from Instantly when a reply is received."""
+    try:
+        # Parse the webhook payload
+        data = request.json
+        logger.info(
+            "reply_received_webhook_received",
+            event_type=data.get("event_type"),
+            campaign_name=data.get("campaign_name"),
+            lead_email=data.get("lead_email"),
+        )
+
+        # Verify this is a reply received event
+        if data.get("event_type") != "reply_received":
+            logger.warning(
+                "non_reply_received_event", event_type=data.get("event_type")
+            )
+            response_data = {
+                "status": "success",
+                "message": "Not a reply received event",
+            }
+            return log_webhook_response(200, response_data, data)
+
+        # Extract relevant data from the webhook
+        lead_email = data.get("lead_email")
+        campaign_name = data.get("campaign_name")
+        reply_subject = data.get("reply_subject")
+        reply_text = data.get("reply_text")
+        reply_html = data.get("reply_html")
+
+        if not all(
+            [lead_email, campaign_name, reply_subject, reply_text or reply_html]
+        ):
+            error_msg = "Missing required fields in webhook payload"
+            logger.error(
+                "webhook_missing_fields",
+                lead_email=lead_email,
+                campaign_name=campaign_name,
+                reply_subject=bool(reply_subject),
+                reply_text=bool(reply_text),
+                reply_html=bool(reply_html),
+            )
+            response_data = {"status": "error", "message": error_msg}
+            return log_webhook_response(400, response_data, data)
+
+        # Search for leads with this email
+        query = create_email_search_query(lead_email)
+        leads = search_close_leads(query)
+        if not leads:
+            error_msg = f"No lead found with email: {lead_email}"
+            logger.error("lead_not_found", lead_email=lead_email)
+            response_data = {"status": "error", "message": error_msg}
+            return log_webhook_response(404, response_data, data)
+
+        if len(leads) > 1:
+            error_msg = f"Multiple leads found with email: {lead_email}"
+            logger.error(
+                "multiple_leads_found", lead_email=lead_email, lead_count=len(leads)
+            )
+            response_data = {"status": "error", "message": error_msg}
+            return log_webhook_response(400, response_data, data)
+
+        lead = leads[0]
+        lead_id = lead["id"]
+        logger.info("lead_found", lead_id=lead_id, lead_email=lead_email)
+
+        # Get lead details
+        lead_details = get_lead_by_id(lead_id)
+        if not lead_details:
+            error_msg = f"Could not retrieve lead details for lead ID: {lead_id}"
+            logger.error("lead_details_not_found", lead_id=lead_id)
+            response_data = {"status": "error", "message": error_msg}
+            return log_webhook_response(404, response_data, data)
+
+        # Get the contact with the matching email
+        contact = None
+        for c in lead_details.get("contacts", []):
+            for email in c.get("emails", []):
+                if email.get("email") == lead_email:
+                    contact = c
+                    break
+            if contact:
+                break
+
+        if not contact:
+            error_msg = f"No contact found with email: {lead_email}"
+            logger.error("contact_not_found", lead_id=lead_id, lead_email=lead_email)
+            response_data = {"status": "error", "message": error_msg}
+            return log_webhook_response(404, response_data, data)
+
+        # Create email activity in Close
+        email_data = {
+            "contact_id": contact["id"],
+            "user_id": BARBARA_USER_ID,
+            "lead_id": lead_id,
+            "direction": "incoming",
+            "created_by": None,  # For incoming emails, no created_by
+            "date_created": data.get("timestamp")
+            .replace("Z", "+00:00")
+            .replace("T", "T"),
+            "subject": reply_subject,
+            "sender": lead_email,
+            "to": [data.get("email_account")],
+            "bcc": [],
+            "cc": [],
+            "status": "inbox",
+            "body_text": reply_text or "",
+            "body_html": reply_html or "",
+            "attachments": [],
+            "template_id": None,
+        }
+
+        headers = get_close_headers()
+        email_url = "https://api.close.com/api/v1/activity/email/"
+        email_response = requests.post(email_url, headers=headers, json=email_data)
+        email_response.raise_for_status()
+
+        logger.info(f"Successfully processed reply received webhook for lead {lead_id}")
+
+        # Track this webhook
+        webhook_data = {
+            "route": "reply_received",
+            "lead_id": lead_id,
+            "lead_email": lead_email,
+            "task_id": None,  # No task being completed in this route
+            "email_id": email_response.json().get("id"),
+        }
+
+        response_data = {
+            "status": "success",
+            "message": "Reply received webhook processed successfully",
+            "data": {
+                "lead_id": lead_id,
+                "email_id": email_response.json().get("id"),
+            },
+        }
+
+        return log_webhook_response(200, response_data, webhook_data)
+
+    except Exception as e:
+        error_msg = f"Error processing reply received webhook: {str(e)}"
+        # Capture the traceback
+        tb = traceback.format_exc()
+        error_message = f"Error processing Instantly reply received webhook: {str(e)}\nTraceback: {tb}"
+        logger.error(
+            "reply_received_webhook_error",
+            error=str(e),
+            traceback=traceback.format_exc(),
+        )
+        # Send email notification
+        send_email(subject="Instantly Reply Received Webhook Error", body=error_message)
+
+        response_data = {"status": "error", "message": error_msg}
+        return log_webhook_response(500, response_data, None, error=str(e))
