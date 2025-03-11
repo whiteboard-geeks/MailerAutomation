@@ -76,7 +76,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        blueprint: [instantly]  # Add new blueprints here as you create them
+        blueprint: [instantly, easypost]  # Add new blueprints here as you create them
     steps:
       - uses: actions/checkout@v3
       
@@ -119,7 +119,8 @@ jobs:
           ENV_TYPE: "staging"
           CLOSE_API_KEY: ${{ secrets.CLOSE_API_KEY }}
           INSTANTLY_API_KEY: ${{ secrets.INSTANTLY_API_KEY }}
-          WEBHOOK_API_KEY: ${{ secrets.WEBHOOK_API_KEY }}
+          EASYPOST_TEST_API_KEY: ${{ secrets.EASYPOST_TEST_API_KEY }}
+          EASYPOST_PROD_API_KEY: ${{ secrets.EASYPOST_PROD_API_KEY }}
         run: |
           # Set the base URL for tests to point to staging
           export BASE_URL=$STAGING_URL
@@ -153,15 +154,18 @@ jobs:
           echo "Checking if secrets are available (will show as masked if they are):"
           echo "CLOSE_API_KEY: ${{ secrets.CLOSE_API_KEY }}"
           echo "INSTANTLY_API_KEY: ${{ secrets.INSTANTLY_API_KEY }}"
-          echo "WEBHOOK_API_KEY: ${{ secrets.WEBHOOK_API_KEY }}"
+          echo "EASYPOST_TEST_API_KEY: ${{ secrets.EASYPOST_TEST_API_KEY }}"
+          echo "EASYPOST_PROD_API_KEY: ${{ secrets.EASYPOST_PROD_API_KEY }}"
           echo "Checking if environment variables are set:"
           if [ -n "$CLOSE_API_KEY" ]; then echo "CLOSE_API_KEY is set"; else echo "CLOSE_API_KEY is NOT set"; fi
           if [ -n "$INSTANTLY_API_KEY" ]; then echo "INSTANTLY_API_KEY is set"; else echo "INSTANTLY_API_KEY is NOT set"; fi
-          if [ -n "$WEBHOOK_API_KEY" ]; then echo "WEBHOOK_API_KEY is set"; else echo "WEBHOOK_API_KEY is NOT set"; fi
+          if [ -n "$EASYPOST_TEST_API_KEY" ]; then echo "EASYPOST_TEST_API_KEY is set"; else echo "EASYPOST_TEST_API_KEY is NOT set"; fi
+          if [ -n "$EASYPOST_PROD_API_KEY" ]; then echo "EASYPOST_PROD_API_KEY is set"; else echo "EASYPOST_PROD_API_KEY is NOT set"; fi
         env:
           CLOSE_API_KEY: ${{ secrets.CLOSE_API_KEY }}
           INSTANTLY_API_KEY: ${{ secrets.INSTANTLY_API_KEY }}
-          WEBHOOK_API_KEY: ${{ secrets.WEBHOOK_API_KEY }}
+          EASYPOST_TEST_API_KEY: ${{ secrets.EASYPOST_TEST_API_KEY }}
+          EASYPOST_PROD_API_KEY: ${{ secrets.EASYPOST_PROD_API_KEY }}
           
       - name: Run E2E tests for ${{ matrix.blueprint }}
         env:
@@ -169,7 +173,8 @@ jobs:
           ENV_TYPE: "staging"
           CLOSE_API_KEY: ${{ secrets.CLOSE_API_KEY }}
           INSTANTLY_API_KEY: ${{ secrets.INSTANTLY_API_KEY }}
-          WEBHOOK_API_KEY: ${{ secrets.WEBHOOK_API_KEY }}
+          EASYPOST_TEST_API_KEY: ${{ secrets.EASYPOST_TEST_API_KEY }}
+          EASYPOST_PROD_API_KEY: ${{ secrets.EASYPOST_PROD_API_KEY }}
         run: |
           # Set the base URL for tests to point to staging
           export BASE_URL=$STAGING_URL
@@ -178,7 +183,6 @@ jobs:
           echo "Environment variables set for testing:"
           if [ -n "$CLOSE_API_KEY" ]; then echo "CLOSE_API_KEY is set"; else echo "CLOSE_API_KEY is NOT set"; fi
           if [ -n "$INSTANTLY_API_KEY" ]; then echo "INSTANTLY_API_KEY is set"; else echo "INSTANTLY_API_KEY is NOT set"; fi
-          if [ -n "$WEBHOOK_API_KEY" ]; then echo "WEBHOOK_API_KEY is set"; else echo "WEBHOOK_API_KEY is NOT set"; fi
           echo "BASE_URL: $BASE_URL"
           echo "ENV_TYPE: $ENV_TYPE"
           

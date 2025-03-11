@@ -150,6 +150,24 @@
                 "REDISCLOUD_URL": "redis://localhost:6379"
             },
             "cwd": "${workspaceFolder}"
+        },
+        {
+            "name": "EasyPost Integration Tests",
+            "type": "debugpy",
+            "request": "launch",
+            "module": "pytest",
+            "args": [
+                "tests/integration/easypost/",
+                "--verbose",
+                "-s"
+            ],
+            "console": "integratedTerminal",
+            "justMyCode": false,
+            "env": {
+                "PYTHONPATH": "${workspaceFolder}",
+                "ENV_TYPE": "test"
+            },
+            "cwd": "${workspaceFolder}"
         }
     ],
     "compounds": [
@@ -198,6 +216,11 @@
                 "Celery Worker", 
                 "All Instantly Tests"
             ],
+            "stopAll": true
+        },
+        {
+            "name": "EasyPost Integration Tests Compound",
+            "configurations": ["Flask", "EasyPost Integration Tests"],
             "stopAll": true
         }
     ]

@@ -1,0 +1,126 @@
+{
+  "url": "url_here",
+  "events": [
+    {
+      "object_type": "lead",
+      "action": "created",
+      "filter": {
+        "type": "and",
+        "filters": [
+          {
+            "type": "field_accessor",
+            "field": "data",
+            "filter": {
+              "type": "field_accessor",
+              "field": "custom.cf_iSOPYKzS9IPK20gJ8eH9Q74NT7grCQW9psqo4lZR3Ii",
+              "filter": {
+                "type": "exists"
+              }
+            }
+          },
+          {
+            "type": "field_accessor",
+            "field": "data",
+            "filter": {
+              "type": "field_accessor",
+              "field": "custom.cf_2QQR5e6vJUyGzlYBtHddFpdqNp5393nEnUiZk1Ukl9l",
+              "filter": {
+                "type": "exists"
+              }
+            }
+          },
+          {
+            "type": "field_accessor",
+            "field": "data",
+            "filter": {
+              "type": "field_accessor",
+              "field": "custom.cf_JsirGUJdp8RrCI6XwW48xFKEccSwulSCwZ7pAZL84vh",
+              "filter": {
+                "type": "not_exists"
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "object_type": "lead",
+      "action": "updated",
+      "filter": {
+        "type": "or",
+        "filters": [
+          {
+            "type": "and",
+            "filters": [
+              {
+                "type": "field_accessor",
+                "field": "changed_fields",
+                "filter": {
+                  "type": "contains",
+                  "value": "custom.cf_2QQR5e6vJUyGzlYBtHddFpdqNp5393nEnUiZk1Ukl9l"
+                }
+              },
+              {
+                "type": "field_accessor",
+                "field": "data",
+                "filter": {
+                  "type": "field_accessor",
+                  "field": "custom.cf_iSOPYKzS9IPK20gJ8eH9Q74NT7grCQW9psqo4lZR3Ii",
+                  "filter": {
+                    "type": "exists"
+                  }
+                }
+              },
+              {
+                "type": "field_accessor",
+                "field": "data",
+                "filter": {
+                  "type": "field_accessor",
+                  "field": "custom.cf_JsirGUJdp8RrCI6XwW48xFKEccSwulSCwZ7pAZL84vh",
+                  "filter": {
+                    "type": "not_exists"
+                  }
+                }
+              }
+            ]
+          },
+          {
+            "type": "and",
+            "filters": [
+              {
+                "type": "field_accessor",
+                "field": "changed_fields",
+                "filter": {
+                  "type": "contains",
+                  "value": "custom.cf_iSOPYKzS9IPK20gJ8eH9Q74NT7grCQW9psqo4lZR3Ii"
+                }
+              },
+              {
+                "type": "field_accessor",
+                "field": "data",
+                "filter": {
+                  "type": "field_accessor",
+                  "field": "custom.cf_2QQR5e6vJUyGzlYBtHddFpdqNp5393nEnUiZk1Ukl9l",
+                  "filter": {
+                    "type": "exists"
+                  }
+                }
+              },
+              {
+                "type": "field_accessor",
+                "field": "data",
+                "filter": {
+                  "type": "field_accessor",
+                  "field": "custom.cf_JsirGUJdp8RrCI6XwW48xFKEccSwulSCwZ7pAZL84vh",
+                  "filter": {
+                    "type": "not_exists"
+                  }
+                }
+              }
+            ]
+          }
+        ]
+      }
+    }
+  ]
+}

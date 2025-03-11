@@ -90,7 +90,7 @@ class TestInstantlyE2E:
 
         # Create a test lead in Close
         print("Creating test lead in Close...")
-        lead_data = self.close_api.create_test_lead()
+        lead_data = self.close_api.create_test_lead(include_date_location=True)
         self.test_data["lead_id"] = lead_data["id"]
         print(f"Test lead created with ID: {lead_data['id']}")
 

@@ -47,6 +47,7 @@ class TestInstantlyEmailSentIntegration:
             email=self.mock_payload["lead_email"],
             first_name=self.mock_payload["firstName"],
             last_name=self.mock_payload["lastName"],
+            include_date_location=True,
         )
         self.test_data["lead_id"] = lead_data["id"]
         print(f"Test lead created with ID: {lead_data['id']}")

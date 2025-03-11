@@ -2,6 +2,7 @@ import requests
 import os
 from base64 import b64encode
 from datetime import datetime, timedelta
+import json
 
 
 class CloseAPI:
@@ -25,7 +26,13 @@ class CloseAPI:
         self.base_url = "https://api.close.com/api/v1"
 
     def create_test_lead(
-        self, email=None, first_name=None, last_name=None, email_suffix=None
+        self,
+        email=None,
+        first_name=None,
+        last_name=None,
+        email_suffix=None,
+        custom_fields=None,
+        include_date_location=True,
     ):
         """Create a test lead in Close."""
         # Generate unique email to avoid conflicts
@@ -53,10 +60,19 @@ class CloseAPI:
                     "emails": [{"email": email, "type": "office"}],
                 }
             ],
-            "custom.cf_DTgmXXPozUH3707H1MYu2PhhDznJjWbtmDcb7zme5a9": "2/27 to Richmond, VA",  # Date & Location Mailer Delivered
             "custom.lcf_tRacWU9nMn0l2i0xhizYpewewmw995aWYaJKgDgDb9o": "InstantlyTest",  # Company
             "status_id": "stat_vlsrwwLdhID2Gl4Csn8UFeFc5RhzzJDBmoUHNngYV1E",  # Test
         }
+
+        # Add Date & Location Mailer Delivered field if requested
+        if include_date_location:
+            payload["custom.cf_DTgmXXPozUH3707H1MYu2PhhDznJjWbtmDcb7zme5a9"] = (
+                "2/27 to Richmond, VA"  # Date & Location Mailer Delivered
+            )
+
+        # Add any custom fields provided
+        if custom_fields:
+            payload.update(custom_fields)
 
         response = requests.post(
             f"{self.base_url}/lead/", json=payload, headers=self.headers
@@ -203,3 +219,72 @@ class CloseAPI:
             raise Exception(f"Failed to get email activities: {response.text}")
 
         return response.json()["data"]
+
+    def get_lead(self, lead_id):
+        """Get a lead by ID from Close."""
+        response = requests.get(
+            f"{self.base_url}/lead/{lead_id}/", headers=self.headers
+        )
+        if response.status_code != 200:
+            raise Exception(f"Failed to get lead: {response.text}")
+
+        return response.json()
+
+    def create_webhook_for_tracking_id_and_carrier(self):
+        """
+        Create a webhook in Close that triggers when:
+        1. A lead is created with both tracking number and carrier present
+        2. A lead is updated where carrier is updated and tracking number is present
+        3. A lead is updated where tracking number is updated and carrier is present
+        """
+        # Get base URL from environment or use default
+        base_url = os.environ.get(
+            "BASE_URL", "http://locust-pleased-thankfully.ngrok-free.app"
+        )
+
+        # Create webhook payload with complex filtering
+        with open("tests/utils/close_webhook_delivery_info_filters.json", "r") as f:
+            webhook_data = json.load(f)
+        webhook_data["url"] = f"{base_url}/easypost/create_tracker"
+
+        # Create webhook in Close with retry logic for duplicates
+        retry_count = 0
+        max_retries = 1
+
+        while retry_count <= max_retries:
+            response = requests.post(
+                f"{self.base_url}/webhook",
+                json=webhook_data,
+                headers=self.headers,
+            )
+
+            if response.status_code == 201:
+                return response.json()["id"]
+            elif response.status_code != 201 and retry_count < max_retries:
+                # Check if error is due to duplicate webhook
+                error_data = response.json()
+                error_message = error_data.get("message", "")
+
+                if "Duplicate active subscription" in error_message:
+                    # Extract webhook ID using string manipulation
+                    import re
+
+                    webhook_match = re.search(r"whsub_[a-zA-Z0-9]+", error_message)
+
+                    if webhook_match:
+                        duplicate_webhook_id = webhook_match.group(0)
+                        print(f"Found duplicate webhook: {duplicate_webhook_id}")
+
+                        # Delete the duplicate webhook
+                        self.delete_webhook(duplicate_webhook_id)
+                        print(f"Deleted duplicate webhook: {duplicate_webhook_id}")
+
+                        # Increment retry counter
+                        retry_count += 1
+                        continue
+
+            # If we get here, either it's not a duplicate webhook error or we've exceeded retries
+            raise Exception(f"Failed to create webhook: {response.text}")
+
+        # This should never be reached due to the exception above
+        return None
