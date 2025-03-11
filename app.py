@@ -22,8 +22,6 @@ import pytz
 import pytest
 import structlog
 
-from blueprints.instantly import instantly_bp
-
 
 # Configure structlog
 def configure_structlog():
@@ -79,11 +77,22 @@ def configure_structlog():
     logging.getLogger("urllib3").setLevel(logging.WARNING)
 
 
-# Configure structured logging
+# Configure structlog BEFORE importing blueprints
 configure_structlog()
 
 # Create a logger instance for app.py
 logger = structlog.get_logger("app")
+
+# Print environment information to verify ENV_TYPE is correctly set
+logger.info(
+    "environment_info",
+    env_type=os.environ.get("ENV_TYPE", "not_set"),
+    is_production=os.environ.get("ENV_TYPE") == "production",
+    is_staging=os.environ.get("ENV_TYPE") == "staging",
+)
+
+# Now import blueprints after structlog is configured
+from blueprints.instantly import instantly_bp
 
 flask_app = Flask(__name__)
 
@@ -93,19 +102,26 @@ flask_app = Flask(__name__)
 def add_request_id():
     request_id = request.headers.get("X-Request-ID", str(uuid.uuid4()))
     g.request_id = request_id
-    # Add request_id to all log entries for this request
-    structlog.contextvars.bind_contextvars(request_id=request_id)
+    # Store request start time for duration calculation
+    g.start_time = time.time()
 
-    # For webhook requests, log the start of processing
+    # Add request_id to all log entries for this request
+    structlog.contextvars.bind_contextvars(
+        request_id=request_id,
+        method=request.method,
+        path=request.path,
+        timestamp=datetime.utcnow().isoformat(),
+    )
+
+    # For webhook requests, log the start of processing with detailed info
     if "/webhook" in request.path or "/email_sent" in request.path:
         logger.info(
             "webhook_received",
-            path=request.path,
-            method=request.method,
             content_type=request.content_type,
             content_length=request.content_length,
             params=dict(request.args),
             remote_addr=request.remote_addr,
+            heroku_request_id=request.headers.get("X-Request-ID", "none"),
         )
 
 
@@ -114,18 +130,21 @@ def log_response(response):
     """Log the response status for all requests."""
     # Only log details for webhook endpoints
     if "/webhook" in request.path or "/email_sent" in request.path:
-        # Calculate request processing time if we have a start time
+        # Calculate request processing time
         processing_time = None
         if hasattr(g, "start_time"):
             processing_time = time.time() - g.start_time
 
-        # Log the response
+        # Log the response with detailed timing
         logger.info(
             "webhook_response_sent",
             status_code=response.status_code,
             content_length=response.content_length,
             content_type=response.content_type,
-            processing_time_ms=processing_time * 1000 if processing_time else None,
+            processing_time_ms=round(processing_time * 1000, 2)
+            if processing_time
+            else None,
+            timestamp=datetime.utcnow().isoformat(),
         )
     return response
 

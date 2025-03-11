@@ -39,10 +39,12 @@ def log_webhook_response(status_code, response_data, webhook_data=None, error=No
         webhook_data (dict, optional): The webhook payload data
         error (Exception, optional): Exception if one occurred
     """
+    # Include timestamp for better tracing
     log = logger.bind(
         status_code=status_code,
         response=response_data,
         request_id=getattr(g, "request_id", "unknown"),
+        timestamp=datetime.utcnow().isoformat(),
     )
 
     if webhook_data:
