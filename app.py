@@ -4,18 +4,15 @@ import os
 import io
 import logging
 import traceback
-from datetime import datetime, timedelta
+from datetime import datetime
 from base64 import b64encode
-from urllib.parse import urlencode
 from io import StringIO
 from time import sleep
 import sys
 import uuid
 import time
 
-import easypost
 import requests
-from apscheduler.schedulers.background import BackgroundScheduler
 from flask import Flask, request, jsonify, g
 from celery import Celery
 import pytz
@@ -92,8 +89,9 @@ logger.info(
 )
 
 # Now import blueprints after structlog is configured
-from blueprints.instantly import instantly_bp
-from blueprints.easypost import easypost_bp
+# noqa: E402 - Disable linter warning about imports not at top of file
+from blueprints.instantly import instantly_bp  # noqa: E402
+from blueprints.easypost import easypost_bp  # noqa: E402
 
 flask_app = Flask(__name__)
 
@@ -152,8 +150,21 @@ def log_response(response):
 
 @flask_app.errorhandler(Exception)
 def handle_exception(e):
-    """Log exceptions from webhook processing."""
-    # Only log detailed errors for webhook endpoints
+    """Comprehensive error handler for all exceptions."""
+    # Capture the traceback
+    tb = traceback.format_exc()
+
+    # Get the current route from the request object
+    current_route = request.path
+
+    # General error logging for all routes
+    error_message = f"An error occurred at {current_route}: {str(e)}\nTraceback: {tb}"
+    logger.error(error_message)
+
+    # Send email notification for all errors
+    send_email(subject="Application Error", body=error_message)
+
+    # Additional detailed logging for webhook endpoints
     if "/webhook" in request.path or "/email_sent" in request.path:
         logger.exception(
             "webhook_processing_error",
@@ -163,14 +174,22 @@ def handle_exception(e):
             method=request.method,
         )
 
-    # Return a generic error response
-    return jsonify(
-        {
+    # Prepare appropriate response based on environment
+    if env_type == "development":
+        response_body = {
             "status": "error",
-            "message": "An internal server error occurred",
+            "message": str(e),
+            "traceback": tb,
+            "route": current_route,
+        }
+    else:
+        response_body = {
+            "status": "error",
+            "message": "An internal server error occurred at " + current_route,
             "error_type": type(e).__name__,
         }
-    ), 500
+
+    return jsonify(response_body), 500
 
 
 # Add your project to the Python path
@@ -234,36 +253,6 @@ BYTESCALE_ACCOUNT_ID = os.environ.get("BYTESCALE_ACCOUNT_ID")
 BYTESCALE_API_KEY = os.environ.get("BYTESCALE_API_KEY")
 
 
-# General utils
-@flask_app.errorhandler(Exception)
-def handle_exception(e):
-    # Capture the traceback
-    tb = traceback.format_exc()
-
-    # Get the current route from the request object
-    current_route = request.path
-
-    error_message = f"An error occurred at {current_route}: {str(e)}\nTraceback: {tb}"
-    logger.error(error_message)
-    send_email(subject="Application Error", body=error_message)
-
-    # Optionally, include the traceback and route in the response for debugging
-    if env_type == "development":
-        response_body = {
-            "status": "error",
-            "message": str(e),
-            "traceback": tb,
-            "route": current_route,
-        }
-    else:
-        response_body = {
-            "status": "error",
-            "message": "An internal server error occurred at " + current_route,
-        }
-
-    return jsonify(response_body), 500
-
-
 # Check if development scheduling is enabled
 ENABLE_DEV_SCHEDULING = (
     os.environ.get("ENABLE_DEV_SCHEDULING", "false").lower() == "true"
@@ -295,16 +284,6 @@ flask_app.register_blueprint(easypost_bp, url_prefix="/easypost")
 
 # Expose the send_email function to blueprints
 flask_app.send_email = send_email
-
-
-def load_query(file_name):
-    # Construct the full path to the file
-    base_dir = os.path.dirname(os.path.abspath(__file__))
-    file_path = os.path.join(base_dir, "close_queries", file_name)
-
-    # Open and load the JSON data
-    with open(file_path, "r") as file:
-        return json.load(file)
 
 
 # /sync_delivery_status_from_easypost
@@ -347,87 +326,6 @@ def parse_delivery_information(tracking_data):
 
     logger.info(f"Delivery information parsed: {delivery_information}")
     return delivery_information
-
-
-def search_close_leads(query):
-    try:
-        headers = {
-            "Content-Type": "application/json",
-            "Authorization": f"Basic {CLOSE_ENCODED_KEY}",
-        }
-
-        data_to_return = []
-        cursor = None
-        retry_count = 0
-        max_retries = 3
-
-        while True:
-            if cursor:
-                query["cursor"] = cursor
-
-            # Add retry logic with exponential backoff
-            try:
-                response = requests.post(
-                    "https://api.close.com/api/v1/data/search/",
-                    json=query,
-                    headers=headers,
-                    timeout=30,  # Add timeout
-                )
-                response.raise_for_status()  # Raise exception for non-200 status codes
-
-            except requests.exceptions.RequestException as e:
-                retry_count += 1
-                if retry_count > max_retries:
-                    logger.error(f"Max retries exceeded when querying Close API: {e}")
-                    raise
-
-                sleep_time = 2**retry_count  # Exponential backoff
-                logger.warning(
-                    f"Retrying Close API request in {sleep_time} seconds. Attempt {retry_count} of {max_retries}"
-                )
-                sleep(sleep_time)
-                continue
-
-            response_data = response.json()
-
-            # Log response data for debugging
-            logger.debug(f"Close API Response: {response_data}")
-
-            if "data" not in response_data:
-                logger.error(
-                    f"Unexpected response format from Close API: {response_data}"
-                )
-                raise Exception("Invalid response format from Close API")
-
-            number_of_leads_retrieved = len(response_data["data"])
-            logger.info(
-                f"Number of leads retrieved: {number_of_leads_retrieved}, "
-                f"Current cursor: {cursor}"
-            )
-
-            data_to_return.extend(response_data["data"])
-
-            # Get next cursor
-            cursor = response_data.get("cursor")
-            if not cursor:
-                logger.info("No more pages to fetch from Close API.")
-                break
-
-        if not data_to_return:
-            logger.warning("No leads found in Close API search")
-            return []  # Return empty list instead of None
-
-        return data_to_return
-
-    except Exception as e:
-        logger.error(f"Failed to search Close leads: {e}")
-        logger.error(f"Query used: {query}")
-        logger.error(f"Traceback: {traceback.format_exc()}")
-        send_email(
-            subject="Failed to search Close leads",
-            body=f"Failed to search Close leads: {e}\nQuery: {query}\nTraceback: {traceback.format_exc()}",
-        )
-        return []  # Return empty list instead of None
 
 
 def update_delivery_information_for_lead(lead_id, delivery_information):
