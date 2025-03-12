@@ -490,6 +490,23 @@ def handle_package_delivery_update():
                 "queries": [
                     {"negate": False, "object_type": "lead", "type": "object_type"},
                     {
+                        "negate": True,
+                        "queries": [
+                            {
+                                "field": {
+                                    "field_name": "is_deleted",
+                                    "object_type": "lead",
+                                    "type": "field",
+                                },
+                                "negate": False,
+                                "operator": "=",
+                                "type": "boolean_condition",
+                                "value": True,
+                            }
+                        ],
+                        "type": "or",
+                    },
+                    {
                         "negate": False,
                         "queries": [
                             {
@@ -542,15 +559,36 @@ def handle_package_delivery_update():
             if (
                 len(close_leads) > 1
             ):  # This would mean there are two leads with the same tracking number
-                error_msg = "More than one lead found with the same tracking number"
-                logger.error(error_msg)
+                # Instead of an error, log a warning and continue with the most recent lead
+                active_leads = [
+                    lead for lead in close_leads if not lead.get("is_deleted", False)
+                ]
 
-                webhook_data["processed"] = True
-                webhook_data["result"] = "Error"
-                webhook_data["error"] = error_msg
-                _webhook_tracker.add(tracking_data.get("id"), webhook_data)
+                if not active_leads:
+                    error_msg = "Found multiple leads with the same tracking number, but all are marked as deleted"
+                    logger.warning(error_msg)
 
-                raise Exception(error_msg)
+                    webhook_data["processed"] = True
+                    webhook_data["result"] = "No active leads found"
+                    _webhook_tracker.add(tracking_data.get("id"), webhook_data)
+
+                    return jsonify({"status": "success", "message": error_msg}), 200
+
+                # If we found multiple active leads, log the IDs for debugging
+                if len(active_leads) > 1:
+                    lead_ids = [lead.get("id") for lead in active_leads]
+                    logger.warning(
+                        f"Found multiple active leads with the same tracking number: {lead_ids}. Using the first one."
+                    )
+
+                # Use the first active lead
+                selected_lead = active_leads[0]
+                logger.info(
+                    f"Selected lead ID: {selected_lead['id']} for tracking number {tracking_data['tracking_code']}"
+                )
+
+                # Continue processing with the selected lead
+                close_leads = [selected_lead]
 
             if len(close_leads) == 0:
                 error_msg = f"No leads found with tracking number {tracking_data['tracking_code']}"

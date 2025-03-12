@@ -7,6 +7,18 @@ from datetime import datetime
 
 
 class TestEasyPostE2E:
+    @classmethod
+    def setup_class(cls):
+        """Setup before all tests in the class."""
+        # Clean up any lingering test data from previous runs
+        close_api = CloseAPI()
+
+        # Search for any leads with test tracking numbers
+        test_leads = close_api.search_leads_by_tracking_number("EZ2000000002")
+        for lead in test_leads:
+            print(f"Cleaning up existing test lead with ID: {lead['id']}")
+            close_api.delete_lead(lead["id"])
+
     def setup_method(self):
         """Setup before each test."""
         self.close_api = CloseAPI()

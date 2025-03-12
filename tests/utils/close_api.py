@@ -288,3 +288,51 @@ class CloseAPI:
 
         # This should never be reached due to the exception above
         return None
+
+    def search_leads_by_tracking_number(self, tracking_number):
+        """Search for leads with a specific tracking number.
+
+        Args:
+            tracking_number (str): The tracking number to search for
+
+        Returns:
+            list: List of matching leads
+        """
+        search_query = {
+            "limit": None,
+            "query": {
+                "negate": False,
+                "queries": [
+                    {"negate": False, "object_type": "lead", "type": "object_type"},
+                    {
+                        "negate": False,
+                        "queries": [
+                            {
+                                "condition": {
+                                    "mode": "exact_value",
+                                    "type": "text",
+                                    "value": tracking_number,
+                                },
+                                "field": {
+                                    "custom_field_id": "cf_iSOPYKzS9IPK20gJ8eH9Q74NT7grCQW9psqo4lZR3Ii",
+                                    "type": "custom_field",
+                                },
+                                "negate": False,
+                                "type": "field_condition",
+                            }
+                        ],
+                        "type": "and",
+                    },
+                ],
+                "type": "and",
+            },
+        }
+
+        response = requests.post(
+            f"{self.base_url}/data/search/", json=search_query, headers=self.headers
+        )
+
+        if response.status_code != 200:
+            raise Exception(f"Failed to search leads: {response.text}")
+
+        return response.json().get("data", [])

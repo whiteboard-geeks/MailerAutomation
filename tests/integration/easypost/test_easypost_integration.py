@@ -4,9 +4,24 @@ import requests
 import time
 from tests.utils.close_api import CloseAPI
 from datetime import datetime
+import random
+import unittest.mock
 
 
 class TestEasyPostIntegration:
+    @classmethod
+    def setup_class(cls):
+        """Setup before all tests in the class."""
+        # Clean up any lingering test data from previous runs
+        close_api = CloseAPI()
+
+        # Search for any leads with test tracking numbers
+        for test_number in ["EZ1000000001", "EZ4000000004"]:
+            test_leads = close_api.search_leads_by_tracking_number(test_number)
+            for lead in test_leads:
+                print(f"Cleaning up existing test lead with ID: {lead['id']}")
+                close_api.delete_lead(lead["id"])
+
     def setup_method(self):
         """Setup before each test."""
         self.close_api = CloseAPI()
@@ -34,8 +49,8 @@ class TestEasyPostIntegration:
         timestamp = datetime.now().strftime("%Y%m%d%H%M%S")
 
         # Test tracking number that will return 'delivered' status
-        # Using EZ4000000004 which EasyPost will automatically mark as delivered
-        self.test_tracking_number = "EZ4000000004"
+        # Use one of the valid EasyPost test tracking numbers
+        self.test_tracking_number = "EZ1000000001"  # Different from the other test
         self.test_carrier = "USPS"
 
         # Generate a unique name for the test lead
