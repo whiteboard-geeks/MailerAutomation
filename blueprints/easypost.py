@@ -22,16 +22,14 @@ logger = structlog.get_logger()
 # API keys
 CLOSE_API_KEY = os.environ.get("CLOSE_API_KEY")
 CLOSE_ENCODED_KEY = None  # This will be initialized when needed
-EASYPOST_TEST_API_KEY = os.environ.get("EASYPOST_TEST_API_KEY")
 EASYPOST_PROD_API_KEY = os.environ.get("EASYPOST_PROD_API_KEY")
 ENV_TYPE = os.environ.get("ENV_TYPE", "development")
 
 
 # EasyPost client setup
 def get_easypost_client():
-    """Get appropriate EasyPost client based on environment."""
-    api_key = EASYPOST_TEST_API_KEY if ENV_TYPE == "test" else EASYPOST_PROD_API_KEY
-    return easypost.EasyPostClient(api_key=api_key)
+    """Get EasyPost client."""
+    return easypost.EasyPostClient(api_key=EASYPOST_PROD_API_KEY)
 
 
 # Initialize EasyPost Client

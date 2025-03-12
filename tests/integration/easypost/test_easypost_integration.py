@@ -2,10 +2,10 @@ import os
 import json
 import requests
 import time
+import pytest
 from tests.utils.close_api import CloseAPI
+from tests.utils.easypost_mock import EasyPostMock
 from datetime import datetime
-import random
-import unittest.mock
 
 
 class TestEasyPostIntegration:
@@ -120,6 +120,19 @@ class TestEasyPostIntegration:
         raise TimeoutError(
             f"Timed out waiting for webhook after {int(elapsed_time)} seconds"
         )
+
+    @pytest.fixture(autouse=True)
+    def setup_easypost_mock(self, monkeypatch):
+        """Setup EasyPost mock for all tests in this class."""
+        # Mock the EasyPost tracker create method
+        self.mock_tracker = EasyPostMock.mock_tracker_create(
+            monkeypatch,
+            mock_response_file="tests/integration/easypost/mock_create_tracker_response.json",
+        )
+
+        # Update the mock response with our test data
+        self.mock_tracker.create.return_value.tracking_code = self.test_tracking_number
+        self.mock_tracker.create.return_value.carrier = self.test_carrier
 
     def test_easypost_integration_create_tracker(self):
         """Test the flow of creating an EasyPost tracker via webhook."""

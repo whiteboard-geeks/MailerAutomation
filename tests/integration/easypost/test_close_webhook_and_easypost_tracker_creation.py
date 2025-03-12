@@ -1,12 +1,13 @@
 import os
 import time
+import pytest
 import requests
 from tests.utils.close_api import CloseAPI
-from tests.utils.easypost_api import EasyPostAPI
+from tests.utils.easypost_mock import EasyPostMock
 from datetime import datetime
 
 
-class TestEasyPostE2E:
+class TestCloseWebhookTriggersEasyPostTrackerCreation:
     @classmethod
     def setup_class(cls):
         """Setup before all tests in the class."""
@@ -22,7 +23,6 @@ class TestEasyPostE2E:
     def setup_method(self):
         """Setup before each test."""
         self.close_api = CloseAPI()
-        self.easypost_api = EasyPostAPI()
         self.test_data = {}
 
         # Set timeout to 10 minutes (600 seconds)
@@ -47,7 +47,13 @@ class TestEasyPostE2E:
 
     def teardown_method(self):
         """Cleanup after each test."""
-        # Delete the lead if it was created
+        # Restore original ENV_TYPE
+        if self.original_env_type:
+            os.environ["ENV_TYPE"] = self.original_env_type
+        else:
+            os.environ.pop("ENV_TYPE", None)
+
+        # Delete the test lead if it was created
         if self.test_data.get("lead_id"):
             result = self.close_api.delete_lead(self.test_data["lead_id"])
             if result == {}:  # Successful deletion returns empty dict
@@ -61,24 +67,6 @@ class TestEasyPostE2E:
             print(
                 f"Deleted Close webhook with ID: {self.test_data['close_webhook_id']}"
             )
-
-        # Delete the EasyPost webhook if it was created
-        if self.test_data.get("easypost_webhook_id"):
-            try:
-                result = self.easypost_api.delete_webhook(
-                    self.test_data["easypost_webhook_id"]
-                )
-                print(
-                    f"Deleted EasyPost webhook with ID: {self.test_data['easypost_webhook_id']}"
-                )
-            except Exception as e:
-                print(f"Warning: EasyPost webhook deletion may have failed: {e}")
-
-        # Restore original ENV_TYPE if it was changed
-        if self.original_env_type:
-            os.environ["ENV_TYPE"] = self.original_env_type
-        elif "ENV_TYPE" in os.environ:
-            del os.environ["ENV_TYPE"]
 
     def wait_for_webhook_processed(
         self, tracker_id=None, tracking_code=None, timeout=None
@@ -137,6 +125,19 @@ class TestEasyPostE2E:
             f"Timed out waiting for webhook after {int(elapsed_time)} seconds"
         )
 
+    @pytest.fixture(autouse=True)
+    def setup_easypost_mock(self, monkeypatch):
+        """Setup EasyPost mock for all tests in this class."""
+        # Mock the EasyPost tracker create method
+        self.mock_tracker = EasyPostMock.mock_tracker_create(
+            monkeypatch,
+            mock_response_file="tests/integration/easypost/mock_create_tracker_response.json",
+        )
+
+        # Update the mock response with our test data
+        self.mock_tracker.create.return_value.tracking_code = self.test_tracking_number
+        self.mock_tracker.create.return_value.carrier = self.test_carrier
+
     def test_easypost_tracker_creation_and_delivery_update(self):
         """Test the full workflow from creating a lead through delivery status update."""
         print(
@@ -149,15 +150,9 @@ class TestEasyPostE2E:
 
         # First, create a webhook in Close to catch leads with tracking info
         print("Creating webhook in Close...")
-        webhook_id = self.close_api.create_webhook_for_tracking_id_and_carrier()
-        self.test_data["close_webhook_id"] = webhook_id
-        print(f"Close webhook created with ID: {webhook_id}")
-
-        # Create an EasyPost webhook to send delivery updates to our endpoint
-        print("Creating webhook in EasyPost...")
-        easypost_webhook = self.easypost_api.create_or_update_webhook()
-        self.test_data["easypost_webhook_id"] = easypost_webhook["id"]
-        print(f"EasyPost webhook created with ID: {easypost_webhook['id']}")
+        close_webhook_id = self.close_api.create_webhook_for_tracking_id_and_carrier()
+        self.test_data["close_webhook_id"] = close_webhook_id
+        print(f"Close webhook created with ID: {close_webhook_id}")
 
         # Create a test lead in Close with tracking number and carrier already included
         print("Creating test lead in Close with tracking information...")
