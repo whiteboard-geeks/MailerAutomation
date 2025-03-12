@@ -12,6 +12,7 @@ from flask import Blueprint, request, jsonify
 import easypost
 from redis import Redis
 import structlog
+from close_utils import load_query, search_close_leads
 
 # Initialize Blueprint
 easypost_bp = Blueprint("easypost", __name__)
@@ -515,9 +516,7 @@ def handle_package_delivery_update():
                 }
             ), 200
 
-        from app import load_query
-        from close_utils import search_close_leads
-
+        # Continue with processing for delivered packages
         delivery_information = parse_delivery_information(tracking_data)
         close_query_to_find_leads_with_tracking_number = load_query(
             "lead_by_tracking_number.json"
@@ -749,9 +748,6 @@ def sync_delivery_status_from_easypost():
     This endpoint allows forcing a check of delivery status for all tracked packages.
     """
     try:
-        # Import here to avoid circular dependencies
-        from app import load_query, search_close_leads
-
         # Query Close for leads
         query_leads_with_undelivered_packages_in_close = load_query(
             "undelivered_package_with_easypost_tracker_id.json"

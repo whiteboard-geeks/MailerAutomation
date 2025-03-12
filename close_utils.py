@@ -20,6 +20,25 @@ CLOSE_API_KEY = os.environ.get("CLOSE_API_KEY")
 CLOSE_ENCODED_KEY = b64encode(f"{CLOSE_API_KEY}:".encode()).decode()
 
 
+def load_query(file_name):
+    """
+    Load a Close query from a JSON file in the close_queries directory.
+
+    Args:
+        file_name (str): Name of the JSON file to load
+
+    Returns:
+        dict: The loaded query as a dictionary
+    """
+    # Construct the full path to the file
+    base_dir = os.path.dirname(os.path.abspath(__file__))
+    file_path = os.path.join(base_dir, "close_queries", file_name)
+
+    # Open and load the JSON data
+    with open(file_path, "r") as file:
+        return json.load(file)
+
+
 def retry_with_backoff(max_retries=3, initial_delay=1):
     """
     Decorator that adds retry logic with exponential backoff to a function.
@@ -240,28 +259,6 @@ def get_lead_email_activities(lead_id):
         logger.error(f"Failed to get email activities for lead {lead_id}: {e}")
         logger.error(f"Traceback: {traceback.format_exc()}")
         return []
-
-
-@retry_with_backoff(max_retries=3, initial_delay=1)
-def delete_email_activity(email_id):
-    """
-    Delete an email activity from Close.
-
-    Args:
-        email_id (str): The ID of the email activity to delete.
-
-    Returns:
-        bool: True if successful, False otherwise.
-    """
-    try:
-        url = f"https://api.close.com/api/v1/activity/email/{email_id}/"
-        response = make_close_request("delete", url)
-        return True
-
-    except Exception as e:
-        logger.error(f"Failed to delete email activity {email_id}: {e}")
-        logger.error(f"Traceback: {traceback.format_exc()}")
-        return False
 
 
 @retry_with_backoff(max_retries=3, initial_delay=1)
