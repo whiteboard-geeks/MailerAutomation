@@ -211,6 +211,10 @@ class TestEasyPostIntegration:
 
         print("Lead was successfully updated with the EasyPost tracker ID")
 
+        # Add a delay to allow Close API to index the new lead
+        print("Waiting for Close API to index the new lead...")
+        time.sleep(10)  # 10 second delay
+
         # Prepare mock delivery webhook payload
         # Create a copy of the delivery webhook payload and update with the tracker ID
         delivery_payload = {
