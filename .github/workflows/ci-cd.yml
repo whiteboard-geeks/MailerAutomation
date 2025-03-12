@@ -228,5 +228,6 @@ jobs:
         env:
           CLOSE_API_KEY: ${{ secrets.CLOSE_API_KEY }}
           EASYPOST_PROD_API_KEY: ${{ secrets.EASYPOST_PROD_API_KEY }}
+          PRODUCTION_URL: ${{ vars.PRODUCTION_URL }}
         run: |
           python scripts/verify_production_webhooks.py
