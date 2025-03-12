@@ -23,16 +23,50 @@ logger = structlog.get_logger()
 CLOSE_API_KEY = os.environ.get("CLOSE_API_KEY")
 CLOSE_ENCODED_KEY = None  # This will be initialized when needed
 EASYPOST_PROD_API_KEY = os.environ.get("EASYPOST_PROD_API_KEY")
+EASYPOST_TEST_API_KEY = os.environ.get("EASYPOST_TEST_API_KEY")
 ENV_TYPE = os.environ.get("ENV_TYPE", "development")
 
 
 # EasyPost client setup
-def get_easypost_client():
-    """Get EasyPost client."""
-    return easypost.EasyPostClient(api_key=EASYPOST_PROD_API_KEY)
+def get_easypost_client(tracking_number=None):
+    """
+    Get EasyPost client based on tracking number.
+
+    Args:
+        tracking_number: The tracking number to check. If it follows test format
+                         (e.g., starts with "EZ"), use test API key.
+
+    Returns:
+        EasyPost client instance with appropriate API key
+
+    Raises:
+        ValueError: If a test tracking number is used but EASYPOST_TEST_API_KEY is not set
+    """
+    # Default to production API key
+    api_key = EASYPOST_PROD_API_KEY
+
+    # If tracking number follows test format (e.g., starts with "EZ"), use test API key
+    if tracking_number and (
+        tracking_number.startswith("EZ") or tracking_number.startswith("ez")
+    ):
+        if EASYPOST_TEST_API_KEY:
+            api_key = EASYPOST_TEST_API_KEY
+            logger.info(
+                f"Using EasyPost test API key for tracking number: {tracking_number}"
+            )
+        else:
+            error_msg = f"EASYPOST_TEST_API_KEY is not set but required for test tracking number: {tracking_number}"
+            logger.error(error_msg)
+            raise ValueError(error_msg)
+    else:
+        logger.info(
+            f"Using EasyPost production API key for tracking number: {tracking_number}"
+        )
+
+    return easypost.EasyPostClient(api_key=api_key)
 
 
-# Initialize EasyPost Client
+# Initialize EasyPost Client (default with production API key)
 easypost_client = get_easypost_client()
 
 
@@ -180,10 +214,11 @@ def create_easypost_tracker():
 
         carrier = carrier_field[0] if isinstance(carrier_field, list) else carrier_field
 
-        # Create tracker in EasyPost
-        tracker = easypost_client.tracker.create(
-            tracking_code=tracking_number, carrier=carrier
-        )
+        # Get appropriate EasyPost client based on tracking number
+        client = get_easypost_client(tracking_number)
+
+        # Create tracker in EasyPost using the appropriate client
+        tracker = client.tracker.create(tracking_code=tracking_number, carrier=carrier)
 
         # Update lead with EasyPost tracker ID
         update_easypost_tracker_id_for_lead(
@@ -795,7 +830,16 @@ def sync_delivery_status_from_easypost():
                 easypost_tracker_id = lead[
                     "custom.cf_JsirGUJdp8RrCI6XwW48xFKEccSwulSCwZ7pAZL84vh"
                 ]
-                tracker = easypost_client.tracker.retrieve(easypost_tracker_id)
+
+                # Get tracking number to determine which client to use
+                tracking_number = lead.get(
+                    "custom.cf_iSOPYKzS9IPK20gJ8eH9Q74NT7grCQW9psqo4lZR3Ii"
+                )
+
+                # Get the appropriate client based on tracking number
+                client = get_easypost_client(tracking_number)
+
+                tracker = client.tracker.retrieve(easypost_tracker_id)
                 tracking_data = tracker
 
                 if tracking_data["status"] != "delivered":
