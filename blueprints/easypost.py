@@ -12,7 +12,7 @@ from flask import Blueprint, request, jsonify
 import easypost
 from redis import Redis
 import structlog
-from close_utils import load_query, search_close_leads
+from close_utils import load_query, search_close_leads, get_lead_by_id
 
 # Initialize Blueprint
 easypost_bp = Blueprint("easypost", __name__)
@@ -389,6 +389,11 @@ def update_delivery_information_for_lead(lead_id, delivery_information):
         json=lead_update_data,
         headers=headers,
     )
+    if response.status_code != 200:
+        logger.error(
+            f"Failed to update delivery information for lead {lead_id}: {response.status_code}, \n {response.text}, \n {response.json()}"
+        )
+        raise Exception("Close accepted the lead, but the fields did not update.")
     response_data = response.json()
     data_updated = verify_delivery_information_updated(response_data, lead_update_data)
     if not data_updated:
@@ -528,39 +533,46 @@ def handle_package_delivery_update():
         close_leads = search_close_leads(close_query_to_find_leads_with_tracking_number)
 
         try:
-            if (
-                len(close_leads) > 1
-            ):  # This would mean there are two leads with the same tracking number
-                # Instead of an error, log a warning and continue with the most recent lead
-                active_leads = [
-                    lead for lead in close_leads if not lead.get("is_deleted", False)
-                ]
-
-                if not active_leads:
-                    error_msg = "Found multiple leads with the same tracking number, but all are marked as deleted"
+            if len(close_leads) > 1:
+                logger.info(
+                    f"Multiple leads ({len(close_leads)}) found with tracking number {tracking_data['tracking_code']} and tracker ID {tracking_data['id']}"
+                )
+                # Check each lead to see which one doesn't return a 404
+                valid_leads = []
+                for lead in close_leads:
+                    lead_id = lead["id"]
+                    # Use get_lead_by_id to verify this lead actually exists
+                    valid_lead = get_lead_by_id(lead_id)
+                    if valid_lead:
+                        valid_leads.append(lead)
+                        logger.info(f"Verified lead ID: {lead_id} exists")
+                    else:
+                        logger.warning(f"Lead ID: {lead_id} returned 404 or error")
+                if len(valid_leads) == 1:
+                    selected_lead = valid_leads[0]
+                    logger.info(
+                        f"Selected lead ID: {selected_lead['id']} for tracking number {tracking_data['tracking_code']}"
+                    )
+                    # Continue processing with the selected lead
+                    close_leads = [selected_lead]
+                elif len(valid_leads) > 1:
+                    # If multiple valid leads found, log this and return
+                    error_msg = f"Multiple valid leads found for tracking number {tracking_data['tracking_code']} and tracker ID {tracking_data['id']}"
                     logger.warning(error_msg)
 
                     webhook_data["processed"] = True
-                    webhook_data["result"] = "No active leads found"
+                    webhook_data["result"] = "Multiple valid leads found"
                     _webhook_tracker.add(tracking_data.get("id"), webhook_data)
 
                     return jsonify({"status": "success", "message": error_msg}), 200
-
-                # If we found multiple active leads, log the IDs for debugging
-                if len(active_leads) > 1:
-                    lead_ids = [lead.get("id") for lead in active_leads]
-                    logger.warning(
-                        f"Found multiple active leads with the same tracking number: {lead_ids}. Using the last one."
-                    )
-
-                # Use the first active lead
-                selected_lead = active_leads[-1]
-                logger.info(
-                    f"Selected lead ID: {selected_lead['id']} for tracking number {tracking_data['tracking_code']}"
-                )
-
-                # Continue processing with the selected lead
-                close_leads = [selected_lead]
+                else:
+                    # If no valid leads found, log this and return
+                    error_msg = f"No valid leads found for tracking number {tracking_data['tracking_code']} and tracker ID {tracking_data['id']}"
+                    logger.warning(error_msg)
+                    webhook_data["processed"] = True
+                    webhook_data["result"] = "No valid leads found"
+                    _webhook_tracker.add(tracking_data.get("id"), webhook_data)
+                    return jsonify({"status": "success", "message": error_msg}), 200
 
             if len(close_leads) == 0:
                 error_msg = f"No leads found with tracking number {tracking_data['tracking_code']}"
@@ -574,18 +586,18 @@ def handle_package_delivery_update():
 
             # Update lead with delivery information
             update_delivery_information_for_lead(
-                close_leads[0]["id"], delivery_information
+                valid_leads[0]["id"], delivery_information
             )
 
             # Create custom activity
             create_package_delivered_custom_activity_in_close(
-                close_leads[0]["id"], delivery_information
+                valid_leads[0]["id"], delivery_information
             )
 
             # Update webhook tracker
             webhook_data["processed"] = True
             webhook_data["result"] = "Success"
-            webhook_data["lead_id"] = close_leads[0]["id"]
+            webhook_data["lead_id"] = valid_leads[0]["id"]
             webhook_data["delivery_information"] = delivery_information
             _webhook_tracker.add(tracking_data.get("id"), webhook_data)
 
