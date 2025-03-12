@@ -168,6 +168,24 @@
                 "ENV_TYPE": "test"
             },
             "cwd": "${workspaceFolder}"
+        },
+        {
+            "name": "EasyPost Full Shipment Lifecycle Tests",
+            "type": "debugpy",
+            "request": "launch",
+            "module": "pytest",
+            "args": [
+                "tests/integration/easypost/test_easypost_full_shipment_lifecycle.py",
+                "--verbose",
+                "-s"
+            ],
+            "console": "integratedTerminal",
+            "justMyCode": false,
+            "env": {
+                "PYTHONPATH": "${workspaceFolder}",
+                "ENV_TYPE": "test"
+            },
+            "cwd": "${workspaceFolder}"
         }
     ],
     "compounds": [
@@ -221,6 +239,11 @@
         {
             "name": "EasyPost Integration Tests Compound",
             "configurations": ["Flask", "EasyPost Integration Tests"],
+            "stopAll": true
+        },
+        {
+            "name": "EasyPost Full Shipment Lifecycle Tests Compound",
+            "configurations": ["Flask", "EasyPost Full Shipment Lifecycle Tests"],
             "stopAll": true
         }
     ]

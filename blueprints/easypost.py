@@ -515,76 +515,16 @@ def handle_package_delivery_update():
                 }
             ), 200
 
-        delivery_information = parse_delivery_information(tracking_data)
-        close_query_to_find_leads_with_tracking_number = {
-            "limit": None,
-            "query": {
-                "negate": False,
-                "queries": [
-                    {"negate": False, "object_type": "lead", "type": "object_type"},
-                    {
-                        "negate": True,
-                        "queries": [
-                            {
-                                "field": {
-                                    "field_name": "is_deleted",
-                                    "object_type": "lead",
-                                    "type": "field",
-                                },
-                                "negate": False,
-                                "operator": "=",
-                                "type": "boolean_condition",
-                                "value": True,
-                            }
-                        ],
-                        "type": "or",
-                    },
-                    {
-                        "negate": False,
-                        "queries": [
-                            {
-                                "negate": False,
-                                "queries": [
-                                    {
-                                        "condition": {
-                                            "mode": "exact_value",
-                                            "type": "text",
-                                            "value": tracking_data["tracking_code"],
-                                        },
-                                        "field": {
-                                            "custom_field_id": "cf_iSOPYKzS9IPK20gJ8eH9Q74NT7grCQW9psqo4lZR3Ii",
-                                            "type": "custom_field",
-                                        },
-                                        "negate": False,
-                                        "type": "field_condition",
-                                    },
-                                    {
-                                        "condition": {
-                                            "type": "term",
-                                            "values": [tracking_data["carrier"]],
-                                        },
-                                        "field": {
-                                            "custom_field_id": "cf_2QQR5e6vJUyGzlYBtHddFpdqNp5393nEnUiZk1Ukl9l",
-                                            "type": "custom_field",
-                                        },
-                                        "negate": False,
-                                        "type": "field_condition",
-                                    },
-                                ],
-                                "type": "and",
-                            }
-                        ],
-                        "type": "and",
-                    },
-                ],
-                "type": "and",
-            },
-            "results_limit": None,
-            "sort": [],
-        }
+        from app import load_query
+        from close_utils import search_close_leads
 
-        # Import search_close_leads from app
-        from app import search_close_leads
+        delivery_information = parse_delivery_information(tracking_data)
+        close_query_to_find_leads_with_tracking_number = load_query(
+            "lead_by_tracking_number.json"
+        )
+        close_query_to_find_leads_with_tracking_number["query"]["queries"][1][
+            "queries"
+        ][0]["queries"][0]["condition"]["value"] = tracking_data["tracking_code"]
 
         close_leads = search_close_leads(close_query_to_find_leads_with_tracking_number)
 

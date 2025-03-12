@@ -8,7 +8,7 @@ from tests.utils.easypost_mock import EasyPostMock
 from datetime import datetime
 
 
-class TestEasyPostIntegration:
+class TestEasyPostFullShipmentLifecycleIntegration:
     @classmethod
     def setup_class(cls):
         """Setup before all tests in the class."""
@@ -134,9 +134,9 @@ class TestEasyPostIntegration:
         self.mock_tracker.create.return_value.tracking_code = self.test_tracking_number
         self.mock_tracker.create.return_value.carrier = self.test_carrier
 
-    def test_easypost_integration_create_tracker(self):
-        """Test the flow of creating an EasyPost tracker via webhook."""
-        print("\n=== STARTING INTEGRATION TEST: EasyPost Create Tracker ===")
+    def test_easypost_integration_full_shipment_lifecycle(self):
+        """Test the complete EasyPost integration flow from creating a tracker to receiving and processing delivery status updates."""
+        print("\n=== STARTING INTEGRATION TEST: EasyPost Full Shipment Lifecycle ===")
 
         # Create a test lead in Close with tracking number and carrier
         print("Creating test lead in Close with tracking information...")
@@ -210,10 +210,6 @@ class TestEasyPostIntegration:
         ), "Lead's tracker ID doesn't match the created tracker"
 
         print("Lead was successfully updated with the EasyPost tracker ID")
-
-        # Add a delay to allow Close API to index the new lead
-        print("Waiting for Close API to index the new lead...")
-        time.sleep(10)  # 10 second delay
 
         # Prepare mock delivery webhook payload
         # Create a copy of the delivery webhook payload and update with the tracker ID

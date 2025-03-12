@@ -1,0 +1,41 @@
+{
+    "limit": null,
+    "query": {
+        "negate": false,
+        "queries": [
+            {
+                "negate": false,
+                "object_type": "lead",
+                "type": "object_type"
+            },
+            {
+                "negate": false,
+                "queries": [
+                    {
+                        "negate": false,
+                        "queries": [
+                            {
+                                "condition": {
+                                    "mode": "exact_value",
+                                    "type": "text",
+                                    "value": "change_me"
+                                },
+                                "field": {
+                                    "custom_field_id": "cf_iSOPYKzS9IPK20gJ8eH9Q74NT7grCQW9psqo4lZR3Ii",
+                                    "type": "custom_field"
+                                },
+                                "negate": false,
+                                "type": "field_condition"
+                            }
+                        ],
+                        "type": "and"
+                    }
+                ],
+                "type": "and"
+            }
+        ],
+        "type": "and"
+    },
+    "results_limit": null,
+    "sort": []
+}
