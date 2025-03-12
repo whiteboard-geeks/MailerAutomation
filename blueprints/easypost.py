@@ -573,7 +573,7 @@ def handle_package_delivery_update():
                 return jsonify({"status": "success", "message": error_msg}), 200
 
             # Update lead with delivery information
-            update_close_lead = update_delivery_information_for_lead(
+            update_delivery_information_for_lead(
                 close_leads[0]["id"], delivery_information
             )
 
@@ -589,10 +589,10 @@ def handle_package_delivery_update():
             webhook_data["delivery_information"] = delivery_information
             _webhook_tracker.add(tracking_data.get("id"), webhook_data)
 
-            logger.info(f"Close lead update: {update_close_lead}")
+            logger.info(f"Close lead update: {delivery_information}")
 
             return jsonify(
-                {"status": "success", "close_lead_update": update_close_lead}
+                {"status": "success", "delivery_information": delivery_information}
             ), 200
         except Exception as e:
             error_message = f"Error updating Close lead: {e}"
@@ -744,74 +744,162 @@ def get_processed_webhooks():
 @easypost_bp.route("/sync_delivery_status", methods=["GET"])
 def sync_delivery_status_from_easypost():
     """
-    Manually check delivery status for undelivered packages with EasyPost tracker IDs.
-    This endpoint allows forcing a check of delivery status for all tracked packages.
+    Sync delivery status from EasyPost in two phases:
+    1. Create EasyPost trackers for leads that have tracking numbers but no EasyPost tracker IDs
+    2. Check delivery status for all leads with EasyPost tracker IDs
     """
+    results = {"trackers_created": 0, "delivery_updates": 0, "errors": 0}
+
     try:
-        # Query Close for leads
+        # Phase 1: Create trackers for leads without EasyPost tracker IDs
+        logger.info("Phase 1: Creating trackers for leads without EasyPost tracker IDs")
+        query_leads_without_easypost_trackers = load_query(
+            "undelivered_package_without_easypost_trackers.json"
+        )
+        leads_without_trackers = search_close_leads(
+            query_leads_without_easypost_trackers
+        )
+
+        if leads_without_trackers:
+            logger.info(
+                f"Found {len(leads_without_trackers)} leads without EasyPost tracker IDs"
+            )
+
+            for lead in leads_without_trackers:
+                try:
+                    lead_id = lead["id"]
+                    # Extract tracking number and carrier
+                    tracking_number = lead.get(
+                        "custom.cf_iSOPYKzS9IPK20gJ8eH9Q74NT7grCQW9psqo4lZR3Ii"
+                    )
+                    carrier_field = lead.get(
+                        "custom.cf_2QQR5e6vJUyGzlYBtHddFpdqNp5393nEnUiZk1Ukl9l"
+                    )
+
+                    if not tracking_number or not carrier_field:
+                        logger.warning(
+                            f"Lead {lead_id} is missing tracking number or carrier"
+                        )
+                        continue
+
+                    carrier = (
+                        carrier_field[0]
+                        if isinstance(carrier_field, list)
+                        else carrier_field
+                    )
+
+                    # Get appropriate EasyPost client based on tracking number
+                    client = get_easypost_client(tracking_number)
+
+                    # Create tracker in EasyPost
+                    tracker = client.tracker.create(
+                        tracking_code=tracking_number, carrier=carrier
+                    )
+
+                    # Update lead with EasyPost tracker ID
+                    update_easypost_tracker_id_for_lead(
+                        lead_id, {"easypost_tracker_id": tracker.id}
+                    )
+
+                    logger.info(
+                        f"Created EasyPost tracker {tracker.id} for lead {lead_id}"
+                    )
+                    results["trackers_created"] += 1
+
+                except Exception as e:
+                    error_msg = (
+                        f"Error creating tracker for lead {lead.get('id')}: {str(e)}"
+                    )
+                    logger.error(error_msg)
+                    logger.error(f"Traceback: {traceback.format_exc()}")
+                    results["errors"] += 1
+                    continue
+        else:
+            logger.info("No leads found without EasyPost tracker IDs")
+
+        # Phase 2: Check delivery status for leads with EasyPost tracker IDs
+        logger.info(
+            "Phase 2: Checking delivery status for leads with EasyPost tracker IDs"
+        )
         query_leads_with_undelivered_packages_in_close = load_query(
             "undelivered_package_with_easypost_tracker_id.json"
         )
-        leads = search_close_leads(query_leads_with_undelivered_packages_in_close)
+        leads_with_trackers = search_close_leads(
+            query_leads_with_undelivered_packages_in_close
+        )
 
-        if not leads:
-            message = "No leads found to update"
-            logger.info(message)
-            return jsonify({"status": "success", "message": message}), 200
+        if not leads_with_trackers:
+            logger.info(
+                "No leads found with undelivered packages that have EasyPost tracker IDs"
+            )
+        else:
+            logger.info(
+                f"Found {len(leads_with_trackers)} leads with EasyPost tracker IDs to check"
+            )
 
-        # Check each lead's shipment status via EasyPost
-        updated_leads = 0
-        for lead in leads:
-            try:
-                easypost_tracker_id = lead[
-                    "custom.cf_JsirGUJdp8RrCI6XwW48xFKEccSwulSCwZ7pAZL84vh"
-                ]
+            # Check each lead's shipment status via EasyPost
+            for lead in leads_with_trackers:
+                try:
+                    easypost_tracker_id = lead[
+                        "custom.cf_JsirGUJdp8RrCI6XwW48xFKEccSwulSCwZ7pAZL84vh"
+                    ]
 
-                # Get tracking number to determine which client to use
-                tracking_number = lead.get(
-                    "custom.cf_iSOPYKzS9IPK20gJ8eH9Q74NT7grCQW9psqo4lZR3Ii"
-                )
-
-                # Get the appropriate client based on tracking number
-                client = get_easypost_client(tracking_number)
-
-                tracker = client.tracker.retrieve(easypost_tracker_id)
-                tracking_data = tracker
-
-                if tracking_data["status"] != "delivered":
-                    logger.info(
-                        f"Lead {lead['id']}: Tracking status is not 'delivered'; webhook did not run."
+                    # Get tracking number to determine which client to use
+                    tracking_number = lead.get(
+                        "custom.cf_iSOPYKzS9IPK20gJ8eH9Q74NT7grCQW9psqo4lZR3Ii"
                     )
+
+                    # Get the appropriate client based on tracking number
+                    client = get_easypost_client(tracking_number)
+
+                    tracker = client.tracker.retrieve(easypost_tracker_id)
+                    tracking_data = tracker
+
+                    if tracking_data["status"] != "delivered":
+                        logger.info(
+                            f"Lead {lead['id']}: Tracking status is not 'delivered'; webhook did not run."
+                        )
+                        continue
+
+                    if (
+                        tracking_data["tracking_details"][-1]["message"]
+                        == "Delivered, To Original Sender"
+                    ):
+                        logger.info(
+                            f"Lead {lead['id']}: Tracking status is 'delivered', but it is delivered to the original sender; webhook did not run."
+                        )
+                        continue
+
+                    delivery_information = parse_delivery_information(tracking_data)
+                    # Update the delivery information in Close
+                    update_delivery_information_for_lead(
+                        lead["id"], delivery_information
+                    )
+                    create_package_delivered_custom_activity_in_close(
+                        lead["id"], delivery_information
+                    )
+                    logger.info(f"Updated delivery status for lead {lead['id']}")
+                    results["delivery_updates"] += 1
+
+                except Exception as e:
+                    error_msg = f"Error checking delivery status for lead {lead['id']}: {str(e)}"
+                    logger.error(error_msg)
+                    logger.error(f"Traceback: {traceback.format_exc()}")
+                    results["errors"] += 1
                     continue
 
-                if (
-                    tracking_data["tracking_details"][-1]["message"]
-                    == "Delivered, To Original Sender"
-                ):
-                    logger.info(
-                        f"Lead {lead['id']}: Tracking status is 'delivered', but it is delivered to the original sender; webhook did not run."
-                    )
-                    continue
-
-                delivery_information = parse_delivery_information(tracking_data)
-                update_close_lead = update_delivery_information_for_lead(
-                    lead["id"], delivery_information
-                )
-                logger.info(f"Close lead update: {update_close_lead}")
-                create_package_delivered_custom_activity_in_close(
-                    lead["id"], delivery_information
-                )
-                updated_leads += 1
-
-            except Exception as e:
-                logger.error(f"Error processing lead {lead['id']}: {e}")
-                logger.error(f"Traceback: {traceback.format_exc()}")
-                continue
-
+        # Return summary of all operations
+        summary = (
+            f"Process completed. {results['trackers_created']} tracker(s) created, "
+            f"{results['delivery_updates']} delivery status(es) updated, "
+            f"{results['errors']} error(s) encountered."
+        )
+        logger.info(summary)
         return jsonify(
             {
                 "status": "success",
-                "message": f"Process completed. {updated_leads} lead(s) updated.",
+                "message": summary,
+                "details": results,
             }
         ), 200
 
