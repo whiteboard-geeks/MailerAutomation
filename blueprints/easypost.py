@@ -550,11 +550,11 @@ def handle_package_delivery_update():
                 if len(active_leads) > 1:
                     lead_ids = [lead.get("id") for lead in active_leads]
                     logger.warning(
-                        f"Found multiple active leads with the same tracking number: {lead_ids}. Using the first one."
+                        f"Found multiple active leads with the same tracking number: {lead_ids}. Using the last one."
                     )
 
                 # Use the first active lead
-                selected_lead = active_leads[0]
+                selected_lead = active_leads[-1]
                 logger.info(
                     f"Selected lead ID: {selected_lead['id']} for tracking number {tracking_data['tracking_code']}"
                 )
