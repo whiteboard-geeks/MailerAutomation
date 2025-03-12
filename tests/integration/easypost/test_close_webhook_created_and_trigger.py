@@ -30,7 +30,7 @@ class TestEasyPostE2E:
 
         # Test tracking number that will return 'delivered' status
         # Using EZ4000000004 which EasyPost will automatically mark as delivered
-        self.test_tracking_number = "EZ4000000004"
+        self.test_tracking_number = "EZ2000000002"
         self.test_carrier = "USPS"
 
     def teardown_method(self):
