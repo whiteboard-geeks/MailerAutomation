@@ -9,28 +9,220 @@ from base64 import b64encode
 from urllib.parse import urlencode
 from io import StringIO
 from time import sleep
+import sys
+import uuid
+import time
 
 import easypost
 import requests
 from apscheduler.schedulers.background import BackgroundScheduler
-from flask import Flask, request, jsonify
+from flask import Flask, request, jsonify, g
 from celery import Celery
 import pytz
+import pytest
+import structlog
 
-app = Flask(__name__)
+
+# Configure structlog
+def configure_structlog():
+    """Configure structured logging for the application."""
+    # Set up structlog processors
+    shared_processors = [
+        structlog.contextvars.merge_contextvars,
+        structlog.stdlib.add_logger_name,
+        structlog.stdlib.add_log_level,
+        structlog.stdlib.PositionalArgumentsFormatter(),
+        structlog.processors.TimeStamper(fmt="iso"),
+        structlog.processors.StackInfoRenderer(),
+        structlog.processors.format_exc_info,
+    ]
+
+    # Configure structlog based on environment
+    if os.environ.get("ENV_TYPE") in ["production", "staging"]:
+        # JSON logging for production/staging
+        structlog.configure(
+            processors=shared_processors
+            + [
+                structlog.processors.dict_tracebacks,
+                structlog.processors.JSONRenderer(),
+            ],
+            logger_factory=structlog.stdlib.LoggerFactory(),
+            wrapper_class=structlog.stdlib.BoundLogger,
+            cache_logger_on_first_use=True,
+        )
+    else:
+        # Dev-friendly console logging for local development
+        structlog.configure(
+            processors=shared_processors + [structlog.dev.ConsoleRenderer()],
+            logger_factory=structlog.stdlib.LoggerFactory(),
+            wrapper_class=structlog.stdlib.BoundLogger,
+            cache_logger_on_first_use=True,
+        )
+
+    # Set up stdlib logging to work with structlog
+    handler = logging.StreamHandler()
+
+    # Format as JSON for production/staging environments
+    if os.environ.get("ENV_TYPE") in ["production", "staging"]:
+        # Use structlog's built-in JSON formatting instead of python-json-logger
+        formatter = logging.Formatter("%(message)s")
+        handler.setFormatter(formatter)
+
+    root_logger = logging.getLogger()
+    root_logger.addHandler(handler)
+    root_logger.setLevel(logging.INFO)
+
+    # Suppress excessive logging from third-party libraries
+    logging.getLogger("requests").setLevel(logging.WARNING)
+    logging.getLogger("urllib3").setLevel(logging.WARNING)
+
+
+# Configure structlog BEFORE importing blueprints
+configure_structlog()
+
+# Create a logger instance for app.py
+logger = structlog.get_logger("app")
+
+# Print environment information to verify ENV_TYPE is correctly set
+logger.info(
+    "environment_info",
+    env_type=os.environ.get("ENV_TYPE", "not_set"),
+    is_production=os.environ.get("ENV_TYPE") == "production",
+    is_staging=os.environ.get("ENV_TYPE") == "staging",
+)
+
+# Now import blueprints after structlog is configured
+from blueprints.instantly import instantly_bp
+from blueprints.easypost import easypost_bp
+
+flask_app = Flask(__name__)
+
+
+# Middleware to add request ID to each request
+@flask_app.before_request
+def add_request_id():
+    request_id = request.headers.get("X-Request-ID", str(uuid.uuid4()))
+    g.request_id = request_id
+    # Store request start time for duration calculation
+    g.start_time = time.time()
+
+    # Add request_id to all log entries for this request
+    structlog.contextvars.bind_contextvars(
+        request_id=request_id,
+        method=request.method,
+        path=request.path,
+        timestamp=datetime.utcnow().isoformat(),
+    )
+
+    # For webhook requests, log the start of processing with detailed info
+    if "/webhook" in request.path or "/email_sent" in request.path:
+        logger.info(
+            "webhook_received",
+            content_type=request.content_type,
+            content_length=request.content_length,
+            params=dict(request.args),
+            remote_addr=request.remote_addr,
+            heroku_request_id=request.headers.get("X-Request-ID", "none"),
+        )
+
+
+@flask_app.after_request
+def log_response(response):
+    """Log the response status for all requests."""
+    # Only log details for webhook endpoints
+    if "/webhook" in request.path or "/email_sent" in request.path:
+        # Calculate request processing time
+        processing_time = None
+        if hasattr(g, "start_time"):
+            processing_time = time.time() - g.start_time
+
+        # Log the response with detailed timing
+        logger.info(
+            "webhook_response_sent",
+            status_code=response.status_code,
+            content_length=response.content_length,
+            content_type=response.content_type,
+            processing_time_ms=round(processing_time * 1000, 2)
+            if processing_time
+            else None,
+            timestamp=datetime.utcnow().isoformat(),
+        )
+    return response
+
+
+@flask_app.errorhandler(Exception)
+def handle_exception(e):
+    """Log exceptions from webhook processing."""
+    # Only log detailed errors for webhook endpoints
+    if "/webhook" in request.path or "/email_sent" in request.path:
+        logger.exception(
+            "webhook_processing_error",
+            error_type=type(e).__name__,
+            error_message=str(e),
+            path=request.path,
+            method=request.method,
+        )
+
+    # Return a generic error response
+    return jsonify(
+        {
+            "status": "error",
+            "message": "An internal server error occurred",
+            "error_type": type(e).__name__,
+        }
+    ), 500
+
+
+# Add your project to the Python path
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
+
+
+@pytest.fixture
+def app():
+    # Configure your app for testing
+    flask_app.config.update(
+        {
+            "TESTING": True,
+            "ENV": "test",
+        }
+    )
+    yield flask_app
+
+
+@pytest.fixture
+def client(app):
+    return flask_app.test_client()
+
+
+@pytest.fixture
+def runner(app):
+    return flask_app.test_cli_runner()
+
+
+# Fixture to load mock webhook payloads
+@pytest.fixture
+def close_task_created_payload():
+    with open("tests/fixtures/close_webhook_payloads/task_created.json", "r") as f:
+        return json.load(f)
+
+
+@pytest.fixture
+def instantly_email_sent_payload():
+    with open("tests/fixtures/instantly_webhook_payloads/email_sent.json", "r") as f:
+        return json.load(f)
+
 
 env_type = os.getenv("ENV_TYPE", "development")
+print("=== ENVIRONMENT INFO ===")
+print(f"ENV_TYPE: {env_type}")
+print("=== END ENVIRONMENT INFO ===")
 
 REDISCLOUD_URL = os.environ.get("REDISCLOUD_URL")
-app.config["CELERY_BROKER_URL"] = REDISCLOUD_URL
-app.config["CELERY_RESULT_BACKEND"] = REDISCLOUD_URL
+flask_app.config["CELERY_BROKER_URL"] = REDISCLOUD_URL
+flask_app.config["CELERY_RESULT_BACKEND"] = REDISCLOUD_URL
 
-celery = Celery(app.name, broker=app.config["CELERY_BROKER_URL"])
-celery.conf.update(app.config)
-
-# Configure logging
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger()
+celery = Celery(flask_app.name, broker=flask_app.config["CELERY_BROKER_URL"])
+celery.conf.update(flask_app.config)
 
 # API Keys
 MAILGUN_API_KEY = os.environ.get("MAILGUN_API_KEY")
@@ -40,14 +232,10 @@ SKYLEAD_API_KEY = os.environ.get("SKYLEAD_API_KEY")
 WEBHOOK_API_KEY = os.environ.get("WEBHOOK_API_KEY")
 BYTESCALE_ACCOUNT_ID = os.environ.get("BYTESCALE_ACCOUNT_ID")
 BYTESCALE_API_KEY = os.environ.get("BYTESCALE_API_KEY")
-EASYPOST_API_KEY = os.environ.get("EASYPOST_API_KEY")
-
-# Clients
-easypost_client = easypost.EasyPostClient(EASYPOST_API_KEY)
 
 
 # General utils
-@app.errorhandler(Exception)
+@flask_app.errorhandler(Exception)
 def handle_exception(e):
     # Capture the traceback
     tb = traceback.format_exc()
@@ -76,6 +264,12 @@ def handle_exception(e):
     return jsonify(response_body), 500
 
 
+# Check if development scheduling is enabled
+ENABLE_DEV_SCHEDULING = (
+    os.environ.get("ENABLE_DEV_SCHEDULING", "false").lower() == "true"
+)
+
+
 def send_email(subject, body, **kwargs):
     central_time_zone = pytz.timezone("America/Chicago")
     central_time_now = datetime.now(central_time_zone)
@@ -95,6 +289,14 @@ def send_email(subject, body, **kwargs):
     return mailgun_email_response.json()
 
 
+# Register blueprints after send_email is defined
+flask_app.register_blueprint(instantly_bp, url_prefix="/instantly")
+flask_app.register_blueprint(easypost_bp, url_prefix="/easypost")
+
+# Expose the send_email function to blueprints
+flask_app.send_email = send_email
+
+
 def load_query(file_name):
     # Construct the full path to the file
     base_dir = os.path.dirname(os.path.abspath(__file__))
@@ -106,142 +308,16 @@ def load_query(file_name):
 
 
 # /sync_delivery_status_from_easypost
-@app.route("/sync_delivery_status_from_easypost", methods=["GET"])
+@flask_app.route("/sync_delivery_status_from_easypost", methods=["GET"])
 def sync_delivery_status_from_easypost():
-    # Query Close for leads
-    query_leads_with_undelivered_packages_in_close = load_query(
-        "undelivered_package_with_easypost_tracker_id.json"
-    )
-    leads = search_close_leads(query_leads_with_undelivered_packages_in_close)
-
-    if not leads:
-        message = "No leads found to update"
-        logger.info(message)
-        return jsonify({"status": "success", "message": message}), 200
-
-    # Check each lead's shipment status via EasyPost
-    for lead in leads:
-        try:
-            easypost_tracker_id = lead[
-                "custom.cf_JsirGUJdp8RrCI6XwW48xFKEccSwulSCwZ7pAZL84vh"
-            ]
-            tracker = easypost_client.tracker.retrieve(easypost_tracker_id)
-            tracking_data = tracker
-
-            if tracking_data["status"] != "delivered":
-                logger.info(
-                    f"Lead {lead['id']}: Tracking status is not 'delivered'; webhook did not run."
-                )
-                continue
-
-            if (
-                tracking_data["tracking_details"][-1]["message"]
-                == "Delivered, To Original Sender"
-            ):
-                logger.info(
-                    f"Lead {lead['id']}: Tracking status is 'delivered', but it is delivered to the original sender; webhook did not run."
-                )
-                continue
-
-            delivery_information = parse_delivery_information(tracking_data)
-            update_close_lead = update_delivery_information_for_lead(
-                lead["id"], delivery_information
-            )
-            logger.info(f"Close lead update: {update_close_lead}")
-            create_package_delivered_custom_activity_in_close(
-                lead["id"], delivery_information
-            )
-        except Exception as e:
-            logger.error(f"Error processing lead {lead['id']}: {e}")
-            logger.error(f"Traceback: {traceback.format_exc()}")
-            continue
-
-    return jsonify({"status": "success", "message": "All leads processed."}), 200
-
-
-# Check delivery status daily
-# TODO: Merge this fn and update_delivery_information_for_lead
-def update_easypost_tracker_id_for_lead(lead_id, update_information):
-    def verify_delivery_information_updated(response_data, lead_update_data):
-        for key, value in lead_update_data.items():
-            if key not in response_data or response_data[key] != value:
-                return False
-        return True
-
-    headers = {
-        "Content-Type": "application/json",
-        "Authorization": f"Basic {CLOSE_ENCODED_KEY}",
-    }
-
-    custom_field_ids = {
-        "easypost_tracker_id": {
-            "type": "text",
-            "value": "custom.cf_JsirGUJdp8RrCI6XwW48xFKEccSwulSCwZ7pAZL84vh",
+    # This route has been moved to the easypost blueprint
+    # Redirecting to the new endpoint for backward compatibility
+    return jsonify(
+        {
+            "status": "redirect",
+            "message": "This endpoint has been moved to /easypost/sync_delivery_status",
         }
-    }
-    lead_update_data = {
-        custom_field_ids["easypost_tracker_id"]["value"]: update_information[
-            "easypost_tracker_id"
-        ],
-    }
-
-    response = requests.put(
-        f"https://api.close.com/api/v1/lead/{lead_id}",
-        json=lead_update_data,
-        headers=headers,
-    )
-    response_data = response.json()
-    data_updated = verify_delivery_information_updated(response_data, lead_update_data)
-    if not data_updated:
-        error_message = f"Delivery information update failed for lead {lead_id}."
-        logger.error(error_message)
-        send_email(subject="Delivery information update failed", body=error_message)
-        raise Exception("Close accepted the lead, but the fields did not update.")
-    logger.info(f"Delivery information updated for lead {lead_id}: {data_updated}")
-    return response_data
-
-
-def create_missing_easypost_trackers():
-    # Query Close for leads that have tracking info but no EasyPost tracker
-    query_leads_without_easypost_trackers = load_query(
-        "undelivered_package_without_easypost_trackers.json"
-    )  # Tracking Number = Is Present, Carrier = Is Present, Package Delivered = Not Present, EasyPost Tracker ID = Not Present
-    leads = search_close_leads(query_leads_without_easypost_trackers)
-
-    # Check each lead's shipment status via EasyPost
-    for lead in leads:
-        tracking_number = lead["custom.cf_iSOPYKzS9IPK20gJ8eH9Q74NT7grCQW9psqo4lZR3Ii"]
-        carrier = lead["custom.cf_2QQR5e6vJUyGzlYBtHddFpdqNp5393nEnUiZk1Ukl9l"][0]
-        tracker = easypost_client.tracker.create(
-            tracking_code=tracking_number, carrier=carrier
-        )
-        update_easypost_tracker_id_for_lead(
-            lead["id"], {"easypost_tracker_id": tracker.id}
-        )
-        logger.info(f"EasyPost Tracker Created: {tracker} for lead {lead['id']}")
-
-
-def start_scheduler():
-    scheduler = BackgroundScheduler()
-
-    # Helper function to run both tasks in sequence
-    def run_easypost_tasks():
-        create_missing_easypost_trackers()
-        sync_delivery_status_from_easypost()
-
-    # Check if the environment is for development and run immediately if true
-    if env_type == "development":
-        scheduler.add_job(
-            func=run_easypost_tasks, trigger="date", run_date=datetime.now()
-        )
-
-    # Always schedule the daily job
-    scheduler.add_job(func=run_easypost_tasks, trigger="interval", days=1)
-    scheduler.start()
-
-
-with app.app_context():
-    start_scheduler()
+    ), 308  # 308 Permanent Redirect
 
 
 # /delivery_status
@@ -499,316 +575,16 @@ def create_package_delivered_custom_activity_in_close(lead_id, delivery_informat
     return response_data
 
 
-@app.route("/delivery_status", methods=["POST"])
+@flask_app.route("/delivery_status", methods=["POST"])
 def handle_package_delivery_update():
-    try:
-        tracking_data = request.json["result"]
-        easy_post_event_id = request.json["id"]
-        logger.info(f"EasyPost Event ID: {easy_post_event_id}")
-        if tracking_data["status"] != "delivered":
-            logger.info("Tracking status is not 'delivered'; webhook did not run.")
-            return jsonify(
-                {
-                    "status": "success",
-                    "message": "Tracking status is not 'delivered' so did not run.",
-                }
-            ), 200
-        if (
-            tracking_data["tracking_details"][-1]["message"]
-            == "Delivered, To Original Sender"
-        ):
-            logger.info(
-                "Tracking status is 'delivered', but it is delivered to the original sender; webhook did not run."
-            )
-            return jsonify(
-                {
-                    "status": "success",
-                    "message": "Tracking status is 'delivered', but it is delivered to the original sender; webhook did not run.",
-                }
-            ), 200
-        delivery_information = parse_delivery_information(tracking_data)
-        close_query_to_find_leads_with_tracking_number = {
-            "limit": None,
-            "query": {
-                "negate": False,
-                "queries": [
-                    {"negate": False, "object_type": "lead", "type": "object_type"},
-                    {
-                        "negate": False,
-                        "queries": [
-                            {
-                                "negate": False,
-                                "queries": [
-                                    {
-                                        "condition": {
-                                            "mode": "exact_value",
-                                            "type": "text",
-                                            "value": tracking_data["tracking_code"],
-                                        },
-                                        "field": {
-                                            "custom_field_id": "cf_iSOPYKzS9IPK20gJ8eH9Q74NT7grCQW9psqo4lZR3Ii",
-                                            "type": "custom_field",
-                                        },
-                                        "negate": False,
-                                        "type": "field_condition",
-                                    },
-                                    {
-                                        "condition": {
-                                            "type": "term",
-                                            "values": [tracking_data["carrier"]],
-                                        },
-                                        "field": {
-                                            "custom_field_id": "cf_2QQR5e6vJUyGzlYBtHddFpdqNp5393nEnUiZk1Ukl9l",
-                                            "type": "custom_field",
-                                        },
-                                        "negate": False,
-                                        "type": "field_condition",
-                                    },
-                                ],
-                                "type": "and",
-                            }
-                        ],
-                        "type": "and",
-                    },
-                ],
-                "type": "and",
-            },
-            "results_limit": None,
-            "sort": [],
+    # This route has been moved to the easypost blueprint
+    # Redirecting to the new endpoint for backward compatibility
+    return jsonify(
+        {
+            "status": "redirect",
+            "message": "This endpoint has been moved to /easypost/delivery_status",
         }
-        close_leads = search_close_leads(close_query_to_find_leads_with_tracking_number)
-        try:
-            if (
-                len(close_leads) > 1
-            ):  # this would mean there are two leads with the same tracking number
-                logger.error("More than one lead found with the same tracking number")
-                raise Exception(
-                    "More than one lead found with the same tracking number"
-                )
-            update_close_lead = update_delivery_information_for_lead(
-                close_leads[0]["id"], delivery_information
-            )
-            logger.info(f"Close lead update: {update_close_lead}")
-            create_package_delivered_custom_activity_in_close(
-                close_leads[0]["id"], delivery_information
-            )
-            return jsonify(
-                {"status": "success", "close_lead_update": update_close_lead}
-            ), 200
-        except Exception as e:
-            error_message = (
-                f"Error updating Close lead: {e}, lead_id={close_leads[0]['id']}"
-            )
-            logger.error(error_message)
-            send_email(subject="Delivery information update failed", body=error_message)
-            return jsonify({"status": "error", "message": str(e)}), 400
-    except Exception as e:
-        error_message = f"Error. {e}, tracking_code={tracking_data['tracking_code']}, carrier={tracking_data['carrier']}"
-        logger.error(error_message)
-        send_email(subject="Delivery information update failed", body=error_message)
-        return jsonify({"status": "error", "message": str(e)}), 400
-
-
-# /check_linkedin_connection_status
-def add_contact_to_view_profile_campaign_in_skylead(contact):
-    linkedin_url = contact["custom.cf_OKNCGTl08BZyjbiPdhBSrWDTmV4bhEaPmVYFURxQphZ"]
-    email = contact["emails"][0]["email"]
-
-    # Skylead request
-    headers = {
-        "Content-Type": "application/x-www-form-urlencoded",
-        "Authorization": SKYLEAD_API_KEY,
-    }
-    body = {"email": email, "profileUrl": linkedin_url}
-    encoded_body = urlencode(body)
-    url = "https://api.multilead.io/api/open-api/v1/campaign/234808/leads"  # 234808 is the campaign number for View Profile
-    skylead_response = requests.post(url=url, headers=headers, data=encoded_body)
-    return skylead_response
-
-
-def schedule_skylead_check(contact):
-    # Define the timezone
-    central = pytz.timezone("America/Chicago")
-
-    # Get the current time in Central Time
-    now = datetime.now(central)
-
-    # Set delay based on environment
-    minutes_delay = 60  # 60 minutes delay for production
-
-    # Calculate the next possible time to check, at least 60 minutes from now
-    next_check_time = now + timedelta(minutes=minutes_delay)
-
-    # If it's past 5 PM, or before 7 AM, Monday through Thursday
-    if (next_check_time.hour >= 17 or next_check_time.hour < 7) and (
-        next_check_time.weekday() < 4
-    ):
-        # If it's a weekend or past business hours, move to next weekday at 8 AM
-        days_ahead = 1 if next_check_time.hour >= 17 else 7 - next_check_time.weekday()
-        next_check_time = next_check_time + timedelta(days=days_ahead)
-        next_check_time = next_check_time.replace(
-            hour=8, minute=0, second=0, microsecond=0
-        )
-    # If it's past 5pm on a Friday
-    elif next_check_time.hour >= 17 and next_check_time.weekday() == 4:
-        # If it's a weekend or past business hours, move to next weekday at 8 AM
-        days_ahead = 3
-        next_check_time = next_check_time + timedelta(days=days_ahead)
-        next_check_time = next_check_time.replace(
-            hour=8, minute=0, second=0, microsecond=0
-        )
-    # If it's a weekend day
-    elif next_check_time.weekday() >= 5:
-        # If it's a weekend, move to next weekday at 8 AM
-        days_ahead = 7 - next_check_time.weekday()
-        next_check_time = next_check_time + timedelta(days=days_ahead)
-        next_check_time = next_check_time.replace(
-            hour=8, minute=0, second=0, microsecond=0
-        )
-
-    # Calculate the delay in seconds
-    if env_type == "development":
-        delay = 0
-    else:
-        delay = (next_check_time - now).total_seconds()
-
-    # Schedule the Celery task
-    check_skylead_for_viewed_profile.apply_async((contact,), countdown=delay)
-
-
-@celery.task
-def check_skylead_for_viewed_profile(contact):
-    def find_correct_lead_in_skylead(contact, skylead_response_data):
-        # check for the right email. Can there be two leads with the same email?
-        email = contact["emails"][0]["email"]
-        linkedin_url = contact["custom.cf_OKNCGTl08BZyjbiPdhBSrWDTmV4bhEaPmVYFURxQphZ"]
-        for lead in skylead_response_data["result"]["items"]:
-            if "personalEmail" in lead and lead["personalEmail"] == email:
-                skylead_lead = lead
-                break
-
-        skyleadIdentifiers = skylead_lead["profileIdentifiers"]
-        for record in skyleadIdentifiers:
-            if record["identityTypeId"] == 1:
-                skyleadIdentifier = record["identifier"]
-
-        linkedin_identifier = linkedin_url.split("/")[-1]
-        skyleadIdentifier == linkedin_identifier
-        return skylead_lead
-
-    def update_close_contact_with_connection_status(
-        contact, skylead_li_connection_status
-    ):
-        try:
-            headers = {
-                "Content-Type": "application/json",
-                "Authorization": f"Basic {CLOSE_ENCODED_KEY}",
-            }
-
-            data = {
-                "custom.cf_s0FhlghQeJvtaJlUQnWJg2PYbfbUQTq17NyvNNbtqJN": skylead_li_connection_status
-            }
-            response = requests.put(
-                f"https://api.close.com/api/v1/contact/{contact['id']}",
-                json=data,
-                headers=headers,
-            )
-            return response.json()
-        except requests.exceptions.RequestException as e:
-            logger.error(f"Failed to post LinkedIn Connection Status to Close: {e}")
-            send_email(
-                subject="Failed to post LinkedIn Connection Status to Close",
-                body=f"Failed to post LinkedIn Connection Status to Close: {e}",
-            )
-            return None
-
-    email = contact["emails"][0]["email"]
-
-    # Skylead request
-    headers = {
-        "Content-Type": "application/x-www-form-urlencoded",
-        "Authorization": SKYLEAD_API_KEY,
-    }
-    body = ""
-    params = {
-        "search": email  # Use the email as the unique leadId in the campaign
-    }
-    encoded_body = urlencode(body)
-    url = "https://api.multilead.io/api/open-api/v1/users/24471/accounts/24277/campaigns/234808/leads"  # 234808 is the campaign number for View Profile
-    skylead_response = requests.get(
-        url=url, headers=headers, data=encoded_body, params=params
-    )
-    skylead_response_data = skylead_response.json()
-    skylead_lead = find_correct_lead_in_skylead(contact, skylead_response_data)
-    skylead_lead_statuses = {
-        0: "Unknown",
-        1: "Discovered",
-        2: "Connection Pending",
-        3: "Connection Accepted",
-        4: "Connection Responded",
-    }
-    skylead_lead_status = skylead_lead["leadStatusId"]
-    skylead_lead_status_text = skylead_lead_statuses[skylead_lead_status]
-
-    skylead_viewed = (
-        skylead_lead_status_text != "Unknown"
-    )  # If the status is anything other than Unknown it has been viewed
-    if not skylead_viewed:
-        schedule_skylead_check(contact)
-        return {"status": "scheduled", "message": "Skylead check scheduled for later."}
-
-    skylead_li_connection_status = skylead_lead[
-        "connectionDegree"
-    ]  # values can be 1, 2, or 3
-    is_skylead_connected = True if skylead_li_connection_status == 1 else False
-    close_li_connection_status = contact.get(
-        "cf_s0FhlghQeJvtaJlUQnWJg2PYbfbUQTq17NyvNNbtqJN"
-    )  # this is the custom field for LinkedIn Connection Status in Close. Options are 1, 2, 3
-    is_close_connected = (
-        True if close_li_connection_status == "1" else False
-    )  # close returns a string. Skylead returns an int
-
-    if is_skylead_connected == is_close_connected:
-        return {
-            "status": "success",
-            "message": "Skylead and Close have the same connection status.",
-        }, 200
-
-    updated_close_contact = update_close_contact_with_connection_status(
-        contact, skylead_lead["connectionDegree"]
-    )
-    updated_close_li_connection_status = updated_close_contact[
-        "custom.cf_s0FhlghQeJvtaJlUQnWJg2PYbfbUQTq17NyvNNbtqJN"
-    ]
-    if int(updated_close_li_connection_status) == int(skylead_li_connection_status):
-        contact_name = contact["name"]
-        contact_id = contact["id"]
-        logger.info(
-            f"{contact_name} ({contact_id}) Close updated the status correctly. Skylead status: {skylead_li_connection_status}, Close status: {updated_close_li_connection_status}"
-        )
-        # TODO send email on update
-    else:
-        logger.error(f"{contact_name} ({contact_id}) Close did not update correctly.")
-
-
-@app.route("/check_linkedin_connection_status", methods=["POST"])
-def check_linkedin_connection_status():
-    data = request.json
-    contact = data["event"]["data"]
-    contact_add_resp_status = add_contact_to_view_profile_campaign_in_skylead(contact)
-    schedule_skylead_check(contact)
-
-    if contact_add_resp_status.status_code == 204:
-        return jsonify(
-            {
-                "status": "success",
-                "message": "Contact added to Skylead campaign. Will run Celery worker after appropriate delay and update in Close when Skylead has the connection status.",
-            }
-        ), 200
-    else:
-        return jsonify(
-            {"status": "error", "message": "Error adding contact to Skylead campaign"}
-        ), 400
+    ), 308  # 308 Permanent Redirect
 
 
 # /prepare_contact_list_for_address_verification
@@ -1042,7 +818,7 @@ def process_contact_list(csv_url):
     logger.info(f"File URL uploaded to Zapier: {bytescale_file_url}")
 
 
-@app.route("/prepare_contact_list_for_address_verification", methods=["POST"])
+@flask_app.route("/prepare_contact_list_for_address_verification", methods=["POST"])
 def prepare_contact_list_for_address_verification():
     api_key = request.headers.get("X-API-KEY")
     if api_key != WEBHOOK_API_KEY:
@@ -1056,6 +832,6 @@ def prepare_contact_list_for_address_verification():
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 8080))
     if env_type == "development":
-        app.run(debug=True, host="0.0.0.0", port=port)
+        flask_app.run(debug=True, host="0.0.0.0", port=port)
     else:
-        app.run(debug=False, host="0.0.0.0", port=port)
+        flask_app.run(debug=False, host="0.0.0.0", port=port)

@@ -12,15 +12,40 @@
                 },
                 "background": {
                     "activeOnStart": true,
-                    "beginsPattern": ".*Ready to accept connections.*",
-                    "endsPattern": ".*"
+                    "beginsPattern": ".*Redis is starting.*",
+                    "endsPattern": ".*Ready to accept connections.*"
                 }
             }
         },
         {
             "label": "Stop Redis",
             "type": "shell",
-            "command": "pkill redis-server"
+            "command": "redis-cli shutdown"
+        },
+        {
+            "label": "Start ngrok",
+            "type": "shell",
+            "command": "ngrok http --domain locust-pleased-thankfully.ngrok-free.app 8080 & echo 'ngrok started in background'",
+            "isBackground": false,
+            "presentation": {
+                "reveal": "always",
+                "panel": "new"
+            }
+        },
+        {
+            "label": "Stop ngrok",
+            "type": "shell",
+            "command": "pkill ngrok || true"
+        },
+        {
+            "label": "Start Redis and ngrok",
+            "dependsOn": ["Start Redis", "Start ngrok"],
+            "dependsOrder": "sequence"
+        },
+        {
+            "label": "Stop Redis and ngrok",
+            "dependsOn": ["Stop Redis", "Stop ngrok"],
+            "dependsOrder": "sequence"
         }
     ]
 }
