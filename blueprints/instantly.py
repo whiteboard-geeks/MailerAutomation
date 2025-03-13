@@ -20,7 +20,9 @@ from close_utils import (
     search_close_leads,
     get_close_headers,
     create_email_search_query,
+    create_task,
 )
+from utils.instantly_constants import format_instantly_reply_task_text
 
 # Set up blueprint
 instantly_bp = Blueprint("instantly", __name__)
@@ -1093,6 +1095,31 @@ def handle_instantly_reply_received():
         email_response = requests.post(email_url, headers=headers, json=email_data)
         email_response.raise_for_status()
 
+        # Create a task for the lead
+        task_text = format_instantly_reply_task_text(reply_subject, campaign_name)
+        task_data = create_task(
+            lead_id=lead_id,
+            text=task_text,
+            assigned_to=BARBARA_USER_ID,  # Assign to Barbara by default
+            is_complete=False,
+        )
+
+        if not task_data:
+            logger.error(
+                "task_creation_failed",
+                lead_id=lead_id,
+                lead_email=lead_email,
+                campaign_name=campaign_name,
+            )
+            # Continue with the process even if task creation fails
+        else:
+            logger.info(
+                "task_created",
+                task_id=task_data.get("id"),
+                lead_id=lead_id,
+                task_text=task_text,
+            )
+
         logger.info(f"Successfully processed reply received webhook for lead {lead_id}")
 
         # Track this webhook
@@ -1100,7 +1127,7 @@ def handle_instantly_reply_received():
             "route": "reply_received",
             "lead_id": lead_id,
             "lead_email": lead_email,
-            "task_id": None,  # No task being completed in this route
+            "task_id": task_data.get("id") if task_data else None,
             "email_id": email_response.json().get("id"),
         }
 
@@ -1110,6 +1137,7 @@ def handle_instantly_reply_received():
             "data": {
                 "lead_id": lead_id,
                 "email_id": email_response.json().get("id"),
+                "task_id": task_data.get("id") if task_data else None,
             },
         }
 

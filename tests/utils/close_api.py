@@ -220,6 +220,18 @@ class CloseAPI:
 
         return response.json()["data"]
 
+    def get_lead_tasks(self, lead_id):
+        """Get tasks for a lead from Close."""
+        url = f"{self.base_url}/task/"
+        params = {"lead_id": lead_id}
+
+        response = requests.get(url, headers=self.headers, params=params)
+
+        if response.status_code != 200:
+            raise Exception(f"Failed to get tasks: {response.text}")
+
+        return response.json()["data"]
+
     def get_lead(self, lead_id):
         """Get a lead by ID from Close."""
         response = requests.get(
