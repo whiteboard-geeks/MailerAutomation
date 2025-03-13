@@ -57,7 +57,7 @@ class TestInstantlyReplyReceivedIntegration:
         self.test_data["lead_id"] = lead_data["id"]
         print(f"Test lead created with ID: {lead_data['id']}")
 
-        print("Waiting for Close to populate lead data for search...")
+        print("Waiting 10 secondsfor Close to populate lead data for search...")
         sleep(10)
 
         # Send the mock webhook to our endpoint
@@ -109,6 +109,9 @@ class TestInstantlyReplyReceivedIntegration:
 
         # Check for task creation
         print("Checking for task creation...")
+        # Wait 5 seconds for the task to populate
+        print("Waiting 5 seconds for task to populate...")
+        sleep(5)
 
         # Retrieve tasks for the lead
         tasks = self.close_api.get_lead_tasks(lead_data["id"])
