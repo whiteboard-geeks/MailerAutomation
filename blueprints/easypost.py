@@ -574,6 +574,23 @@ def handle_package_delivery_update():
                     webhook_data["result"] = "No valid leads found"
                     _webhook_tracker.add(tracking_data.get("id"), webhook_data)
                     return jsonify({"status": "success", "message": error_msg}), 200
+            else:
+                # If there's only one lead, validate it
+                valid_leads = []
+                lead_id = close_leads[0]["id"]
+                valid_lead = get_lead_by_id(lead_id)
+                if valid_lead:
+                    valid_leads.append(close_leads[0])
+                    logger.info(f"Verified single lead ID: {lead_id} exists")
+                else:
+                    error_msg = (
+                        f"The only found lead ID: {lead_id} returned 404 or error"
+                    )
+                    logger.warning(error_msg)
+                    webhook_data["processed"] = True
+                    webhook_data["result"] = "Lead not found"
+                    _webhook_tracker.add(tracking_data.get("id"), webhook_data)
+                    return jsonify({"status": "success", "message": error_msg}), 200
 
             if len(close_leads) == 0:
                 error_msg = f"No leads found with tracking number {tracking_data['tracking_code']}"
@@ -586,6 +603,14 @@ def handle_package_delivery_update():
                 return jsonify({"status": "success", "message": error_msg}), 200
 
             # Update lead with delivery information
+            if not valid_leads:
+                error_msg = f"No valid leads available for tracking number {tracking_data['tracking_code']}"
+                logger.warning(error_msg)
+                webhook_data["processed"] = True
+                webhook_data["result"] = "No valid leads"
+                _webhook_tracker.add(tracking_data.get("id"), webhook_data)
+                return jsonify({"status": "success", "message": error_msg}), 200
+
             update_delivery_information_for_lead(
                 valid_leads[0]["id"], delivery_information
             )
