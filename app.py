@@ -88,12 +88,24 @@ logger.info(
     is_staging=os.environ.get("ENV_TYPE") == "staging",
 )
 
-# Now import blueprints after structlog is configured
+# Setup Flask app
+flask_app = Flask(__name__)
+
+# Configure Redis and Celery
+REDISCLOUD_URL = os.environ.get("REDISCLOUD_URL")
+flask_app.config["CELERY_BROKER_URL"] = REDISCLOUD_URL
+flask_app.config["CELERY_RESULT_BACKEND"] = REDISCLOUD_URL
+
+# Import celery instance from celery_worker
+from celery_worker import celery
+
+# Configure Celery timezone (but don't use Beat scheduling)
+celery.conf.timezone = "America/Chicago"
+
+# Now import blueprints after Celery is configured
 # noqa: E402 - Disable linter warning about imports not at top of file
 from blueprints.instantly import instantly_bp  # noqa: E402
 from blueprints.easypost import easypost_bp  # noqa: E402
-
-flask_app = Flask(__name__)
 
 
 # Middleware to add request ID to each request
@@ -236,13 +248,6 @@ print("=== ENVIRONMENT INFO ===")
 print(f"ENV_TYPE: {env_type}")
 print("=== END ENVIRONMENT INFO ===")
 
-REDISCLOUD_URL = os.environ.get("REDISCLOUD_URL")
-flask_app.config["CELERY_BROKER_URL"] = REDISCLOUD_URL
-flask_app.config["CELERY_RESULT_BACKEND"] = REDISCLOUD_URL
-
-celery = Celery(flask_app.name, broker=flask_app.config["CELERY_BROKER_URL"])
-celery.conf.update(flask_app.config)
-
 # API Keys
 MAILGUN_API_KEY = os.environ.get("MAILGUN_API_KEY")
 CLOSE_API_KEY = os.environ["CLOSE_API_KEY"]
@@ -289,14 +294,27 @@ flask_app.send_email = send_email
 # /sync_delivery_status_from_easypost
 @flask_app.route("/sync_delivery_status_from_easypost", methods=["GET"])
 def sync_delivery_status_from_easypost():
-    # This route has been moved to the easypost blueprint
-    # Redirecting to the new endpoint for backward compatibility
+    """
+    Legacy endpoint for manually triggering a sync of delivery status from EasyPost.
+    This endpoint queues a Celery task to run in the background.
+
+    The task runs asynchronously and can be monitored using the
+    /easypost/sync_delivery_status/status/<task_id> endpoint.
+    """
+    # Import the task here to avoid circular imports
+    from blueprints.easypost import sync_delivery_status_task
+
+    # Queue the task to run in the background
+    task = sync_delivery_status_task.delay()
+
+    # Return success response with task ID
     return jsonify(
         {
-            "status": "redirect",
-            "message": "This endpoint has been moved to /easypost/sync_delivery_status",
+            "status": "success",
+            "message": "Delivery status sync task has been queued. This endpoint is deprecated, please use /easypost/sync_delivery_status instead.",
+            "task_id": task.id,
         }
-    ), 308  # 308 Permanent Redirect
+    ), 200
 
 
 # /delivery_status
@@ -689,7 +707,7 @@ def upload_to_bytescale(csv_data):
     return file_url
 
 
-@celery.task
+@celery.task(name="app.process_contact_list")
 def process_contact_list(csv_url):
     # QUESTION FOR RICH: when you are going to loop over a list and perform a few operations do you 1. make a function that
     # takes a list, or 2. a for loop that goes over the list and performs the operations or 3. a function that takes a list

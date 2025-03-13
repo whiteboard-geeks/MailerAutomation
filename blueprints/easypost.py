@@ -13,6 +13,7 @@ import easypost
 from redis import Redis
 import structlog
 from close_utils import load_query, search_close_leads, get_lead_by_id
+from celery_worker import celery
 
 # Initialize Blueprint
 easypost_bp = Blueprint("easypost", __name__)
@@ -573,6 +574,23 @@ def handle_package_delivery_update():
                     webhook_data["result"] = "No valid leads found"
                     _webhook_tracker.add(tracking_data.get("id"), webhook_data)
                     return jsonify({"status": "success", "message": error_msg}), 200
+            else:
+                # If there's only one lead, validate it
+                valid_leads = []
+                lead_id = close_leads[0]["id"]
+                valid_lead = get_lead_by_id(lead_id)
+                if valid_lead:
+                    valid_leads.append(close_leads[0])
+                    logger.info(f"Verified single lead ID: {lead_id} exists")
+                else:
+                    error_msg = (
+                        f"The only found lead ID: {lead_id} returned 404 or error"
+                    )
+                    logger.warning(error_msg)
+                    webhook_data["processed"] = True
+                    webhook_data["result"] = "Lead not found"
+                    _webhook_tracker.add(tracking_data.get("id"), webhook_data)
+                    return jsonify({"status": "success", "message": error_msg}), 200
 
             if len(close_leads) == 0:
                 error_msg = f"No leads found with tracking number {tracking_data['tracking_code']}"
@@ -585,6 +603,14 @@ def handle_package_delivery_update():
                 return jsonify({"status": "success", "message": error_msg}), 200
 
             # Update lead with delivery information
+            if not valid_leads:
+                error_msg = f"No valid leads available for tracking number {tracking_data['tracking_code']}"
+                logger.warning(error_msg)
+                webhook_data["processed"] = True
+                webhook_data["result"] = "No valid leads"
+                _webhook_tracker.add(tracking_data.get("id"), webhook_data)
+                return jsonify({"status": "success", "message": error_msg}), 200
+
             update_delivery_information_for_lead(
                 valid_leads[0]["id"], delivery_information
             )
@@ -756,13 +782,79 @@ def get_processed_webhooks():
 @easypost_bp.route("/sync_delivery_status", methods=["GET"])
 def sync_delivery_status_from_easypost():
     """
-    Sync delivery status from EasyPost in two phases:
+    Manually trigger a sync of delivery status from EasyPost.
+    This endpoint queues a background task that runs in two phases:
+    1. Create EasyPost trackers for leads that have tracking numbers but no EasyPost tracker IDs
+    2. Check delivery status for all leads with EasyPost tracker IDs
+
+    The task runs asynchronously and can be monitored using the /sync_delivery_status/status/<task_id> endpoint.
+    """
+    # Queue the task to run in the background
+    task = sync_delivery_status_task.delay()
+
+    return jsonify(
+        {
+            "status": "success",
+            "message": "Delivery status sync task has been queued",
+            "task_id": task.id,
+        }
+    ), 200
+
+
+@easypost_bp.route("/sync_delivery_status/status/<task_id>", methods=["GET"])
+def check_sync_task_status(task_id):
+    """
+    Check the status of a running sync task.
+
+    Args:
+        task_id: The ID of the task to check
+
+    Returns:
+        JSON response with the task status
+    """
+    task = sync_delivery_status_task.AsyncResult(task_id)
+
+    if task.state == "PENDING":
+        response = {"state": task.state, "status": "Task is pending"}
+    elif task.state == "FAILURE":
+        response = {
+            "state": task.state,
+            "status": "Task failed",
+            "error": str(task.info),
+        }
+    elif task.state == "SUCCESS":
+        response = {
+            "state": task.state,
+            "status": "Task completed successfully",
+            "result": task.info,
+        }
+    else:
+        # Task is likely in STARTED or PROGRESS state
+        response = {"state": task.state, "status": "Task is in progress"}
+
+    return jsonify(response)
+
+
+@celery.task(
+    name="easypost.sync_delivery_status_task",
+    bind=True,
+    soft_time_limit=3600,  # 1 hour timeout
+    time_limit=3900,  # 1 hour 5 minutes hard timeout
+    max_retries=3,
+    default_retry_delay=300,  # 5 minutes retry delay
+)
+def sync_delivery_status_task(self):
+    """
+    Celery task to sync delivery status from EasyPost in two phases:
     1. Create EasyPost trackers for leads that have tracking numbers but no EasyPost tracker IDs
     2. Check delivery status for all leads with EasyPost tracker IDs
     """
     results = {"trackers_created": 0, "delivery_updates": 0, "errors": 0}
 
     try:
+        # Update task state to show progress
+        self.update_state(state="PROGRESS", meta={"status": "Starting sync task"})
+
         # Phase 1: Create trackers for leads without EasyPost tracker IDs
         logger.info("Phase 1: Creating trackers for leads without EasyPost tracker IDs")
         query_leads_without_easypost_trackers = load_query(
@@ -777,7 +869,18 @@ def sync_delivery_status_from_easypost():
                 f"Found {len(leads_without_trackers)} leads without EasyPost tracker IDs"
             )
 
-            for lead in leads_without_trackers:
+            # Update task state with progress information
+            self.update_state(
+                state="PROGRESS",
+                meta={
+                    "status": f"Found {len(leads_without_trackers)} leads without EasyPost tracker IDs",
+                    "current": 0,
+                    "total": len(leads_without_trackers),
+                    "phase": "Creating trackers",
+                },
+            )
+
+            for i, lead in enumerate(leads_without_trackers):
                 try:
                     lead_id = lead["id"]
                     # Extract tracking number and carrier
@@ -818,6 +921,19 @@ def sync_delivery_status_from_easypost():
                     )
                     results["trackers_created"] += 1
 
+                    # Update progress every 5 items or at the end
+                    if (i + 1) % 5 == 0 or i == len(leads_without_trackers) - 1:
+                        self.update_state(
+                            state="PROGRESS",
+                            meta={
+                                "status": f"Creating trackers: {i+1}/{len(leads_without_trackers)}",
+                                "current": i + 1,
+                                "total": len(leads_without_trackers),
+                                "phase": "Creating trackers",
+                                "results": results,
+                            },
+                        )
+
                 except Exception as e:
                     error_msg = (
                         f"Error creating tracker for lead {lead.get('id')}: {str(e)}"
@@ -833,6 +949,19 @@ def sync_delivery_status_from_easypost():
         logger.info(
             "Phase 2: Checking delivery status for leads with EasyPost tracker IDs"
         )
+
+        # Update task state for phase 2
+        self.update_state(
+            state="PROGRESS",
+            meta={
+                "status": "Starting Phase 2: Checking delivery status",
+                "current": 0,
+                "total": 0,  # Will be updated when we know how many leads we have
+                "phase": "Checking delivery status",
+                "results": results,
+            },
+        )
+
         query_leads_with_undelivered_packages_in_close = load_query(
             "undelivered_package_with_easypost_tracker_id.json"
         )
@@ -844,13 +973,37 @@ def sync_delivery_status_from_easypost():
             logger.info(
                 "No leads found with undelivered packages that have EasyPost tracker IDs"
             )
+
+            # Update state to show no leads found
+            self.update_state(
+                state="PROGRESS",
+                meta={
+                    "status": "No leads found with undelivered packages that have EasyPost tracker IDs",
+                    "current": 0,
+                    "total": 0,
+                    "phase": "Checking delivery status - Complete",
+                    "results": results,
+                },
+            )
         else:
             logger.info(
                 f"Found {len(leads_with_trackers)} leads with EasyPost tracker IDs to check"
             )
 
+            # Update state with total leads found
+            self.update_state(
+                state="PROGRESS",
+                meta={
+                    "status": f"Found {len(leads_with_trackers)} leads with EasyPost tracker IDs to check",
+                    "current": 0,
+                    "total": len(leads_with_trackers),
+                    "phase": "Checking delivery status",
+                    "results": results,
+                },
+            )
+
             # Check each lead's shipment status via EasyPost
-            for lead in leads_with_trackers:
+            for i, lead in enumerate(leads_with_trackers):
                 try:
                     easypost_tracker_id = lead[
                         "custom.cf_JsirGUJdp8RrCI6XwW48xFKEccSwulSCwZ7pAZL84vh"
@@ -871,27 +1024,37 @@ def sync_delivery_status_from_easypost():
                         logger.info(
                             f"Lead {lead['id']}: Tracking status is not 'delivered'; webhook did not run."
                         )
-                        continue
-
-                    if (
+                    elif (
                         tracking_data["tracking_details"][-1]["message"]
                         == "Delivered, To Original Sender"
                     ):
                         logger.info(
                             f"Lead {lead['id']}: Tracking status is 'delivered', but it is delivered to the original sender; webhook did not run."
                         )
-                        continue
+                    else:
+                        delivery_information = parse_delivery_information(tracking_data)
+                        # Update the delivery information in Close
+                        update_delivery_information_for_lead(
+                            lead["id"], delivery_information
+                        )
+                        create_package_delivered_custom_activity_in_close(
+                            lead["id"], delivery_information
+                        )
+                        logger.info(f"Updated delivery status for lead {lead['id']}")
+                        results["delivery_updates"] += 1
 
-                    delivery_information = parse_delivery_information(tracking_data)
-                    # Update the delivery information in Close
-                    update_delivery_information_for_lead(
-                        lead["id"], delivery_information
-                    )
-                    create_package_delivered_custom_activity_in_close(
-                        lead["id"], delivery_information
-                    )
-                    logger.info(f"Updated delivery status for lead {lead['id']}")
-                    results["delivery_updates"] += 1
+                    # Update progress every 5 items or at the end
+                    if (i + 1) % 5 == 0 or i == len(leads_with_trackers) - 1:
+                        self.update_state(
+                            state="PROGRESS",
+                            meta={
+                                "status": f"Checking delivery status: {i+1}/{len(leads_with_trackers)}",
+                                "current": i + 1,
+                                "total": len(leads_with_trackers),
+                                "phase": "Checking delivery status",
+                                "results": results,
+                            },
+                        )
 
                 except Exception as e:
                     error_msg = f"Error checking delivery status for lead {lead['id']}: {str(e)}"
@@ -907,16 +1070,188 @@ def sync_delivery_status_from_easypost():
             f"{results['errors']} error(s) encountered."
         )
         logger.info(summary)
-        return jsonify(
-            {
-                "status": "success",
-                "message": summary,
-                "details": results,
-            }
-        ), 200
+
+        # Return results for task tracking
+        return {
+            "status": "success",
+            "message": summary,
+            "details": results,
+        }
 
     except Exception as e:
         error_msg = f"Error syncing delivery status: {str(e)}"
         logger.error(error_msg)
         logger.error(f"Traceback: {traceback.format_exc()}")
+
+        # Try to retry the task if possible
+        try:
+            # Retry up to max_retries times
+            raise self.retry(exc=e)
+        except Exception as retry_error:
+            # If we've exceeded retries or can't retry, return error
+            logger.warning(f"Failed to retry task: {retry_error}")
+            return {"status": "error", "message": error_msg}
+
+
+@easypost_bp.route("/create_tracker_for_lead/<lead_id>", methods=["POST"])
+def create_tracker_for_lead(lead_id):
+    """
+    Create an EasyPost tracker for a specific lead.
+    This endpoint is designed to be called when a new tracking number is added to a lead.
+
+    Args:
+        lead_id: The Close lead ID to create a tracker for
+
+    Returns:
+        JSON response with the created tracker information
+    """
+    try:
+        # Get lead data from Close
+        lead = get_lead_by_id(lead_id)
+
+        if not lead:
+            return jsonify(
+                {"status": "error", "message": f"Lead {lead_id} not found"}
+            ), 404
+
+        # Extract tracking number and carrier
+        tracking_number = lead.get(
+            "custom.cf_iSOPYKzS9IPK20gJ8eH9Q74NT7grCQW9psqo4lZR3Ii"
+        )
+        carrier_field = lead.get(
+            "custom.cf_2QQR5e6vJUyGzlYBtHddFpdqNp5393nEnUiZk1Ukl9l"
+        )
+
+        if not tracking_number or not carrier_field:
+            return jsonify(
+                {
+                    "status": "error",
+                    "message": f"Lead {lead_id} is missing tracking number or carrier",
+                }
+            ), 400
+
+        carrier = carrier_field[0] if isinstance(carrier_field, list) else carrier_field
+
+        # Get appropriate EasyPost client based on tracking number
+        client = get_easypost_client(tracking_number)
+
+        # Create tracker in EasyPost
+        tracker = client.tracker.create(tracking_code=tracking_number, carrier=carrier)
+
+        # Update lead with EasyPost tracker ID
+        update_easypost_tracker_id_for_lead(
+            lead_id, {"easypost_tracker_id": tracker.id}
+        )
+
+        logger.info(f"Created EasyPost tracker {tracker.id} for lead {lead_id}")
+
+        # Queue a task to check the delivery status immediately
+        check_delivery_status_for_lead_task.delay(lead_id)
+
+        return jsonify(
+            {
+                "status": "success",
+                "message": f"Created EasyPost tracker for lead {lead_id}",
+                "tracker_id": tracker.id,
+                "tracking_code": tracking_number,
+                "carrier": carrier,
+            }
+        ), 200
+
+    except Exception as e:
+        error_msg = f"Error creating EasyPost tracker for lead {lead_id}: {str(e)}"
+        logger.error(error_msg)
+        logger.error(f"Traceback: {traceback.format_exc()}")
         return jsonify({"status": "error", "message": error_msg}), 500
+
+
+@celery.task(
+    name="easypost.check_delivery_status_for_lead_task",
+    bind=True,
+    soft_time_limit=600,  # 10 minutes timeout
+    max_retries=3,
+    default_retry_delay=300,  # 5 minutes retry delay
+)
+def check_delivery_status_for_lead_task(self, lead_id):
+    """
+    Celery task to check delivery status for a specific lead.
+
+    Args:
+        lead_id: The Close lead ID to check delivery status for
+    """
+    try:
+        # Get lead data from Close
+        lead = get_lead_by_id(lead_id)
+
+        if not lead:
+            logger.error(f"Lead {lead_id} not found")
+            return {"status": "error", "message": f"Lead {lead_id} not found"}
+
+        # Get EasyPost tracker ID
+        easypost_tracker_id = lead.get(
+            "custom.cf_JsirGUJdp8RrCI6XwW48xFKEccSwulSCwZ7pAZL84vh"
+        )
+
+        if not easypost_tracker_id:
+            logger.error(f"Lead {lead_id} does not have an EasyPost tracker ID")
+            return {
+                "status": "error",
+                "message": f"Lead {lead_id} does not have an EasyPost tracker ID",
+            }
+
+        # Get tracking number to determine which client to use
+        tracking_number = lead.get(
+            "custom.cf_iSOPYKzS9IPK20gJ8eH9Q74NT7grCQW9psqo4lZR3Ii"
+        )
+
+        # Get the appropriate client based on tracking number
+        client = get_easypost_client(tracking_number)
+
+        # Retrieve tracker from EasyPost
+        tracker = client.tracker.retrieve(easypost_tracker_id)
+        tracking_data = tracker
+
+        if tracking_data["status"] != "delivered":
+            logger.info(f"Lead {lead_id}: Tracking status is not 'delivered'")
+            return {
+                "status": "success",
+                "message": f"Lead {lead_id}: Tracking status is {tracking_data['status']}",
+            }
+
+        if (
+            tracking_data["tracking_details"][-1]["message"]
+            == "Delivered, To Original Sender"
+        ):
+            logger.info(
+                f"Lead {lead_id}: Tracking status is 'delivered', but it is delivered to the original sender"
+            )
+            return {
+                "status": "success",
+                "message": f"Lead {lead_id}: Delivered to original sender",
+            }
+
+        # Parse delivery information and update lead
+        delivery_information = parse_delivery_information(tracking_data)
+        update_delivery_information_for_lead(lead_id, delivery_information)
+        create_package_delivered_custom_activity_in_close(lead_id, delivery_information)
+
+        logger.info(f"Updated delivery status for lead {lead_id}")
+        return {
+            "status": "success",
+            "message": f"Updated delivery status for lead {lead_id}",
+            "delivery_information": delivery_information,
+        }
+
+    except Exception as e:
+        error_msg = f"Error checking delivery status for lead {lead_id}: {str(e)}"
+        logger.error(error_msg)
+        logger.error(f"Traceback: {traceback.format_exc()}")
+
+        # Try to retry the task if possible
+        try:
+            # Retry up to max_retries times
+            raise self.retry(exc=e)
+        except Exception as retry_error:
+            # If we've exceeded retries or can't retry, return error
+            logger.warning(f"Failed to retry task for lead {lead_id}: {retry_error}")
+            return {"status": "error", "message": error_msg}
