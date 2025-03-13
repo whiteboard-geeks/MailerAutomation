@@ -1,2 +1,4 @@
 web: gunicorn app:flask_app
-worker: celery -A app.flask_app.celery worker --loglevel=debug
+worker: celery -A celery_worker.celery worker --loglevel=info
+# Add beat process if you want to use scheduled tasks
+# beat: celery -A celery_worker.celery beat --loglevel=info
