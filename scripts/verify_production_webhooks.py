@@ -68,7 +68,7 @@ class CloseAPI:
                         "filter": {
                             "type": "field_accessor",
                             "field": "text",
-                            "filter": {"type": "contains", "value": "Instantly"},
+                            "filter": {"type": "contains", "value": "Instantly:"},
                         },
                     },
                 }
