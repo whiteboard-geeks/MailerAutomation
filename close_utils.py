@@ -281,3 +281,46 @@ def get_task(task_id):
         logger.error(f"Failed to get task {task_id}: {e}")
         logger.error(f"Traceback: {traceback.format_exc()}")
         return None
+
+
+@retry_with_backoff(max_retries=3, initial_delay=1)
+def create_task(lead_id, text, assigned_to=None, date=None, is_complete=False):
+    """
+    Create a task in Close CRM.
+
+    Args:
+        lead_id (str): The ID of the lead to associate the task with
+        text (str): The task text/content
+        assigned_to (str, optional): User ID of the assignee. If None, will be assigned to the API user.
+        date (str, optional): Due date in ISO format (YYYY-MM-DD). If None, set to today.
+        is_complete (bool, optional): Whether the task is already complete. Default is False.
+
+    Returns:
+        dict: The created task data or None if an error occurred
+    """
+    try:
+        url = "https://api.close.com/api/v1/task/"
+
+        # Prepare task data
+        task_data = {
+            "_type": "lead",
+            "lead_id": lead_id,
+            "text": text,
+            "is_complete": is_complete,
+        }
+
+        # Add optional fields if provided
+        if assigned_to:
+            task_data["assigned_to"] = assigned_to
+
+        if date:
+            task_data["date"] = date
+
+        # Make the request
+        response = make_close_request("post", url, json=task_data, timeout=30)
+        return response.json()
+
+    except Exception as e:
+        logger.error(f"Failed to create task for lead {lead_id}: {e}")
+        logger.error(f"Traceback: {traceback.format_exc()}")
+        return None

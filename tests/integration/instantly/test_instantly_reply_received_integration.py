@@ -4,6 +4,7 @@ import requests
 from tests.utils.close_api import CloseAPI
 from datetime import datetime
 from time import sleep
+from utils.instantly_constants import format_instantly_reply_task_text
 
 
 class TestInstantlyReplyReceivedIntegration:
@@ -105,5 +106,36 @@ class TestInstantlyReplyReceivedIntegration:
             assert (
                 matching_email["body_text"] == self.mock_payload["reply_text"]
             ), "Email text body doesn't match"
+
+        # Check for task creation
+        print("Checking for task creation...")
+
+        # Retrieve tasks for the lead
+        tasks = self.close_api.get_lead_tasks(lead_data["id"])
+        print(f"Found {len(tasks)} tasks for the lead")
+
+        # Print all task texts for debugging
+        print("Task texts:")
+        for task in tasks:
+            print(f"  - {task.get('text', '')}")
+
+        # Check if there's a task with the expected text
+        expected_task_text = format_instantly_reply_task_text(
+            self.mock_payload["reply_subject"], self.mock_payload["campaign_name"]
+        )
+        print(f"Expected task text: {expected_task_text}")
+        matching_task = None
+        for task in tasks:
+            task_text = task.get("text", "")
+            # Use case-insensitive comparison to be more flexible
+            if expected_task_text.lower() in task_text.lower():
+                matching_task = task
+                break
+
+        assert matching_task is not None, "Task was not created"
+        print(f"Found matching task with ID: {matching_task['id']}")
+
+        # Verify task is not complete
+        assert matching_task["is_complete"] is False, "Task should not be complete"
 
         print("All assertions passed!")
