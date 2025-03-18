@@ -188,6 +188,7 @@ def get_instantly_campaign_name(task_text):
 
     This function removes "Instantly" and any trailing non-space characters
     (like ":", "!", "--") and returns the rest of the text as the campaign name.
+    It also removes any text enclosed in square brackets [].
 
     Args:
         task_text (str): The text of the task from Close
@@ -205,15 +206,19 @@ def get_instantly_campaign_name(task_text):
     # Try to match pattern with a separator (Instantly: Test or Instantly:Test)
     match = re.search(r"^Instantly[:!,\-\s]+(.*)$", task_text)
     if match:
-        return match.group(1).strip()
+        # Remove any text in square brackets and then strip
+        text = match.group(1)
+        text = re.sub(r"\s*\[.*?\]\s*", " ", text).strip()
+        return text
 
     # Handle case where there is no separator (InstantlyTest)
     # For this case, we want to return empty string
     if re.match(r"^Instantly[a-zA-Z0-9]", task_text):
         return ""
 
-    # Fallback - just remove "Instantly" prefix
+    # Fallback - just remove "Instantly" prefix and any text in square brackets
     remaining = task_text[len("Instantly") :].strip()
+    remaining = re.sub(r"\s*\[.*?\]\s*", " ", remaining).strip()
     return remaining
 
 

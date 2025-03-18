@@ -23,6 +23,12 @@ def test_get_instantly_campaign_name():
             "Not an Instantly task",
         ),  # Doesn't start with "Instantly"
         ("", ""),  # Empty string
+        # Bracket removal cases
+        ("Instantly: Campaign Name [Note]", "Campaign Name"),
+        ("Instantly: BP_BC_BlindInviteEmail1 [Noura Test]", "BP_BC_BlindInviteEmail1"),
+        ("Instantly: Campaign [Note1] [Note2]", "Campaign"),
+        ("Instantly: Campaign[No Space]", "Campaign"),
+        ("Instantly Campaign [Note]", "Campaign"),
     ]
 
     for input_text, expected in test_cases:
