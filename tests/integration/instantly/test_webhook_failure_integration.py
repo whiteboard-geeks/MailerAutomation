@@ -56,7 +56,7 @@ SAMPLE_PAYLOAD = {
             "lead_id": "lead_OPosV1quUroYLWEZl11wZ0ZUlF6xQMuaER3mwuAC4Vc",
             "is_new": True,
             "sequence_subscription_id": "sub_38Qv1oCai2YqDuBYc5vpq4",
-            "text": "Instantly: BP_BC_BlindInviteEmail1 [Noura Test]",
+            "text": "Instantly: Campaign That Doesn't Exist",
             "assigned_to_name": "Barbara Pigg",
             "updated_by": None,
             "_type": "lead",
@@ -77,6 +77,7 @@ def client():
     return flask_app.test_client()
 
 
+@pytest.mark.webhook_failures
 def test_campaign_not_found_sends_real_email(client):
     """
     Integration test for campaign not found error.
@@ -125,12 +126,13 @@ def test_campaign_not_found_sends_real_email(client):
         # Print verification prompt
         print("\nVerify that:")
         print(
-            "1. You received an email with subject 'Instantly Campaign Not Found: BP_BC_BlindInviteEmail1 [Noura Test]'"
+            "1. You received an email with subject 'Instantly Campaign Not Found: Campaign That Doesn't Exist'"
         )
         print("2. The email contains error details")
         print("3. The JSON response has status 'success' despite the error")
 
 
+@pytest.mark.webhook_failures
 def test_lead_not_found_sends_real_email(client):
     """
     Integration test for lead not found error.
@@ -182,6 +184,7 @@ def test_lead_not_found_sends_real_email(client):
             print("3. The JSON response has status 'success' despite the error")
 
 
+@pytest.mark.webhook_failures
 def test_api_error_sends_real_email(client):
     """
     Integration test for Instantly API error.

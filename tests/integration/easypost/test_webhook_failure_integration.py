@@ -36,6 +36,7 @@ def client():
     return flask_app.test_client()
 
 
+@pytest.mark.webhook_failures
 def test_no_lead_id_sends_real_email(client):
     """
     Integration test for missing lead ID error.
@@ -87,6 +88,7 @@ def test_no_lead_id_sends_real_email(client):
     print("3. The JSON response has status 'success' despite the error")
 
 
+@pytest.mark.webhook_failures
 def test_lead_not_found_sends_real_email(client):
     """
     Integration test for lead not found error.
@@ -139,6 +141,7 @@ def test_lead_not_found_sends_real_email(client):
         print("3. The JSON response has status 'success' despite the error")
 
 
+@pytest.mark.webhook_failures
 def test_missing_tracking_info_sends_real_email(client):
     """
     Integration test for missing tracking number or carrier.
@@ -195,6 +198,7 @@ def test_missing_tracking_info_sends_real_email(client):
         print("3. The JSON response has status 'success' despite the error")
 
 
+@pytest.mark.webhook_failures
 def test_easypost_api_error_sends_real_email(client):
     """
     Integration test for EasyPost API error.
