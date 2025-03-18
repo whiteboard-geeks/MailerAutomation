@@ -4,7 +4,6 @@ import requests
 from tests.utils.close_api import CloseAPI
 from datetime import datetime
 from time import sleep
-from utils.instantly_constants import format_instantly_reply_task_text
 
 
 class TestInstantlyReplyReceivedIntegration:
@@ -88,7 +87,7 @@ class TestInstantlyReplyReceivedIntegration:
 
         print(f"Found matching email with ID: {matching_email['id']}")
 
-        # Verify email properties
+        # Verify email activity
         assert (
             matching_email["status"] == "inbox"
         ), "Email activity status is not 'inbox'"
@@ -107,38 +106,26 @@ class TestInstantlyReplyReceivedIntegration:
                 matching_email["body_text"] == self.mock_payload["reply_text"]
             ), "Email text body doesn't match"
 
-        # Check for task creation
-        print("Checking for task creation...")
-        # Wait 5 seconds for the task to populate
-        print("Waiting 5 seconds for task to populate...")
-        sleep(5)
+        # Instead of checking for task creation, we now expect a notification email to be sent
+        # This is harder to test in integration tests since it goes through Gmail API
+        # We can check if the webhook response indicates success
+        print("Checking webhook response for successful processing...")
+        assert (
+            response.status_code == 200
+        ), f"Webhook response status code is not 200, got {response.status_code}"
+        response_data = response.json()
+        assert (
+            response_data.get("status") == "success"
+        ), f"Webhook response status is not 'success', got {response_data.get('status')}"
+        assert (
+            response_data.get("message")
+            == "Reply received webhook processed successfully"
+        ), "Webhook response message doesn't indicate success"
 
-        # Retrieve tasks for the lead
-        tasks = self.close_api.get_lead_tasks(lead_data["id"])
-        print(f"Found {len(tasks)} tasks for the lead")
-
-        # Print all task texts for debugging
-        print("Task texts:")
-        for task in tasks:
-            print(f"  - {task.get('text', '')}")
-
-        # Check if there's a task with the expected text
-        expected_task_text = format_instantly_reply_task_text(
-            self.mock_payload["reply_subject"], self.mock_payload["campaign_name"]
-        )
-        print(f"Expected task text: {expected_task_text}")
-        matching_task = None
-        for task in tasks:
-            task_text = task.get("text", "")
-            # Use case-insensitive comparison to be more flexible
-            if expected_task_text.lower() in task_text.lower():
-                matching_task = task
-                break
-
-        assert matching_task is not None, "Task was not created"
-        print(f"Found matching task with ID: {matching_task['id']}")
-
-        # Verify task is not complete
-        assert matching_task["is_complete"] is False, "Task should not be complete"
+        # Verify 'task_id' is None in the response (since we don't create tasks anymore)
+        print("Verifying no task was created...")
+        assert (
+            response_data.get("data", {}).get("task_id") is None
+        ), "Task ID should be None in the response"
 
         print("All assertions passed!")
