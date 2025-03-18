@@ -1132,15 +1132,26 @@ def handle_instantly_reply_received():
         <p><a href="https://app.close.com/lead/{lead_id}/" style="padding: 10px 15px; background-color: #4CAF50; color: white; text-decoration: none; border-radius: 4px; display: inline-block; margin-top: 10px;">View Lead in Close</a></p>
         """
 
+        # Determine recipients based on environment
+        recipients = ["lance@whiteboardgeeks.com"]
+        if env_type.lower() == "production":
+            recipients.extend(
+                [
+                    "barbara.pigg@whiteboardgeeks.com",
+                    "kori.watkins@whiteboardgeeks.com",
+                    "noura.mahmoud@whiteboardgeeks.com",
+                ]
+            )
+
         # Send email notification using Gmail API
         try:
             # Import the send_gmail function from our Gmail blueprint
             from blueprints.gmail import send_gmail
 
-            # Send notification to Barbara
+            # Send notification email
             notification_result = send_gmail(
                 sender="lance@whiteboardgeeks.com",
-                to="lance@whiteboardgeeks.com",
+                to=recipients,
                 subject=f"Instantly Reply: {reply_subject} from {lead_name}",
                 html_content=notification_html,
                 text_content=f"""Instantly Reply Received
@@ -1170,6 +1181,7 @@ Time: {datetime.now().strftime("%Y-%m-%d %H:%M:%S")}""",
             send_email(
                 subject=f"Instantly Reply: {reply_subject} from {lead_name}",
                 body=notification_html,
+                recipients=recipients,
             )
 
         logger.info(f"Successfully processed reply received webhook for lead {lead_id}")

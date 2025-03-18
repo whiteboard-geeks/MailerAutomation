@@ -14,16 +14,18 @@ load_dotenv()
 @pytest.fixture(autouse=True)
 def setup_test_env():
     """Set up test environment variables if not already set."""
-    # Set default values for required environment variables
+    # Check required credentials are available
     if not os.environ.get("GMAIL_WEBHOOK_PASSWORD"):
-        os.environ["GMAIL_WEBHOOK_PASSWORD"] = (
-            "kShkgz6-6svDMWBefziRwENK1AeU4AT-K5qfJ4BEmp0"
-        )
+        pytest.skip("GMAIL_WEBHOOK_PASSWORD not set in environment variables")
 
     if not os.environ.get("GMAIL_SERVICE_ACCOUNT_FILE"):
+        # Use a default path but don't create the file
         os.environ["GMAIL_SERVICE_ACCOUNT_FILE"] = os.path.expanduser(
             "~/wbg-email-service-key.json"
         )
+        # Skip if the file doesn't exist
+        if not os.path.exists(os.environ["GMAIL_SERVICE_ACCOUNT_FILE"]):
+            pytest.skip("Gmail service account key file not found")
 
     if not os.environ.get("BASE_URL"):
         # Default to local development server
