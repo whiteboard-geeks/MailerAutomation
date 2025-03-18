@@ -172,7 +172,10 @@ def create_easypost_tracker():
         lead_id = data.get("id")
 
         if not lead_id:
-            return jsonify({"status": "error", "message": "No lead_id provided"}), 400
+            error_msg = "No lead_id provided"
+            logger.error(error_msg)
+            send_email(subject="EasyPost Tracker Creation Error", body=error_msg)
+            return jsonify({"status": "success", "message": error_msg}), 200
 
         # Get close API key
         get_close_encoded_key()
@@ -189,12 +192,10 @@ def create_easypost_tracker():
         )
 
         if response.status_code != 200:
-            return jsonify(
-                {
-                    "status": "error",
-                    "message": f"Failed to fetch lead data: {response.text}",
-                }
-            ), response.status_code
+            error_msg = f"Failed to fetch lead data: {response.text}"
+            logger.error(error_msg)
+            send_email(subject="Close Lead Data Fetch Error", body=error_msg)
+            return jsonify({"status": "success", "message": error_msg}), 200
 
         lead_data = response.json()
 
@@ -207,12 +208,10 @@ def create_easypost_tracker():
         )
 
         if not tracking_number or not carrier_field:
-            return jsonify(
-                {
-                    "status": "error",
-                    "message": "Lead doesn't have tracking number or carrier",
-                }
-            ), 400
+            error_msg = "Lead doesn't have tracking number or carrier"
+            logger.error(error_msg)
+            send_email(subject="EasyPost Tracker Missing Data", body=error_msg)
+            return jsonify({"status": "success", "message": error_msg}), 200
 
         carrier = carrier_field[0] if isinstance(carrier_field, list) else carrier_field
 
@@ -241,7 +240,8 @@ def create_easypost_tracker():
     except Exception as e:
         error_msg = f"Error creating EasyPost tracker: {str(e)}"
         logger.error(error_msg)
-        return jsonify({"status": "error", "message": error_msg}), 500
+        send_email(subject="EasyPost Tracker Creation Error", body=error_msg)
+        return jsonify({"status": "success", "message": error_msg}), 200
 
 
 def update_easypost_tracker_id_for_lead(lead_id, update_information):

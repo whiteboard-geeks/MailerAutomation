@@ -396,10 +396,12 @@ def add_lead_to_instantly():
 
         # Make sure we have a campaign name
         if not campaign_name:
-            logger.warning(f"Could not extract campaign name from task: {task_text}")
+            error_msg = f"Could not extract campaign name from task: {task_text}"
+            logger.warning(error_msg)
+            send_email(subject="Instantly Campaign Name Error", body=error_msg)
             return jsonify(
-                {"status": "error", "message": "No campaign name found in task text"}
-            ), 400
+                {"status": "success", "message": "No campaign name found in task text"}
+            ), 200
 
         logger.info(
             f"Processing Instantly campaign: {campaign_name} for lead: {lead_id}"
@@ -434,7 +436,7 @@ Error details: {error_msg}
             send_email(subject=email_subject, body=email_body)
 
             logger.warning(error_msg)
-            return jsonify({"status": "error", "message": error_msg}), 404
+            return jsonify({"status": "success", "message": error_msg}), 200
 
         # Campaign exists, so get the campaign ID
         campaign_id = campaign_check.get("campaign_id")
@@ -445,7 +447,8 @@ Error details: {error_msg}
         if not lead_details:
             error_msg = f"Could not retrieve lead details for lead ID: {lead_id}"
             logger.warning(error_msg)
-            return jsonify({"status": "error", "message": error_msg}), 404
+            send_email(subject="Close Lead Details Error", body=error_msg)
+            return jsonify({"status": "success", "message": error_msg}), 200
 
         logger.info(f"Retrieved lead details for lead ID: {lead_id}")
 
@@ -465,7 +468,8 @@ Error details: {error_msg}
         if not email:
             error_msg = f"No email found for lead ID: {lead_id}"
             logger.warning(error_msg)
-            return jsonify({"status": "error", "message": error_msg}), 400
+            send_email(subject="Close Lead Email Error", body=error_msg)
+            return jsonify({"status": "success", "message": error_msg}), 200
 
         # Get company name and date & location from custom fields
         company_name = lead_details.get(
@@ -490,7 +494,8 @@ Error details: {error_msg}
                 f"Failed to add lead to Instantly: {instantly_result.get('message')}"
             )
             logger.error(error_msg)
-            return jsonify({"status": "error", "message": error_msg}), 500
+            send_email(subject="Instantly API Error", body=error_msg)
+            return jsonify({"status": "success", "message": error_msg}), 200
 
         # Track this webhook
         webhook_data = {
@@ -531,11 +536,11 @@ Error details: {error_msg}
 
         return jsonify(
             {
-                "status": "error",
+                "status": "success",
                 "message": "An error occurred processing the Close task webhook",
                 "error": str(e),
             }
-        ), 500
+        ), 200
 
 
 def split_name(full_name):
