@@ -20,9 +20,7 @@ from close_utils import (
     search_close_leads,
     get_close_headers,
     create_email_search_query,
-    create_task,
 )
-from utils.instantly_constants import format_instantly_reply_task_text
 
 # Set up blueprint
 instantly_bp = Blueprint("instantly", __name__)
@@ -1105,29 +1103,73 @@ def handle_instantly_reply_received():
         email_response = requests.post(email_url, headers=headers, json=email_data)
         email_response.raise_for_status()
 
-        # Create a task for the lead
-        task_text = format_instantly_reply_task_text(reply_subject, campaign_name)
-        task_data = create_task(
-            lead_id=lead_id,
-            text=task_text,
-            assigned_to=BARBARA_USER_ID,  # Assign to Barbara by default
-            is_complete=False,
-        )
+        # Get lead name for notification
+        lead_name = lead_details.get("name", "Unknown")
 
-        if not task_data:
-            logger.error(
-                "task_creation_failed",
-                lead_id=lead_id,
-                lead_email=lead_email,
-                campaign_name=campaign_name,
+        # Get environment information
+        env_type = os.environ.get("ENV_TYPE", "development")
+
+        # Format the notification email content
+        notification_html = f"""
+        <h2>Instantly Email Reply Received</h2>
+        <p>A reply has been received from an Instantly email campaign.</p>
+        
+        <h3>Details:</h3>
+        <ul>
+            <li><strong>Lead:</strong> {lead_name}</li>
+            <li><strong>Lead Email:</strong> {lead_email}</li>
+            <li><strong>Campaign:</strong> {campaign_name}</li>
+            <li><strong>Subject:</strong> {reply_subject}</li>
+            <li><strong>Environment:</strong> {env_type}</li>
+            <li><strong>Time:</strong> {datetime.now().strftime("%Y-%m-%d %H:%M:%S")}</li>
+        </ul>
+        
+        <h3>Reply Content:</h3>
+        <div style="border: 1px solid #ddd; padding: 15px; margin: 10px 0; background-color: #f9f9f9;">
+            {reply_html or reply_text or "No content available"}
+        </div>
+        
+        <p><a href="https://app.close.com/lead/{lead_id}/" style="padding: 10px 15px; background-color: #4CAF50; color: white; text-decoration: none; border-radius: 4px; display: inline-block; margin-top: 10px;">View Lead in Close</a></p>
+        """
+
+        # Send email notification using Gmail API
+        try:
+            # Import the send_gmail function from our Gmail blueprint
+            from blueprints.gmail import send_gmail
+
+            # Send notification to Barbara
+            notification_result = send_gmail(
+                sender="lance@whiteboardgeeks.com",
+                to="lance@whiteboardgeeks.com",
+                subject=f"Instantly Reply: {reply_subject} from {lead_name}",
+                html_content=notification_html,
+                text_content=f"""Instantly Reply Received
+
+Lead: {lead_name}
+Email: {lead_email}
+Campaign: {campaign_name}
+Subject: {reply_subject}
+Environment: {env_type}
+Time: {datetime.now().strftime("%Y-%m-%d %H:%M:%S")}""",
             )
-            # Continue with the process even if task creation fails
-        else:
+
             logger.info(
-                "task_created",
-                task_id=task_data.get("id"),
-                lead_id=lead_id,
-                task_text=task_text,
+                "notification_email_sent",
+                email_status=notification_result.get("status"),
+                message_id=notification_result.get("message_id"),
+            )
+        except Exception as email_error:
+            # If Gmail API fails, fallback to Mailgun
+            logger.error(
+                "gmail_notification_failed",
+                error=str(email_error),
+                fallback="using mailgun instead",
+            )
+
+            # Fallback to using the app's send_email function (Mailgun)
+            send_email(
+                subject=f"Instantly Reply: {reply_subject} from {lead_name}",
+                body=notification_html,
             )
 
         logger.info(f"Successfully processed reply received webhook for lead {lead_id}")
@@ -1137,7 +1179,7 @@ def handle_instantly_reply_received():
             "route": "reply_received",
             "lead_id": lead_id,
             "lead_email": lead_email,
-            "task_id": task_data.get("id") if task_data else None,
+            "task_id": None,
             "email_id": email_response.json().get("id"),
         }
 
@@ -1147,7 +1189,7 @@ def handle_instantly_reply_received():
             "data": {
                 "lead_id": lead_id,
                 "email_id": email_response.json().get("id"),
-                "task_id": task_data.get("id") if task_data else None,
+                "task_id": None,
             },
         }
 

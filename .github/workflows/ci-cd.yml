@@ -76,7 +76,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        blueprint: [instantly, easypost]  # Add new blueprints here as you create them
+        blueprint: [instantly, easypost, gmail]  # Add new blueprints here as you create them
     steps:
       - uses: actions/checkout@v3
       
@@ -113,7 +113,14 @@ jobs:
           # Set it as an environment variable for subsequent steps
           echo "REDISCLOUD_URL=$REDIS_URL" >> $GITHUB_ENV
           
-      - name: Run ${{ matrix.test[0] }} integration test for ${{ matrix.blueprint }}
+      - name: Setup Gmail credentials if needed
+        if: matrix.blueprint == 'gmail'
+        run: |
+          # Create the service account file from the secret
+          echo '${{ secrets.GMAIL_SERVICE_ACCOUNT_JSON }}' > ./service-account.json
+          echo "GMAIL_SERVICE_ACCOUNT_FILE=$(pwd)/service-account.json" >> $GITHUB_ENV
+          
+      - name: Run integration tests for ${{ matrix.blueprint }}
         env:
           STAGING_URL: "https://mailer-automation-staging-a1a3b6abc50d.herokuapp.com"
           ENV_TYPE: "staging"
@@ -122,13 +129,14 @@ jobs:
           EASYPOST_TEST_API_KEY: ${{ secrets.EASYPOST_TEST_API_KEY }}
           EASYPOST_PROD_API_KEY: ${{ secrets.EASYPOST_PROD_API_KEY }}
           MAILGUN_API_KEY: ${{ secrets.MAILGUN_API_KEY }}
+          GMAIL_WEBHOOK_PASSWORD: ${{ secrets.GMAIL_WEBHOOK_PASSWORD }}
         run: |
           # Set the base URL for tests to point to staging
           export BASE_URL=$STAGING_URL
           
-          # Run the specific integration test
-          echo "Running ${{ matrix.test[0] }} integration test for ${{ matrix.blueprint }}..."
-          pytest tests/integration/${{ matrix.blueprint }}/${{ matrix.test[1] }} -v
+          # Run the integration tests
+          echo "Running integration tests for ${{ matrix.blueprint }}..."
+          pytest ${{ matrix.test_path }} -v
           
   blueprint-e2e-tests:
     needs: blueprint-integration-tests

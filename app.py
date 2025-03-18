@@ -106,6 +106,7 @@ celery.conf.timezone = "America/Chicago"
 # noqa: E402 - Disable linter warning about imports not at top of file
 from blueprints.instantly import instantly_bp  # noqa: E402
 from blueprints.easypost import easypost_bp  # noqa: E402
+from blueprints.gmail import gmail_bp  # noqa: E402
 
 
 # Middleware to add request ID to each request
@@ -286,6 +287,7 @@ def send_email(subject, body, **kwargs):
 # Register blueprints after send_email is defined
 flask_app.register_blueprint(instantly_bp, url_prefix="/instantly")
 flask_app.register_blueprint(easypost_bp, url_prefix="/easypost")
+flask_app.register_blueprint(gmail_bp, url_prefix="/gmail")
 
 # Expose the send_email function to blueprints
 flask_app.send_email = send_email
