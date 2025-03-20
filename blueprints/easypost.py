@@ -8,12 +8,14 @@ import json
 from datetime import datetime, date
 import traceback
 import requests
-from flask import Blueprint, request, jsonify
+from flask import Blueprint, request, jsonify, g
 import easypost
 from redis import Redis
 import structlog
 from close_utils import load_query, search_close_leads, get_lead_by_id
 from celery_worker import celery
+import uuid
+
 
 # Initialize Blueprint
 easypost_bp = Blueprint("easypost", __name__)
@@ -680,8 +682,46 @@ def handle_package_delivery_update():
                 f"Error adding tracking info to error message: {tracking_error}"
             )
 
-        logger.error(error_message)
-        send_email(subject="Delivery information update failed", body=error_message)
+        # Get request ID which serves as run ID
+        run_id = getattr(g, "request_id", str(uuid.uuid4()))
+
+        # Extract calling function name
+        calling_function = "handle_package_delivery_update"
+
+        # Capture the traceback
+        tb = traceback.format_exc()
+
+        # Format the error message with detailed information
+        detailed_error_message = f"""
+        <h2>Delivery Information Update Failed</h2>
+        <p><strong>Error:</strong> {str(e)}</p>
+        <p><strong>Route:</strong> {request.path}</p>
+        <p><strong>Run ID:</strong> {run_id}</p>
+        <p><strong>Origin:</strong> {calling_function}</p>
+        <p><strong>Time:</strong> {datetime.now().isoformat()}</p>
+        
+        <h3>Webhook Data:</h3>
+        <pre>{json.dumps(webhook_data if 'webhook_data' in locals() else {}, indent=2, default=str)}</pre>
+        
+        <h3>Tracking Data:</h3>
+        <pre>{json.dumps(tracking_data if 'tracking_data' in locals() else {}, indent=2, default=str)}</pre>
+        
+        <h3>Traceback:</h3>
+        <pre>{tb}</pre>
+        """
+
+        logger.error(
+            "easypost_webhook_error",
+            error=str(e),
+            traceback=tb,
+            run_id=run_id,
+            route=request.path,
+            origin=calling_function,
+        )
+
+        send_email(
+            subject="Delivery Information Update Failed", body=detailed_error_message
+        )
         return jsonify({"status": "error", "message": str(e)}), 400
 
 

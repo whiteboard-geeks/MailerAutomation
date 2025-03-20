@@ -170,12 +170,80 @@ def handle_exception(e):
     # Get the current route from the request object
     current_route = request.path
 
+    # Get the request ID which serves as a run ID
+    run_id = getattr(g, "request_id", str(uuid.uuid4()))
+
+    # Extract the calling function name from the traceback
+    calling_function = "Unknown"
+    for frame in traceback.extract_tb(sys.exc_info()[2]):
+        if frame.name != "handle_exception":
+            calling_function = f"{frame.filename}:{frame.name}:{frame.lineno}"
+            break
+
+    # Extract webhook information if available
+    webhook_info = {}
+    if request.method == "POST" and request.is_json:
+        try:
+            # Only include safe webhook data, filter out potentially sensitive info
+            webhook_data = request.get_json()
+            if isinstance(webhook_data, dict):
+                webhook_info = {
+                    k: v
+                    for k, v in webhook_data.items()
+                    if k not in ["auth_token", "email_html", "password"]
+                }
+        except Exception:
+            webhook_info = {"error": "Could not parse webhook data"}
+
+    # Format error message with detailed information
+    error_message = f"""
+    <h2>Application Error</h2>
+    <p><strong>Error:</strong> {str(e)}</p>
+    <p><strong>Route:</strong> {current_route}</p>
+    <p><strong>Run ID:</strong> {run_id}</p>
+    <p><strong>Origin:</strong> {calling_function}</p>
+    <p><strong>Time:</strong> {datetime.now().isoformat()}</p>
+    
+    <h3>Webhook Information:</h3>
+    <pre>{json.dumps(webhook_info, indent=2)}</pre>
+    
+    <h3>Traceback:</h3>
+    <pre>{tb}</pre>
+    """
+
+    # Plain text version for text_content
+    plain_error_message = f"""
+    Application Error
+    
+    Error: {str(e)}
+    Route: {current_route}
+    Run ID: {run_id}
+    Origin: {calling_function}
+    Time: {datetime.now().isoformat()}
+    
+    Webhook Information:
+    {json.dumps(webhook_info, indent=2)}
+    
+    Traceback:
+    {tb}
+    """
+
     # General error logging for all routes
-    error_message = f"An error occurred at {current_route}: {str(e)}\nTraceback: {tb}"
-    logger.error(error_message)
+    logger.error(
+        "application_error",
+        error=str(e),
+        route=current_route,
+        run_id=run_id,
+        origin=calling_function,
+        webhook_info=webhook_info,
+    )
 
     # Send email notification for all errors
-    send_email(subject="Application Error", body=error_message)
+    send_email(
+        subject="Application Error",
+        body=error_message,
+        text_content=plain_error_message,
+    )
 
     # Additional detailed logging for webhook endpoints
     if "/webhook" in request.path or "/email_sent" in request.path:
@@ -185,6 +253,8 @@ def handle_exception(e):
             error_message=str(e),
             path=request.path,
             method=request.method,
+            run_id=run_id,
+            origin=calling_function,
         )
 
     # Prepare appropriate response based on environment
@@ -194,12 +264,15 @@ def handle_exception(e):
             "message": str(e),
             "traceback": tb,
             "route": current_route,
+            "run_id": run_id,
+            "origin": calling_function,
         }
     else:
         response_body = {
             "status": "error",
             "message": "An internal server error occurred at " + current_route,
             "error_type": type(e).__name__,
+            "run_id": run_id,
         }
 
     return jsonify(response_body), 500
@@ -274,13 +347,22 @@ def send_email(subject, body, **kwargs):
 
     recipients = kwargs.get("recipients", "Lance Johnson <lance@whiteboardgeeks.com>")
 
+    # Add environment information to the body
+    environment_info = f"<p><strong>Environment:</strong> {env_type}</p>"
+    html_body = environment_info + body
+
+    # For text content, if it's provided separately
+    text_content = kwargs.get("text_content", body)
+    text_environment_info = f"Environment: {env_type}\n\n"
+    text_content = text_environment_info + text_content
+
     # Send email using Gmail API
     gmail_response = send_gmail(
         sender="lance@whiteboardgeeks.com",
         to=recipients,
-        subject=f"{subject} {time_now_formatted}",
-        html_content=body,
-        text_content=body,
+        subject=f"[MailerAutomation] [{env_type}] {subject} {time_now_formatted}",
+        html_content=html_body,
+        text_content=text_content,
     )
 
     return gmail_response
