@@ -13,6 +13,34 @@ class TestInstantlyReplyReceivedIntegration:
         self.test_data = {}
         self.base_url = os.environ.get("BASE_URL", "http://localhost:8080")
 
+        # Check if Gmail credentials are available by querying the Flask server
+        try:
+            env_response = requests.get(f"{self.base_url}/debug/env")
+            if env_response.status_code == 200:
+                env_data = env_response.json()
+                self.gmail_configured = "Found" in env_data.get(
+                    "gmail_service_account_info", ""
+                )
+                print(
+                    f"\nGmail configuration status from server: {self.gmail_configured}"
+                )
+                print(
+                    f"Gmail info from server: {env_data.get('gmail_service_account_info')}"
+                )
+            else:
+                print(
+                    f"\nCould not check Gmail configuration - /debug/env returned {env_response.status_code}"
+                )
+                self.gmail_configured = False
+        except Exception as e:
+            print(f"\nError checking Gmail configuration: {str(e)}")
+            self.gmail_configured = False
+
+        if not self.gmail_configured:
+            print(
+                "\nWARNING: Gmail service account credentials not found in environment. Test will fail."
+            )
+
         # Load the mock webhook payload
         with open(
             "tests/integration/instantly/instantly_reply_received_payload.json", "r"
@@ -45,6 +73,9 @@ class TestInstantlyReplyReceivedIntegration:
         """Test handling of Instantly reply received webhook."""
         print("\n=== STARTING INTEGRATION TEST: Instantly Reply Received Webhook ===")
 
+        # Strictly require Gmail credentials
+        assert self.gmail_configured, "Gmail service account credentials are not configured in the environment. This test requires proper Gmail configuration."
+
         # Create a test lead in Close with the email from the mock payload
         print("Creating test lead in Close...")
         lead_data = self.close_api.create_test_lead(
@@ -56,7 +87,25 @@ class TestInstantlyReplyReceivedIntegration:
         self.test_data["lead_id"] = lead_data["id"]
         print(f"Test lead created with ID: {lead_data['id']}")
 
-        print("Waiting 10 secondsfor Close to populate lead data for search...")
+        # Get the first contact from the lead
+        lead_details = self.close_api.get_lead(lead_data["id"])
+        contacts = lead_details.get("contacts", [])
+        assert len(contacts) > 0, "No contacts found on the lead"
+        contact = contacts[0]
+        contact_id = contact["id"]
+
+        # Subscribe the contact to a test sequence
+        print(f"Subscribing contact {contact_id} to test sequence...")
+        subscription = self.close_api.subscribe_contact_to_sequence(
+            contact_id=contact_id, sequence_id="seq_5cIemWAjO0ln2WacqpMs6S"
+        )
+        subscription_id = subscription["id"]
+        print(f"Contact subscribed to sequence with subscription ID: {subscription_id}")
+
+        # Verify the subscription is active
+        assert subscription["status"] == "active", "Sequence subscription is not active"
+
+        print("Waiting 10 seconds for Close to populate lead data for search...")
         sleep(10)
 
         # Send the mock webhook to our endpoint
@@ -106,9 +155,7 @@ class TestInstantlyReplyReceivedIntegration:
                 matching_email["body_text"] == self.mock_payload["reply_text"]
             ), "Email text body doesn't match"
 
-        # Instead of checking for task creation, we now expect a notification email to be sent
-        # This is harder to test in integration tests since it goes through Gmail API
-        # We can check if the webhook response indicates success
+        # Verify the webhook response indicates success
         print("Checking webhook response for successful processing...")
         assert (
             response.status_code == 200
@@ -122,10 +169,48 @@ class TestInstantlyReplyReceivedIntegration:
             == "Reply received webhook processed successfully"
         ), "Webhook response message doesn't indicate success"
 
+        # Verify email notification was sent successfully
+        print("Checking if notification email was sent successfully...")
+        notification_status = response_data.get("data", {}).get("notification_status")
+        print(f"Notification status: {notification_status}")
+
+        # Strict check that will fail the test if email sending fails
+        assert notification_status in [
+            "success",
+            "success_mailgun",
+        ], f"Email notification failed with status: {notification_status}"
+
         # Verify 'task_id' is None in the response (since we don't create tasks anymore)
         print("Verifying no task was created...")
         assert (
             response_data.get("data", {}).get("task_id") is None
         ), "Task ID should be None in the response"
+
+        # Check if the sequence subscription was paused
+        print("Checking if sequence subscription was paused...")
+
+        # Give some time for the pause operation to complete
+        sleep(3)
+
+        # Get the updated subscription status
+        updated_subscription = self.close_api.check_subscription_status(subscription_id)
+
+        print(f"Updated subscription status: {updated_subscription.get('status')}")
+        assert (
+            updated_subscription.get("status") == "paused"
+        ), "Sequence subscription was not paused"
+
+        # Verify the paused subscription is included in the response
+        paused_subscriptions = response_data.get("data", {}).get(
+            "paused_subscriptions", []
+        )
+        assert (
+            len(paused_subscriptions) > 0
+        ), "No paused subscriptions reported in response"
+
+        subscription_ids = [sub.get("subscription_id") for sub in paused_subscriptions]
+        assert (
+            subscription_id in subscription_ids
+        ), f"Subscription ID {subscription_id} not found in response"
 
         print("All assertions passed!")
