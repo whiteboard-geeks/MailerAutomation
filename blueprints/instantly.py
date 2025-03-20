@@ -12,6 +12,7 @@ import time
 import json
 from redis import Redis
 import structlog
+import uuid
 
 from flask import Blueprint, request, jsonify, current_app, g
 
@@ -973,10 +974,37 @@ def handle_instantly_email_sent():
     except Exception as e:
         # Capture the traceback
         tb = traceback.format_exc()
-        error_message = (
-            f"Error processing Instantly email sent webhook: {str(e)}\nTraceback: {tb}"
+
+        # Get request ID which serves as run ID
+        run_id = getattr(g, "request_id", str(uuid.uuid4()))
+
+        # Extract calling function name
+        calling_function = "handle_instantly_email_sent"
+
+        error_message = f"""
+        <h2>Instantly Email Sent Webhook Error</h2>
+        <p><strong>Error:</strong> {str(e)}</p>
+        <p><strong>Route:</strong> {request.path}</p>
+        <p><strong>Run ID:</strong> {run_id}</p>
+        <p><strong>Origin:</strong> {calling_function}</p>
+        <p><strong>Time:</strong> {datetime.now().isoformat()}</p>
+        
+        <h3>Webhook Data:</h3>
+        <pre>{json.dumps({k: v for k, v in request.get_json().items() if k not in ["auth_token", "email_html", "password"]}, indent=2, default=str)}</pre>
+        
+        <h3>Traceback:</h3>
+        <pre>{tb}</pre>
+        """
+
+        logger.error(
+            "email_sent_webhook_error",
+            error=str(e),
+            traceback=tb,
+            run_id=run_id,
+            route=request.path,
+            origin=calling_function,
         )
-        logger.error(error_message)
+
         send_email(subject="Instantly Email Sent Webhook Error", body=error_message)
 
         response_data = {
@@ -1256,12 +1284,37 @@ Time: {datetime.now().strftime("%Y-%m-%d %H:%M:%S")}"""
         error_msg = f"Error processing reply received webhook: {str(e)}"
         # Capture the traceback
         tb = traceback.format_exc()
-        error_message = f"Error processing Instantly reply received webhook: {str(e)}\nTraceback: {tb}"
+
+        # Get request ID which serves as run ID
+        run_id = getattr(g, "request_id", str(uuid.uuid4()))
+
+        # Extract calling function name
+        calling_function = "handle_instantly_reply_received"
+
+        error_message = f"""
+        <h2>Instantly Reply Received Webhook Error</h2>
+        <p><strong>Error:</strong> {str(e)}</p>
+        <p><strong>Route:</strong> {request.path}</p>
+        <p><strong>Run ID:</strong> {run_id}</p>
+        <p><strong>Origin:</strong> {calling_function}</p>
+        <p><strong>Time:</strong> {datetime.now().isoformat()}</p>
+        
+        <h3>Webhook Data:</h3>
+        <pre>{json.dumps({k: v for k, v in request.get_json().items() if k not in ["auth_token", "email_html", "password"]}, indent=2, default=str)}</pre>
+        
+        <h3>Traceback:</h3>
+        <pre>{tb}</pre>
+        """
+
         logger.error(
             "reply_received_webhook_error",
             error=str(e),
             traceback=traceback.format_exc(),
+            run_id=run_id,
+            route=request.path,
+            origin=calling_function,
         )
+
         # Send email notification
         send_email(subject="Instantly Reply Received Webhook Error", body=error_message)
 

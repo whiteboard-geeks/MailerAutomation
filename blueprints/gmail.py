@@ -8,11 +8,14 @@ import os
 import json
 import traceback
 import base64
+import pickle
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 import structlog
+import uuid
+from datetime import datetime
 
-from flask import Blueprint, request, jsonify
+from flask import Blueprint, request, jsonify, g
 from google.oauth2 import service_account
 from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
@@ -404,64 +407,89 @@ def validate_api_request():
 @gmail_bp.route("/send_email", methods=["POST"])
 def send_email_endpoint():
     """
-    Endpoint for sending emails via the Gmail API.
+    Endpoint to send an email using Gmail API.
 
-    Required JSON payload:
-    {
-        "to": "recipient@example.com" or ["recipient1@example.com", "recipient2@example.com"],
-        "subject": "Email subject",
-        "html_content": "<p>HTML content of the email</p>"
-    }
+    Required params:
+    - to: Recipient email address(es)
+    - subject: Email subject
+    - html_content: HTML content of the email
 
-    Optional JSON payload fields:
-    {
-        "from": "sender@yourdomain.com",
-        "text_content": "Plain text version of email",
-        "cc": "cc@example.com" or ["cc1@example.com", "cc2@example.com"],
-        "bcc": "bcc@example.com" or ["bcc1@example.com", "bcc2@example.com"]
-    }
+    Optional params:
+    - text_content: Plain text content of the email
+    - cc: CC recipients
+    - bcc: BCC recipients
     """
     try:
-        # Validate the request
+        # Validate API request
         is_valid, error_response = validate_api_request()
         if not is_valid:
             return error_response
 
-        # Parse the request payload
-        data = request.json
+        # Get parameters from request
+        data = request.get_json()
 
-        # Validate required fields
-        required_fields = ["to", "subject", "html_content"]
-        for field in required_fields:
-            if field not in data:
-                error = f"Missing required field: {field}"
-                logger.warning(error)
-                return jsonify({"status": "error", "message": error}), 400
+        # Validate required parameters
+        required_params = ["to", "subject", "html_content"]
+        for param in required_params:
+            if param not in data:
+                return (
+                    jsonify(
+                        {
+                            "status": "error",
+                            "message": f"Missing required parameter: {param}",
+                        }
+                    ),
+                    400,
+                )
 
-        # Get optional fields with defaults
-        sender = data.get("from", DEFAULT_SENDER)
-        text_content = data.get("text_content")
-        cc = data.get("cc")
-        bcc = data.get("bcc")
-
-        # Send the email
+        # Send email
         result = send_gmail(
-            sender=sender,
+            sender="lance@whiteboardgeeks.com",
             to=data["to"],
             subject=data["subject"],
             html_content=data["html_content"],
-            text_content=text_content,
-            cc=cc,
-            bcc=bcc,
+            text_content=data.get("text_content"),
+            cc=data.get("cc"),
+            bcc=data.get("bcc"),
         )
 
-        # Return appropriate response
-        if result.get("status") == "success":
-            return jsonify(result), 200
-        else:
-            return jsonify(result), 500
+        return jsonify(result)
 
     except Exception as e:
+        # Get request ID which serves as run ID
+        run_id = getattr(g, "request_id", str(uuid.uuid4()))
+
+        # Extract calling function name
+        calling_function = "send_email_endpoint"
+
+        # Capture the traceback
+        tb = traceback.format_exc()
+
+        # Format error message with detailed information
+        error_message = f"""
+        <h2>Gmail Send Email Error</h2>
+        <p><strong>Error:</strong> {str(e)}</p>
+        <p><strong>Route:</strong> {request.path}</p>
+        <p><strong>Run ID:</strong> {run_id}</p>
+        <p><strong>Origin:</strong> {calling_function}</p>
+        <p><strong>Time:</strong> {datetime.now().isoformat()}</p>
+        
+        <h3>Request Data:</h3>
+        <pre>{json.dumps({k: v for k, v in request.get_json().items() if k not in ["auth_token", "password"]}, indent=2, default=str)}</pre>
+        
+        <h3>Traceback:</h3>
+        <pre>{tb}</pre>
+        """
+
+        logger.error(
+            "send_email_error",
+            error=str(e),
+            traceback=tb,
+            run_id=run_id,
+            route=request.path,
+            origin=calling_function,
+        )
+
         error_message = f"Error in send_email endpoint: {str(e)}"
         logger.error(error_message, traceback=traceback.format_exc())
         return jsonify({"status": "error", "message": error_message}), 500
