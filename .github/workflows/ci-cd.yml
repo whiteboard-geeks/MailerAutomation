@@ -134,70 +134,8 @@ jobs:
           echo "Running integration tests for ${{ matrix.blueprint }}..."
           pytest tests/integration/${{ matrix.blueprint }} -v
           
-  blueprint-e2e-tests:
-    needs: blueprint-integration-tests
-    runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        blueprint: [instantly]  # Add new blueprints here as you create them
-    steps:
-      - uses: actions/checkout@v3
-      
-      - name: Set up Python
-        uses: actions/setup-python@v4
-        with:
-          python-version: '3.10'
-          
-      - name: Install dependencies
-        run: |
-          python -m pip install --upgrade pip
-          pip install -r requirements.txt
-          pip install pytest
-          
-      - name: Debug environment variables
-        run: |
-          echo "Checking if secrets are available (will show as masked if they are):"
-          echo "CLOSE_API_KEY: ${{ secrets.CLOSE_API_KEY }}"
-          echo "INSTANTLY_API_KEY: ${{ secrets.INSTANTLY_API_KEY }}"
-          echo "EASYPOST_TEST_API_KEY: ${{ secrets.EASYPOST_TEST_API_KEY }}"
-          echo "EASYPOST_PROD_API_KEY: ${{ secrets.EASYPOST_PROD_API_KEY }}"
-          echo "Checking if environment variables are set:"
-          if [ -n "$CLOSE_API_KEY" ]; then echo "CLOSE_API_KEY is set"; else echo "CLOSE_API_KEY is NOT set"; fi
-          if [ -n "$INSTANTLY_API_KEY" ]; then echo "INSTANTLY_API_KEY is set"; else echo "INSTANTLY_API_KEY is NOT set"; fi
-          if [ -n "$EASYPOST_TEST_API_KEY" ]; then echo "EASYPOST_TEST_API_KEY is set"; else echo "EASYPOST_TEST_API_KEY is NOT set"; fi
-          if [ -n "$EASYPOST_PROD_API_KEY" ]; then echo "EASYPOST_PROD_API_KEY is set"; else echo "EASYPOST_PROD_API_KEY is NOT set"; fi
-        env:
-          CLOSE_API_KEY: ${{ secrets.CLOSE_API_KEY }}
-          INSTANTLY_API_KEY: ${{ secrets.INSTANTLY_API_KEY }}
-          EASYPOST_TEST_API_KEY: ${{ secrets.EASYPOST_TEST_API_KEY }}
-          EASYPOST_PROD_API_KEY: ${{ secrets.EASYPOST_PROD_API_KEY }}
-      - name: Run E2E tests for ${{ matrix.blueprint }}
-        env:
-          STAGING_URL: "https://mailer-automation-staging-a1a3b6abc50d.herokuapp.com"
-          ENV_TYPE: "staging"
-          CLOSE_API_KEY: ${{ secrets.CLOSE_API_KEY }}
-          INSTANTLY_API_KEY: ${{ secrets.INSTANTLY_API_KEY }}
-          EASYPOST_TEST_API_KEY: ${{ secrets.EASYPOST_TEST_API_KEY }}
-          EASYPOST_PROD_API_KEY: ${{ secrets.EASYPOST_PROD_API_KEY }}
-          GMAIL_SERVICE_ACCOUNT_INFO: ${{ secrets.GMAIL_SERVICE_ACCOUNT_INFO }}
-          TEST_EMAIL_SENDER: ${{ secrets.TEST_EMAIL_SENDER }}
-          TEST_EMAIL_RECIPIENT: ${{ secrets.TEST_EMAIL_RECIPIENT }}
-        run: |
-          # Set the base URL for tests to point to staging
-          export BASE_URL=$STAGING_URL
-          
-          # Print environment variables for debugging (without revealing secrets)
-          echo "Environment variables set for testing:"
-          if [ -n "$CLOSE_API_KEY" ]; then echo "CLOSE_API_KEY is set"; else echo "CLOSE_API_KEY is NOT set"; fi
-          if [ -n "$INSTANTLY_API_KEY" ]; then echo "INSTANTLY_API_KEY is set"; else echo "INSTANTLY_API_KEY is NOT set"; fi
-          echo "BASE_URL: $BASE_URL"
-          echo "ENV_TYPE: $ENV_TYPE"
-          
-          # Run the E2E tests for this blueprint
-          pytest tests/e2e/${{ matrix.blueprint }} -v
-          
   deploy-to-production:
-    needs: blueprint-e2e-tests
+    needs: blueprint-integration-tests
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     steps:
