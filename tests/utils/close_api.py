@@ -242,6 +242,125 @@ class CloseAPI:
 
         return response.json()
 
+    def subscribe_contact_to_sequence(self, contact_id, sequence_id):
+        """
+        Subscribe a contact to a sequence.
+
+        Args:
+            contact_id (str): The contact ID to subscribe
+            sequence_id (str): The sequence ID
+
+        Returns:
+            dict: The created subscription data
+        """
+        # Get the contact details to get the email
+        response = requests.get(
+            f"{self.base_url}/contact/{contact_id}/", headers=self.headers
+        )
+
+        if response.status_code != 200:
+            raise Exception(f"Failed to get contact details: {response.text}")
+
+        contact = response.json()
+
+        # Get first email from contact
+        contact_email = None
+        for email in contact.get("emails", []):
+            contact_email = email.get("email")
+            if contact_email:
+                break
+
+        if not contact_email:
+            raise Exception(f"Contact {contact_id} does not have an email address")
+
+        # Minimal payload needed for subscription
+        payload = {
+            "sequence_id": sequence_id,
+            "contact_id": contact_id,
+            "contact_email": contact_email,
+        }
+
+        print(f"Sending subscription request with payload: {payload}")
+        response = requests.post(
+            f"{self.base_url}/sequence_subscription/",
+            json=payload,
+            headers=self.headers,
+        )
+
+        print(f"Response status code: {response.status_code}")
+
+        # Parse the response data
+        try:
+            response_data = response.json()
+            print(f"Response includes ID: {response_data.get('id')}")
+            print(f"Response includes status: {response_data.get('status')}")
+
+            # If we get an ID and the status is 'active', consider it a success
+            if response_data.get("id") and response_data.get("status") == "active":
+                print("Subscription created successfully!")
+                return response_data
+            else:
+                print(f"Subscription may have failed. Full response: {response_data}")
+                raise Exception(
+                    f"Failed to subscribe contact to sequence: {response.text}"
+                )
+        except ValueError as e:
+            print(f"Error parsing JSON response: {e}")
+            raise Exception(
+                f"Failed to subscribe contact to sequence - invalid JSON response: {response.text}"
+            )
+
+    def get_sequence_subscriptions(self, lead_id=None, contact_id=None):
+        """
+        Get sequence subscriptions for a lead or contact.
+
+        Args:
+            lead_id (str, optional): Lead ID to get subscriptions for
+            contact_id (str, optional): Contact ID to get subscriptions for
+
+        Returns:
+            list: List of subscription objects
+        """
+        params = {}
+        if lead_id:
+            params["lead_id"] = lead_id
+        if contact_id:
+            params["contact_id"] = contact_id
+
+        if not params:
+            raise ValueError("Either lead_id or contact_id must be provided")
+
+        response = requests.get(
+            f"{self.base_url}/sequence_subscription/",
+            params=params,
+            headers=self.headers,
+        )
+
+        if response.status_code != 200:
+            raise Exception(f"Failed to get sequence subscriptions: {response.text}")
+
+        return response.json().get("data", [])
+
+    def check_subscription_status(self, subscription_id):
+        """
+        Check the status of a sequence subscription.
+
+        Args:
+            subscription_id (str): The ID of the subscription to check
+
+        Returns:
+            dict: The subscription data
+        """
+        response = requests.get(
+            f"{self.base_url}/sequence_subscription/{subscription_id}/",
+            headers=self.headers,
+        )
+
+        if response.status_code != 200:
+            raise Exception(f"Failed to get subscription status: {response.text}")
+
+        return response.json()
+
     def create_webhook_for_tracking_id_and_carrier(self):
         """
         Create a webhook in Close that triggers when:

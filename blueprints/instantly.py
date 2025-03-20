@@ -20,6 +20,8 @@ from close_utils import (
     search_close_leads,
     get_close_headers,
     create_email_search_query,
+    get_sequence_subscriptions,
+    pause_sequence_subscription,
 )
 
 # Set up blueprint
@@ -1103,6 +1105,36 @@ def handle_instantly_reply_received():
         email_response = requests.post(email_url, headers=headers, json=email_data)
         email_response.raise_for_status()
 
+        # Pause any active sequence subscriptions for this contact
+        subscriptions = get_sequence_subscriptions(lead_id=lead_id)
+
+        # Track paused subscriptions
+        paused_subscriptions = []
+
+        # Pause each active subscription
+        for subscription in subscriptions:
+            if subscription.get("status") == "active":
+                subscription_id = subscription.get("id")
+                result = pause_sequence_subscription(
+                    subscription_id, status_reason="replied"
+                )
+                if result:
+                    paused_subscriptions.append(
+                        {
+                            "subscription_id": subscription_id,
+                            "sequence_id": subscription.get("sequence_id"),
+                            "sequence_name": subscription.get(
+                                "sequence_name", "Unknown"
+                            ),
+                        }
+                    )
+                    logger.info(
+                        "sequence_paused",
+                        subscription_id=subscription_id,
+                        lead_id=lead_id,
+                        lead_email=lead_email,
+                    )
+
         # Get lead name for notification
         lead_name = lead_details.get("name", "Unknown")
 
@@ -1128,7 +1160,19 @@ def handle_instantly_reply_received():
         <div style="border: 1px solid #ddd; padding: 15px; margin: 10px 0; background-color: #f9f9f9;">
             {reply_html or reply_text or "No content available"}
         </div>
-        
+        """
+
+        # Add sequence info to notification if any were paused
+        if paused_subscriptions:
+            notification_html += """
+            <h3>Sequences Paused:</h3>
+            <ul>
+            """
+            for sub in paused_subscriptions:
+                notification_html += f"<li>{sub.get('sequence_name', 'Unknown Sequence')} (ID: {sub.get('sequence_id')})</li>"
+            notification_html += "</ul>"
+
+        notification_html += f"""
         <p><a href="https://app.close.com/lead/{lead_id}/" style="padding: 10px 15px; background-color: #4CAF50; color: white; text-decoration: none; border-radius: 4px; display: inline-block; margin-top: 10px;">View Lead in Close</a></p>
         """
 
@@ -1143,6 +1187,21 @@ def handle_instantly_reply_received():
                 ]
             )
 
+        # Prepare text content for the email notification
+        text_content = f"""Instantly Reply Received
+
+Lead: {lead_name}
+Email: {lead_email}
+Campaign: {campaign_name}
+Subject: {reply_subject}
+Environment: {env_type}
+Time: {datetime.now().strftime("%Y-%m-%d %H:%M:%S")}"""
+
+        if paused_subscriptions:
+            text_content += "\n\nSequences Paused:"
+            for sub in paused_subscriptions:
+                text_content += f"\n- {sub.get('sequence_name', 'Unknown Sequence')} (ID: {sub.get('sequence_id')})"
+
         # Send email notification using Gmail API
         try:
             # Import the send_gmail function from our Gmail blueprint
@@ -1154,19 +1213,13 @@ def handle_instantly_reply_received():
                 to=recipients,
                 subject=f"Instantly Reply: {reply_subject} from {lead_name}",
                 html_content=notification_html,
-                text_content=f"""Instantly Reply Received
-
-Lead: {lead_name}
-Email: {lead_email}
-Campaign: {campaign_name}
-Subject: {reply_subject}
-Environment: {env_type}
-Time: {datetime.now().strftime("%Y-%m-%d %H:%M:%S")}""",
+                text_content=text_content,
             )
-
+            # Initialize notification status
+            notification_status = notification_result.get("status", "unknown")
             logger.info(
                 "notification_email_sent",
-                email_status=notification_result.get("status"),
+                email_status=notification_status,
                 message_id=notification_result.get("message_id"),
             )
         except Exception as email_error:
@@ -1178,11 +1231,19 @@ Time: {datetime.now().strftime("%Y-%m-%d %H:%M:%S")}""",
             )
 
             # Fallback to using the app's send_email function (Mailgun)
-            send_email(
-                subject=f"Instantly Reply: {reply_subject} from {lead_name}",
-                body=notification_html,
-                recipients=recipients,
-            )
+            try:
+                send_email(
+                    subject=f"Instantly Reply: {reply_subject} from {lead_name}",
+                    body=notification_html,
+                    recipients=recipients,
+                )
+                notification_status = "success_mailgun"
+            except Exception as mailgun_error:
+                logger.error(
+                    "mailgun_notification_failed",
+                    error=str(mailgun_error),
+                )
+                notification_status = "error"
 
         logger.info(f"Successfully processed reply received webhook for lead {lead_id}")
 
@@ -1193,6 +1254,8 @@ Time: {datetime.now().strftime("%Y-%m-%d %H:%M:%S")}""",
             "lead_email": lead_email,
             "task_id": None,
             "email_id": email_response.json().get("id"),
+            "paused_subscriptions": paused_subscriptions,
+            "notification_status": notification_status,
         }
 
         response_data = {
@@ -1202,6 +1265,8 @@ Time: {datetime.now().strftime("%Y-%m-%d %H:%M:%S")}""",
                 "lead_id": lead_id,
                 "email_id": email_response.json().get("id"),
                 "task_id": None,
+                "paused_subscriptions": paused_subscriptions,
+                "notification_status": notification_status,
             },
         }
 

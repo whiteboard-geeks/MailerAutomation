@@ -324,3 +324,72 @@ def create_task(lead_id, text, assigned_to=None, date=None, is_complete=False):
         logger.error(f"Failed to create task for lead {lead_id}: {e}")
         logger.error(f"Traceback: {traceback.format_exc()}")
         return None
+
+
+@retry_with_backoff(max_retries=3, initial_delay=1)
+def get_sequence_subscriptions(lead_id=None, contact_id=None, sequence_id=None):
+    """
+    Get sequence subscriptions for a lead or contact.
+
+    At least one of the parameters must be provided.
+
+    Args:
+        lead_id (str, optional): The ID of the lead to get subscriptions for
+        contact_id (str, optional): The ID of the contact to get subscriptions for
+        sequence_id (str, optional): The ID of the sequence to filter by
+
+    Returns:
+        list: A list of sequence subscriptions or empty list if none found
+    """
+    try:
+        # Build params - at least one must be provided
+        params = {}
+        if lead_id:
+            params["lead_id"] = lead_id
+        if contact_id:
+            params["contact_id"] = contact_id
+        if sequence_id:
+            params["sequence_id"] = sequence_id
+
+        if not params:
+            logger.error(
+                "At least one of lead_id, contact_id, or sequence_id must be provided"
+            )
+            return []
+
+        url = "https://api.close.com/api/v1/sequence_subscription/"
+        response = make_close_request("get", url, params=params)
+        data = response.json()
+        return data.get("data", [])
+
+    except Exception as e:
+        logger.error(f"Failed to get sequence subscriptions: {e}")
+        logger.error(f"Traceback: {traceback.format_exc()}")
+        return []
+
+
+@retry_with_backoff(max_retries=3, initial_delay=1)
+def pause_sequence_subscription(subscription_id, status_reason="replied"):
+    """
+    Pause a sequence subscription.
+
+    Args:
+        subscription_id (str): The ID of the subscription to pause
+        status_reason (str, optional): Reason for pausing. Default is "replied"
+
+    Returns:
+        dict: The updated subscription data or None if an error occurred
+    """
+    try:
+        url = f"https://api.close.com/api/v1/sequence_subscription/{subscription_id}/"
+
+        # Prepare the payload
+        payload = {"status": "paused", "status_reason": status_reason}
+
+        response = make_close_request("put", url, json=payload)
+        return response.json()
+
+    except Exception as e:
+        logger.error(f"Failed to pause sequence subscription {subscription_id}: {e}")
+        logger.error(f"Traceback: {traceback.format_exc()}")
+        return None

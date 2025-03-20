@@ -29,12 +29,6 @@ DEFAULT_SENDER = "lance@whiteboardgeeks.com"  # Default sender email address
 # Webhook authentication
 GMAIL_WEBHOOK_PASSWORD = os.environ.get("GMAIL_WEBHOOK_PASSWORD")
 
-# Path to service account credentials file
-SERVICE_ACCOUNT_FILE = os.environ.get("GMAIL_SERVICE_ACCOUNT_FILE")
-
-# If credentials are stored in environment variable instead of file
-SERVICE_ACCOUNT_INFO = os.environ.get("GMAIL_SERVICE_ACCOUNT_INFO")
-
 
 def get_service_account_credentials(impersonate_user=DEFAULT_SENDER):
     """
@@ -52,18 +46,32 @@ def get_service_account_credentials(impersonate_user=DEFAULT_SENDER):
     ]
 
     try:
+        # Get the credentials at runtime instead of module import time
+        service_account_info = os.environ.get("GMAIL_SERVICE_ACCOUNT_INFO")
+        service_account_file = os.environ.get("GMAIL_SERVICE_ACCOUNT_FILE")
+
         # Try to load credentials from environment variable first
-        if SERVICE_ACCOUNT_INFO:
-            service_account_info = json.loads(SERVICE_ACCOUNT_INFO)
-            credentials = service_account.Credentials.from_service_account_info(
-                service_account_info, scopes=scopes, subject=impersonate_user
-            )
-            return credentials
+        if service_account_info:
+            try:
+                service_account_info_dict = json.loads(service_account_info)
+                credentials = service_account.Credentials.from_service_account_info(
+                    service_account_info_dict, scopes=scopes, subject=impersonate_user
+                )
+                return credentials
+            except json.JSONDecodeError as json_error:
+                logger.error(
+                    "Error parsing GMAIL_SERVICE_ACCOUNT_INFO JSON",
+                    error=str(json_error),
+                    info_length=len(service_account_info)
+                    if service_account_info
+                    else 0,
+                )
+                return None
 
         # Fall back to file if environment variable not available
-        elif SERVICE_ACCOUNT_FILE:
+        elif service_account_file:
             credentials = service_account.Credentials.from_service_account_file(
-                SERVICE_ACCOUNT_FILE, scopes=scopes, subject=impersonate_user
+                service_account_file, scopes=scopes, subject=impersonate_user
             )
             return credentials
         else:
