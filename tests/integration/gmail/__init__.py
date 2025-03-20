@@ -1,0 +1,3 @@
+"""
+Gmail integration tests package.
+"""

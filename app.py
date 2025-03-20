@@ -250,7 +250,6 @@ print(f"ENV_TYPE: {env_type}")
 print("=== END ENVIRONMENT INFO ===")
 
 # API Keys
-MAILGUN_API_KEY = os.environ.get("MAILGUN_API_KEY")
 CLOSE_API_KEY = os.environ["CLOSE_API_KEY"]
 CLOSE_ENCODED_KEY = b64encode(f"{CLOSE_API_KEY}:".encode()).decode()
 SKYLEAD_API_KEY = os.environ.get("SKYLEAD_API_KEY")
@@ -270,18 +269,21 @@ def send_email(subject, body, **kwargs):
     central_time_now = datetime.now(central_time_zone)
     time_now_formatted = central_time_now.strftime("%Y-%m-%d %H:%M:%S%z")
 
-    mailgun_email_response = requests.post(
-        "https://api.mailgun.net/v3/sandbox66451c576acc426db15db39f4a76b250.mailgun.org/messages",
-        auth=("api", MAILGUN_API_KEY),
-        data={
-            "from": "MailerAutomation App <postmaster@sandbox66451c576acc426db15db39f4a76b250.mailgun.org>",
-            "to": "Lance Johnson <lance@whiteboardgeeks.com>",
-            "subject": f"{subject} {time_now_formatted}",
-            "text": body,
-        },
+    # Import the send_gmail function from our Gmail blueprint
+    from blueprints.gmail import send_gmail
+
+    recipients = kwargs.get("recipients", "Lance Johnson <lance@whiteboardgeeks.com>")
+
+    # Send email using Gmail API
+    gmail_response = send_gmail(
+        sender="lance@whiteboardgeeks.com",
+        to=recipients,
+        subject=f"{subject} {time_now_formatted}",
+        html_content=body,
+        text_content=body,
     )
 
-    return mailgun_email_response.json()
+    return gmail_response
 
 
 # Register blueprints after send_email is defined
