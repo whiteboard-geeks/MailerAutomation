@@ -347,13 +347,22 @@ def send_email(subject, body, **kwargs):
 
     recipients = kwargs.get("recipients", "Lance Johnson <lance@whiteboardgeeks.com>")
 
+    # Add environment information to the body
+    environment_info = f"<p><strong>Environment:</strong> {env_type}</p>"
+    html_body = environment_info + body
+
+    # For text content, if it's provided separately
+    text_content = kwargs.get("text_content", body)
+    text_environment_info = f"Environment: {env_type}\n\n"
+    text_content = text_environment_info + text_content
+
     # Send email using Gmail API
     gmail_response = send_gmail(
         sender="lance@whiteboardgeeks.com",
         to=recipients,
-        subject=f"[MailerAutomation] {subject} {time_now_formatted}",
-        html_content=body,
-        text_content=body,
+        subject=f"[MailerAutomation] [{env_type}] {subject} {time_now_formatted}",
+        html_content=html_body,
+        text_content=text_content,
     )
 
     return gmail_response
