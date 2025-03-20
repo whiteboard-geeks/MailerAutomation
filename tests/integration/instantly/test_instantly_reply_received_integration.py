@@ -177,7 +177,6 @@ class TestInstantlyReplyReceivedIntegration:
         # Strict check that will fail the test if email sending fails
         assert notification_status in [
             "success",
-            "success_mailgun",
         ], f"Email notification failed with status: {notification_status}"
 
         # Verify 'task_id' is None in the response (since we don't create tasks anymore)

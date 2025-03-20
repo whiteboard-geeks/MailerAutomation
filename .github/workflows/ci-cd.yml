@@ -123,7 +123,6 @@ jobs:
           INSTANTLY_API_KEY: ${{ secrets.INSTANTLY_API_KEY }}
           EASYPOST_TEST_API_KEY: ${{ secrets.EASYPOST_TEST_API_KEY }}
           EASYPOST_PROD_API_KEY: ${{ secrets.EASYPOST_PROD_API_KEY }}
-          MAILGUN_API_KEY: ${{ secrets.MAILGUN_API_KEY }}
           GMAIL_SERVICE_ACCOUNT_INFO: ${{ secrets.GMAIL_SERVICE_ACCOUNT_INFO }}
           TEST_EMAIL_SENDER: ${{ secrets.TEST_EMAIL_SENDER }}
           TEST_EMAIL_RECIPIENT: ${{ secrets.TEST_EMAIL_RECIPIENT }}
@@ -167,13 +166,11 @@ jobs:
           if [ -n "$INSTANTLY_API_KEY" ]; then echo "INSTANTLY_API_KEY is set"; else echo "INSTANTLY_API_KEY is NOT set"; fi
           if [ -n "$EASYPOST_TEST_API_KEY" ]; then echo "EASYPOST_TEST_API_KEY is set"; else echo "EASYPOST_TEST_API_KEY is NOT set"; fi
           if [ -n "$EASYPOST_PROD_API_KEY" ]; then echo "EASYPOST_PROD_API_KEY is set"; else echo "EASYPOST_PROD_API_KEY is NOT set"; fi
-          if [ -n "$MAILGUN_API_KEY" ]; then echo "MAILGUN_API_KEY is set"; else echo "MAILGUN_API_KEY is NOT set"; fi
         env:
           CLOSE_API_KEY: ${{ secrets.CLOSE_API_KEY }}
           INSTANTLY_API_KEY: ${{ secrets.INSTANTLY_API_KEY }}
           EASYPOST_TEST_API_KEY: ${{ secrets.EASYPOST_TEST_API_KEY }}
           EASYPOST_PROD_API_KEY: ${{ secrets.EASYPOST_PROD_API_KEY }}
-          MAILGUN_API_KEY: ${{ secrets.MAILGUN_API_KEY }}
       - name: Run E2E tests for ${{ matrix.blueprint }}
         env:
           STAGING_URL: "https://mailer-automation-staging-a1a3b6abc50d.herokuapp.com"
@@ -182,7 +179,9 @@ jobs:
           INSTANTLY_API_KEY: ${{ secrets.INSTANTLY_API_KEY }}
           EASYPOST_TEST_API_KEY: ${{ secrets.EASYPOST_TEST_API_KEY }}
           EASYPOST_PROD_API_KEY: ${{ secrets.EASYPOST_PROD_API_KEY }}
-          MAILGUN_API_KEY: ${{ secrets.MAILGUN_API_KEY }}
+          GMAIL_SERVICE_ACCOUNT_INFO: ${{ secrets.GMAIL_SERVICE_ACCOUNT_INFO }}
+          TEST_EMAIL_SENDER: ${{ secrets.TEST_EMAIL_SENDER }}
+          TEST_EMAIL_RECIPIENT: ${{ secrets.TEST_EMAIL_RECIPIENT }}
         run: |
           # Set the base URL for tests to point to staging
           export BASE_URL=$STAGING_URL

@@ -177,7 +177,7 @@ def get_close_encoded_key():
 
 
 def send_email(subject, body, **kwargs):
-    """Send email notification through Mailgun."""
+    """Send email notification through Gmail."""
     # Access the send_email function from the main app
     return current_app.send_email(subject, body, **kwargs)
 
@@ -1204,15 +1204,11 @@ Time: {datetime.now().strftime("%Y-%m-%d %H:%M:%S")}"""
 
         # Send email notification using Gmail API
         try:
-            # Import the send_gmail function from our Gmail blueprint
-            from blueprints.gmail import send_gmail
-
-            # Send notification email
-            notification_result = send_gmail(
-                sender="lance@whiteboardgeeks.com",
-                to=recipients,
+            # Send notification email using our wrapper function
+            notification_result = send_email(
                 subject=f"Instantly Reply: {reply_subject} from {lead_name}",
-                html_content=notification_html,
+                body=notification_html,
+                recipients=recipients,
                 text_content=text_content,
             )
             # Initialize notification status
@@ -1223,27 +1219,11 @@ Time: {datetime.now().strftime("%Y-%m-%d %H:%M:%S")}"""
                 message_id=notification_result.get("message_id"),
             )
         except Exception as email_error:
-            # If Gmail API fails, fallback to Mailgun
             logger.error(
                 "gmail_notification_failed",
                 error=str(email_error),
-                fallback="using mailgun instead",
             )
-
-            # Fallback to using the app's send_email function (Mailgun)
-            try:
-                send_email(
-                    subject=f"Instantly Reply: {reply_subject} from {lead_name}",
-                    body=notification_html,
-                    recipients=recipients,
-                )
-                notification_status = "success_mailgun"
-            except Exception as mailgun_error:
-                logger.error(
-                    "mailgun_notification_failed",
-                    error=str(mailgun_error),
-                )
-                notification_status = "error"
+            notification_status = "error"
 
         logger.info(f"Successfully processed reply received webhook for lead {lead_id}")
 
