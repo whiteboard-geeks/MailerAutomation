@@ -210,10 +210,42 @@ def create_easypost_tracker():
         )
 
         if not tracking_number or not carrier_field:
-            error_msg = "Lead doesn't have tracking number or carrier"
-            logger.error(error_msg)
-            send_email(subject="EasyPost Tracker Missing Data", body=error_msg)
-            return jsonify({"status": "success", "message": error_msg}), 200
+            # Get request ID which serves as run ID
+            run_id = getattr(g, "request_id", str(uuid.uuid4()))
+
+            # Prepare detailed error message with debugging information
+            detailed_error_message = f"""
+            <h2>EasyPost Tracker Missing Data</h2>
+            <p><strong>Error:</strong> Lead doesn't have tracking number or carrier</p>
+            <p><strong>Lead ID:</strong> {lead_id}</p>
+            <p><strong>Route:</strong> {request.path}</p>
+            <p><strong>Run ID:</strong> {run_id}</p>
+            <p><strong>Time:</strong> {datetime.now().isoformat()}</p>
+            
+            <h3>Request Data:</h3>
+            <pre>{json.dumps(request.json, indent=2, default=str)}</pre>
+            
+            <h3>Lead Data:</h3>
+            <pre>{json.dumps(lead_data, indent=2, default=str)}</pre>
+            """
+
+            logger.error(
+                "easypost_tracker_missing_data",
+                error="Lead doesn't have tracking number or carrier",
+                lead_id=lead_id,
+                run_id=run_id,
+                route=request.path,
+            )
+
+            send_email(
+                subject="EasyPost Tracker Missing Data", body=detailed_error_message
+            )
+            return jsonify(
+                {
+                    "status": "success",
+                    "message": "Lead doesn't have tracking number or carrier",
+                }
+            ), 200
 
         carrier = carrier_field[0] if isinstance(carrier_field, list) else carrier_field
 
