@@ -124,6 +124,7 @@ jobs:
           GMAIL_SERVICE_ACCOUNT_INFO: ${{ secrets.GMAIL_SERVICE_ACCOUNT_INFO }}
           TEST_EMAIL_SENDER: ${{ secrets.TEST_EMAIL_SENDER }}
           TEST_EMAIL_RECIPIENT: ${{ secrets.TEST_EMAIL_RECIPIENT }}
+          REDISCLOUD_URL: ${{ env.REDISCLOUD_URL }}
         run: |
           # Set the base URL for tests to point to staging
           export BASE_URL=$STAGING_URL
