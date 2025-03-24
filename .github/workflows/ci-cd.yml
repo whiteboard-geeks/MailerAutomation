@@ -81,13 +81,10 @@ jobs:
           git remote -v  # Debug: Show remotes
           
       - name: Deploy to Heroku Staging
-        uses: akhileshns/heroku-deploy@v3.12.14
-        with:
-          heroku_api_key: ${{ secrets.HEROKU_API_KEY }}
-          heroku_app_name: "mailer-automation-staging"
-          heroku_email: ${{ vars.HEROKU_EMAIL }}
-          dontuseforce: 1
-          remote_name: "staging"  # Specify the correct remote name
+        run: |
+          git push staging HEAD:main
+        env:
+          HEROKU_API_KEY: ${{ secrets.HEROKU_API_KEY }}
           
       - name: Wait for deployment to complete
         run: sleep 30  # Wait for the app to fully deploy
