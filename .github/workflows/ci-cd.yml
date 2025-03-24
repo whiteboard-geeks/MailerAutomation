@@ -110,17 +110,21 @@ jobs:
           echo "Attempting to get Redis URL from Heroku config..."
           REDIS_URL=$(curl -s -n -X GET https://api.heroku.com/apps/mailer-automation-staging/config-vars \
             -H "Accept: application/vnd.heroku+json; version=3" \
-            -H "Authorization: Bearer ${{ secrets.HEROKU_API_KEY }}" | jq -r '.REDISCLOUD_URL')
+            -H "Authorization: Bearer ${{ secrets.HEROKU_API_KEY }}" | jq -r '.REDISCLOUD_URL // empty')
           
           echo "Redis URL length: ${#REDIS_URL}"
           
           # Set it as an environment variable for subsequent steps
-          if [ -n "$REDIS_URL" ]; then
+          if [ -n "$REDIS_URL" ] && [ "$REDIS_URL" != "null" ]; then
             echo "Setting REDISCLOUD_URL environment variable..."
             echo "REDISCLOUD_URL=$REDIS_URL" >> $GITHUB_ENV
             echo "Successfully set REDISCLOUD_URL"
           else
             echo "ERROR: Could not retrieve Redis URL from Heroku config"
+            echo "Response from Heroku API:"
+            curl -s -n -X GET https://api.heroku.com/apps/mailer-automation-staging/config-vars \
+              -H "Accept: application/vnd.heroku+json; version=3" \
+              -H "Authorization: Bearer ${{ secrets.HEROKU_API_KEY }}"
             exit 1
           fi
           

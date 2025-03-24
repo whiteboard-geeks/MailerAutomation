@@ -106,15 +106,25 @@ def check_route_response(status_code, response_data, context=None):
 class WebhookTracker:
     def __init__(self, expiration_seconds=1800):  # Default 30 minutes
         self.redis_url = os.environ.get("REDISCLOUD_URL")
-        self.redis = Redis.from_url(self.redis_url) if self.redis_url else None
+        self.redis = None
         self.expiration_seconds = expiration_seconds
         self.prefix = "webhook_tracker:"
 
-        if not self.redis:
+        if self.redis_url and self.redis_url.lower() != "null":
+            try:
+                self.redis = Redis.from_url(self.redis_url)
+                # Test the connection
+                self.redis.ping()
+                logger.info("Successfully connected to Redis")
+            except Exception as e:
+                logger.warning(f"Failed to connect to Redis: {str(e)}")
+                self.redis = None
+                self.webhooks = {}  # Fallback to in-memory
+        else:
             logger.warning(
                 "Redis not configured. WebhookTracker will not persist data."
             )
-            self.webhooks = {}  # Fallback to in-memory if Redis not available
+            self.webhooks = {}  # Fallback to in-memory
 
     def add(self, task_id, data):
         """Add a processed webhook to the tracker."""
