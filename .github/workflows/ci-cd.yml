@@ -75,13 +75,26 @@ jobs:
           EOF
           chmod 600 ~/.netrc
           
+      - name: Debug Heroku Auth
+        run: |
+          heroku auth:whoami
+          echo "Current remotes:"
+          git remote -v
+          
       - name: Add Heroku Remote
         run: |
+          # Remove any existing staging remote
+          git remote remove staging || true
+          # Add the remote using the Heroku CLI
           heroku git:remote -a mailer-automation-staging
-          git remote -v  # Debug: Show remotes
+          # Verify the remote was added
+          echo "Remotes after adding:"
+          git remote -v
           
       - name: Deploy to Heroku Staging
         run: |
+          # Try to push to staging
+          echo "Attempting to push to staging..."
           git push staging HEAD:main
         env:
           HEROKU_API_KEY: ${{ secrets.HEROKU_API_KEY }}
