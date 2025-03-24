@@ -106,14 +106,11 @@ jobs:
           EOF
           chmod 600 ~/.netrc
           
-          # Get the Redis URL from Heroku config
+          # Get the Redis URL from Heroku config using the API directly
           echo "Attempting to get Redis URL from Heroku config..."
-          REDIS_URL=$(heroku config:get REDISCLOUD_URL -a mailer-automation-staging)
-          if [ -z "$REDIS_URL" ]; then
-            echo "Failed to get Redis URL using config:get, trying alternative method..."
-            # Try getting all config vars and parse the Redis URL
-            REDIS_URL=$(heroku config -a mailer-automation-staging | grep "REDISCLOUD_URL" | cut -d':' -f2- | xargs)
-          fi
+          REDIS_URL=$(curl -s -n -X GET https://api.heroku.com/apps/mailer-automation-staging/config-vars \
+            -H "Accept: application/vnd.heroku+json; version=3" \
+            -H "Authorization: Bearer ${{ secrets.HEROKU_API_KEY }}" | jq -r '.REDISCLOUD_URL')
           
           echo "Redis URL length: ${#REDIS_URL}"
           
