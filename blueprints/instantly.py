@@ -481,7 +481,7 @@ Error details: {error_msg}
         logger.info(f"Retrieved lead details for lead ID: {lead_id}")
 
         # Extract first and last name from the lead details
-        full_name = lead_details.get("name", "")
+        full_name = lead_details.get("contacts", [{}])[0].get("name", "")
         first_name, last_name = split_name(full_name)
 
         # Get contact email

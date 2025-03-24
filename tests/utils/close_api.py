@@ -48,12 +48,12 @@ class CloseAPI:
 
         # Use provided names or generate ones
         if not first_name:
-            first_name = f"Lance Instantly{timestamp}"
+            first_name = f"contactFname{timestamp}"
         if not last_name:
-            last_name = "Test"
+            last_name = "contactLname"
 
         payload = {
-            "name": f"{first_name} {last_name}",
+            "name": f"CompanyFname{timestamp} CompanyLname{timestamp}",
             "contacts": [
                 {
                     "name": f"{first_name} {last_name}",
