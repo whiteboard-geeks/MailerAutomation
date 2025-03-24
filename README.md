@@ -80,7 +80,6 @@ GMAIL_WEBHOOK_PASSWORD=user_generated_for_sending_emails_with_endpoint
 - `POST /create_tracker`: Create a new EasyPost tracker
 - `POST /delivery_status`: Handle package delivery status updates from EasyPost
 - `GET /sync_delivery_status`: Sync delivery statuses from EasyPost
-- `POST /create_tracker_for_lead/<lead_id>`: Create a tracker for a specific lead
 
 #### Contact Management
 
