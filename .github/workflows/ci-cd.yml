@@ -107,29 +107,24 @@ jobs:
           chmod 600 ~/.netrc
           
           # Get the Redis URL from Heroku config
+          echo "Attempting to get Redis URL from Heroku config..."
           REDIS_URL=$(heroku config:get REDISCLOUD_URL -a mailer-automation-staging)
-          echo "Retrieved Redis URL from Heroku staging app"
+          if [ -z "$REDIS_URL" ]; then
+            echo "Failed to get Redis URL using config:get, trying alternative method..."
+            # Try getting all config vars and parse the Redis URL
+            REDIS_URL=$(heroku config -a mailer-automation-staging | grep "REDISCLOUD_URL" | cut -d':' -f2- | xargs)
+          fi
+          
           echo "Redis URL length: ${#REDIS_URL}"
           
           # Set it as an environment variable for subsequent steps
-          echo "REDISCLOUD_URL=$REDIS_URL" >> $GITHUB_ENV
-          
-          # Verify the environment variable was set
-          echo "Verifying REDISCLOUD_URL environment variable:"
           if [ -n "$REDIS_URL" ]; then
-            echo "REDISCLOUD_URL is set (length: ${#REDIS_URL})"
+            echo "Setting REDISCLOUD_URL environment variable..."
+            echo "REDISCLOUD_URL=$REDIS_URL" >> $GITHUB_ENV
+            echo "Successfully set REDISCLOUD_URL"
           else
-            echo "WARNING: REDISCLOUD_URL is empty!"
-            # Try to get the URL directly from Heroku config
-            echo "Attempting to get Redis URL directly..."
-            REDIS_URL=$(heroku config:get REDISCLOUD_URL -a mailer-automation-staging --json | jq -r '.REDISCLOUD_URL')
-            if [ -n "$REDIS_URL" ]; then
-              echo "Successfully retrieved Redis URL using --json flag"
-              echo "REDISCLOUD_URL=$REDIS_URL" >> $GITHUB_ENV
-            else
-              echo "ERROR: Could not retrieve Redis URL from Heroku config"
-              exit 1
-            fi
+            echo "ERROR: Could not retrieve Redis URL from Heroku config"
+            exit 1
           fi
           
       - name: Run integration tests for ${{ matrix.blueprint }}
