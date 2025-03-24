@@ -106,15 +106,25 @@ def check_route_response(status_code, response_data, context=None):
 class WebhookTracker:
     def __init__(self, expiration_seconds=1800):  # Default 30 minutes
         self.redis_url = os.environ.get("REDISCLOUD_URL")
-        self.redis = Redis.from_url(self.redis_url) if self.redis_url else None
+        self.redis = None
         self.expiration_seconds = expiration_seconds
         self.prefix = "webhook_tracker:"
 
-        if not self.redis:
+        if self.redis_url and self.redis_url.lower() != "null":
+            try:
+                self.redis = Redis.from_url(self.redis_url)
+                # Test the connection
+                self.redis.ping()
+                logger.info("Successfully connected to Redis")
+            except Exception as e:
+                logger.warning(f"Failed to connect to Redis: {str(e)}")
+                self.redis = None
+                self.webhooks = {}  # Fallback to in-memory
+        else:
             logger.warning(
                 "Redis not configured. WebhookTracker will not persist data."
             )
-            self.webhooks = {}  # Fallback to in-memory if Redis not available
+            self.webhooks = {}  # Fallback to in-memory
 
     def add(self, task_id, data):
         """Add a processed webhook to the tracker."""
@@ -138,11 +148,16 @@ class WebhookTracker:
             key = f"{self.prefix}{task_id}"
             data = self.redis.get(key)
             if data:
-                return json.loads(data)
+                webhook_data = json.loads(data)
+                webhook_data["task_id"] = task_id  # Add task_id to response
+                return webhook_data
             return {}
         else:
             # Fallback to in-memory
-            return self.webhooks.get(task_id, {})
+            data = self.webhooks.get(task_id, {})
+            if data:
+                data["task_id"] = task_id  # Add task_id to response
+            return data
 
     def get_all(self):
         """Get all processed webhooks (for debugging)."""
@@ -153,11 +168,18 @@ class WebhookTracker:
                 task_id = key.decode("utf-8").replace(self.prefix, "")
                 data = self.redis.get(key)
                 if data:
-                    result[task_id] = json.loads(data)
+                    webhook_data = json.loads(data)
+                    webhook_data["task_id"] = task_id  # Add task_id to response
+                    result[task_id] = webhook_data
             return result
         else:
             # Fallback to in-memory
-            return {k: v for k, v in self.webhooks.items()}
+            result = {}
+            for task_id, data in self.webhooks.items():
+                data_copy = data.copy()
+                data_copy["task_id"] = task_id  # Add task_id to response
+                result[task_id] = data_copy
+            return result
 
 
 # Create the webhook tracker instance
@@ -459,7 +481,7 @@ Error details: {error_msg}
         logger.info(f"Retrieved lead details for lead ID: {lead_id}")
 
         # Extract first and last name from the lead details
-        full_name = lead_details.get("name", "")
+        full_name = lead_details.get("contacts", [{}])[0].get("name", "")
         first_name, last_name = split_name(full_name)
 
         # Get contact email
@@ -507,6 +529,7 @@ Error details: {error_msg}
         webhook_data = {
             "route": "add_lead",
             "lead_id": lead_id,
+            "task_id": task_id,
             "campaign_name": campaign_name,
             "campaign_id": campaign_id,
             "processed": True,
