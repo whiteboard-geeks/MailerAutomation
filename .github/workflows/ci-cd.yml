@@ -75,16 +75,13 @@ jobs:
           EOF
           chmod 600 ~/.netrc
           
-      - name: Add Heroku Remote
-        run: |
-          git remote add heroku https://git.heroku.com/mailer-automation-staging.git
-          git remote -v  # Debug: Show remotes
-          
       - name: Deploy to Heroku Staging
-        run: |
-          git push heroku HEAD:main --force
-        env:
-          HEROKU_API_KEY: ${{ secrets.HEROKU_API_KEY }}
+        uses: akhileshns/heroku-deploy@v3.12.14
+        with:
+          heroku_api_key: ${{ secrets.HEROKU_API_KEY }}
+          heroku_app_name: "mailer-automation-staging"
+          heroku_email: ${{ vars.HEROKU_EMAIL }}
+          dontuseforce: 1
           
       - name: Wait for deployment to complete
         run: sleep 60  # Wait for the app to fully deploy
