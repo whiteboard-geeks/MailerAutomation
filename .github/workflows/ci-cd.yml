@@ -56,36 +56,17 @@ jobs:
   deploy-to-staging:
     needs: blueprint-unit-tests
     runs-on: ubuntu-latest
-    env:
-      HEROKU_API_KEY: ${{ secrets.HEROKU_API_KEY }}
     steps:
       - uses: actions/checkout@v3
       
-      - name: Install Heroku CLI
-        run: |
-          curl https://cli-assets.heroku.com/install.sh | sh
-          
-      - name: Debug Heroku Auth
-        run: |
-          heroku auth:whoami --api-key $HEROKU_API_KEY
-          echo "Current remotes:"
-          git remote -v
-          
-      - name: Add Heroku Remote
-        run: |
-          # Remove any existing staging remote
-          git remote remove staging || true
-          # Add the remote using the Heroku CLI with explicit API key
-          HEROKU_API_KEY=$HEROKU_API_KEY heroku git:remote -a mailer-automation-staging
-          # Verify the remote was added
-          echo "Remotes after adding:"
-          git remote -v
-          
       - name: Deploy to Heroku Staging
-        run: |
-          # Try to push to staging
-          echo "Attempting to push to staging..."
-          git push staging HEAD:main
+        uses: akhileshns/heroku-deploy@v3.12.14
+        with:
+          heroku_api_key: ${{ secrets.HEROKU_API_KEY }}
+          heroku_app_name: "mailer-automation-staging"
+          heroku_email: ${{ vars.HEROKU_EMAIL }}
+          dontuseforce: 1
+          justlogin: true
           
       - name: Wait for deployment to complete
         run: sleep 30  # Wait for the app to fully deploy
