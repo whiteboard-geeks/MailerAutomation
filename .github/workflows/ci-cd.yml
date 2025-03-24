@@ -63,25 +63,12 @@ jobs:
         run: |
           curl https://cli-assets.heroku.com/install.sh | sh
           
-      - name: Setup Heroku Authentication
-        run: |
-          cat > ~/.netrc << EOF
-          machine api.heroku.com
-            login ${{ vars.HEROKU_EMAIL }}
-            password ${{ secrets.HEROKU_API_KEY }}
-          machine git.heroku.com
-            login ${{ vars.HEROKU_EMAIL }}
-            password ${{ secrets.HEROKU_API_KEY }}
-          EOF
-          chmod 600 ~/.netrc
-          
       - name: Deploy to Heroku Staging
         uses: akhileshns/heroku-deploy@v3.12.14
         with:
           heroku_api_key: ${{ secrets.HEROKU_API_KEY }}
           heroku_app_name: "mailer-automation-staging"
           heroku_email: ${{ vars.HEROKU_EMAIL }}
-          dontuseforce: 1
           
       - name: Wait for deployment to complete
         run: sleep 60  # Wait for the app to fully deploy
@@ -124,7 +111,6 @@ jobs:
           # Get the Redis URL from Heroku config
           REDIS_URL=$(heroku config:get REDISCLOUD_URL -a mailer-automation-staging)
           echo "Retrieved Redis URL from Heroku staging app"
-          echo "Redis URL length: ${#REDIS_URL}"  # Debug log without exposing the URL
           
           # Set it as an environment variable for subsequent steps
           echo "REDISCLOUD_URL=$REDIS_URL" >> $GITHUB_ENV
@@ -140,7 +126,6 @@ jobs:
           GMAIL_SERVICE_ACCOUNT_INFO: ${{ secrets.GMAIL_SERVICE_ACCOUNT_INFO }}
           TEST_EMAIL_SENDER: ${{ secrets.TEST_EMAIL_SENDER }}
           TEST_EMAIL_RECIPIENT: ${{ secrets.TEST_EMAIL_RECIPIENT }}
-          REDISCLOUD_URL: ${{ env.REDISCLOUD_URL }}  # Explicitly pass Redis URL
         run: |
           # Set the base URL for tests to point to staging
           export BASE_URL=$STAGING_URL
