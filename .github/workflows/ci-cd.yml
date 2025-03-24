@@ -77,7 +77,7 @@ jobs:
           
       - name: Add Heroku Remote
         run: |
-          heroku git:remote -a mailer-automation-staging
+          git remote add heroku https://git.heroku.com/mailer-automation-staging.git
           git remote -v  # Debug: Show remotes
           
       - name: Deploy to Heroku Staging
