@@ -63,17 +63,9 @@ jobs:
         run: |
           curl https://cli-assets.heroku.com/install.sh | sh
           
-      - name: Setup Heroku Authentication
+      - name: Login to Heroku
         run: |
-          cat > ~/.netrc << EOF
-          machine api.heroku.com
-            login ${{ vars.HEROKU_EMAIL }}
-            password ${{ secrets.HEROKU_API_KEY }}
-          machine git.heroku.com
-            login ${{ vars.HEROKU_EMAIL }}
-            password ${{ secrets.HEROKU_API_KEY }}
-          EOF
-          chmod 600 ~/.netrc
+          echo "${{ secrets.HEROKU_API_KEY }}" | heroku login --api-key
           
       - name: Debug Heroku Auth
         run: |
