@@ -138,11 +138,16 @@ class WebhookTracker:
             key = f"{self.prefix}{task_id}"
             data = self.redis.get(key)
             if data:
-                return json.loads(data)
+                webhook_data = json.loads(data)
+                webhook_data["task_id"] = task_id  # Add task_id to response
+                return webhook_data
             return {}
         else:
             # Fallback to in-memory
-            return self.webhooks.get(task_id, {})
+            data = self.webhooks.get(task_id, {})
+            if data:
+                data["task_id"] = task_id  # Add task_id to response
+            return data
 
     def get_all(self):
         """Get all processed webhooks (for debugging)."""
@@ -153,11 +158,18 @@ class WebhookTracker:
                 task_id = key.decode("utf-8").replace(self.prefix, "")
                 data = self.redis.get(key)
                 if data:
-                    result[task_id] = json.loads(data)
+                    webhook_data = json.loads(data)
+                    webhook_data["task_id"] = task_id  # Add task_id to response
+                    result[task_id] = webhook_data
             return result
         else:
             # Fallback to in-memory
-            return {k: v for k, v in self.webhooks.items()}
+            result = {}
+            for task_id, data in self.webhooks.items():
+                data_copy = data.copy()
+                data_copy["task_id"] = task_id  # Add task_id to response
+                result[task_id] = data_copy
+            return result
 
 
 # Create the webhook tracker instance
@@ -507,6 +519,7 @@ Error details: {error_msg}
         webhook_data = {
             "route": "add_lead",
             "lead_id": lead_id,
+            "task_id": task_id,
             "campaign_name": campaign_name,
             "campaign_id": campaign_id,
             "processed": True,
