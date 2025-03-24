@@ -67,7 +67,7 @@ jobs:
           
       - name: Debug Heroku Auth
         run: |
-          heroku auth:whoami
+          heroku auth:whoami --api-key $HEROKU_API_KEY
           echo "Current remotes:"
           git remote -v
           
@@ -75,8 +75,8 @@ jobs:
         run: |
           # Remove any existing staging remote
           git remote remove staging || true
-          # Add the remote using the Heroku CLI
-          heroku git:remote -a mailer-automation-staging
+          # Add the remote using the Heroku CLI with explicit API key
+          HEROKU_API_KEY=$HEROKU_API_KEY heroku git:remote -a mailer-automation-staging
           # Verify the remote was added
           echo "Remotes after adding:"
           git remote -v
