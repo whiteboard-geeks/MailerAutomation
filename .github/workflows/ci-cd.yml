@@ -63,15 +63,33 @@ jobs:
         run: |
           curl https://cli-assets.heroku.com/install.sh | sh
           
+      - name: Setup Heroku Authentication
+        run: |
+          cat > ~/.netrc << EOF
+          machine api.heroku.com
+            login ${{ vars.HEROKU_EMAIL }}
+            password ${{ secrets.HEROKU_API_KEY }}
+          machine git.heroku.com
+            login ${{ vars.HEROKU_EMAIL }}
+            password ${{ secrets.HEROKU_API_KEY }}
+          EOF
+          chmod 600 ~/.netrc
+          
+      - name: Add Heroku Remote
+        run: |
+          heroku git:remote -a mailer-automation-staging
+          git remote -v  # Debug: Show remotes
+          
       - name: Deploy to Heroku Staging
         uses: akhileshns/heroku-deploy@v3.12.14
         with:
           heroku_api_key: ${{ secrets.HEROKU_API_KEY }}
           heroku_app_name: "mailer-automation-staging"
           heroku_email: ${{ vars.HEROKU_EMAIL }}
+          dontuseforce: 1
           
       - name: Wait for deployment to complete
-        run: sleep 60  # Wait for the app to fully deploy
+        run: sleep 30  # Wait for the app to fully deploy
           
   blueprint-integration-tests:
     needs: deploy-to-staging
