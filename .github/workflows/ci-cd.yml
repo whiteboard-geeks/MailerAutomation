@@ -109,9 +109,28 @@ jobs:
           # Get the Redis URL from Heroku config
           REDIS_URL=$(heroku config:get REDISCLOUD_URL -a mailer-automation-staging)
           echo "Retrieved Redis URL from Heroku staging app"
+          echo "Redis URL length: ${#REDIS_URL}"
           
           # Set it as an environment variable for subsequent steps
           echo "REDISCLOUD_URL=$REDIS_URL" >> $GITHUB_ENV
+          
+          # Verify the environment variable was set
+          echo "Verifying REDISCLOUD_URL environment variable:"
+          if [ -n "$REDIS_URL" ]; then
+            echo "REDISCLOUD_URL is set (length: ${#REDIS_URL})"
+          else
+            echo "WARNING: REDISCLOUD_URL is empty!"
+            # Try to get the URL directly from Heroku config
+            echo "Attempting to get Redis URL directly..."
+            REDIS_URL=$(heroku config:get REDISCLOUD_URL -a mailer-automation-staging --json | jq -r '.REDISCLOUD_URL')
+            if [ -n "$REDIS_URL" ]; then
+              echo "Successfully retrieved Redis URL using --json flag"
+              echo "REDISCLOUD_URL=$REDIS_URL" >> $GITHUB_ENV
+            else
+              echo "ERROR: Could not retrieve Redis URL from Heroku config"
+              exit 1
+            fi
+          fi
           
       - name: Run integration tests for ${{ matrix.blueprint }}
         env:
@@ -128,6 +147,10 @@ jobs:
         run: |
           # Set the base URL for tests to point to staging
           export BASE_URL=$STAGING_URL
+          
+          # Debug: Print environment variables (excluding secrets)
+          echo "Environment variables:"
+          env | grep -v "KEY" | grep -v "SECRET" | grep -v "TOKEN"
           
           # Run the integration tests for this blueprint
           echo "Running integration tests for ${{ matrix.blueprint }}..."
