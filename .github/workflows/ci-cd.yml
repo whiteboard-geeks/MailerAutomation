@@ -65,7 +65,7 @@ jobs:
           
       - name: Login to Heroku
         run: |
-          echo "${{ secrets.HEROKU_API_KEY }}" | heroku login --api-key
+          echo "${{ secrets.HEROKU_API_KEY }}" | heroku login
           
       - name: Debug Heroku Auth
         run: |
