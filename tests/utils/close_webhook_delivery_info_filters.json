@@ -4,42 +4,39 @@
     {
       "object_type": "lead",
       "action": "created",
-      "filter": {
+      "extra_filter": {
         "type": "and",
         "filters": [
           {
-            "_comment": "Tracking number exists",
             "type": "field_accessor",
             "field": "data",
             "filter": {
               "type": "field_accessor",
               "field": "custom.cf_iSOPYKzS9IPK20gJ8eH9Q74NT7grCQW9psqo4lZR3Ii",
               "filter": {
-                "type": "exists"
+                "type": "non_null"
               }
             }
           },
           {
-            "_comment": "Carrier exists",
             "type": "field_accessor",
             "field": "data",
             "filter": {
               "type": "field_accessor",
               "field": "custom.cf_2QQR5e6vJUyGzlYBtHddFpdqNp5393nEnUiZk1Ukl9l",
               "filter": {
-                "type": "exists"
+                "type": "non_null"
               }
             }
           },
           {
-            "_comment": "EasyPost tracker id doesn't exist",
             "type": "field_accessor",
             "field": "data",
             "filter": {
               "type": "field_accessor",
               "field": "custom.cf_JsirGUJdp8RrCI6XwW48xFKEccSwulSCwZ7pAZL84vh",
               "filter": {
-                "type": "not_exists"
+                "type": "is_null"
               }
             }
           }
@@ -49,14 +46,13 @@
     {
       "object_type": "lead",
       "action": "updated",
-      "filter": {
+      "extra_filter": {
         "type": "or",
         "filters": [
           {
             "type": "and",
             "filters": [
               {
-                "_comment": "Carrier changed",
                 "type": "field_accessor",
                 "field": "changed_fields",
                 "filter": {
@@ -65,26 +61,24 @@
                 }
               },
               {
-                "_comment": "Tracking number exists",
                 "type": "field_accessor",
                 "field": "data",
                 "filter": {
                   "type": "field_accessor",
                   "field": "custom.cf_iSOPYKzS9IPK20gJ8eH9Q74NT7grCQW9psqo4lZR3Ii",
                   "filter": {
-                    "type": "exists"
+                    "type": "non_null"
                   }
                 }
               },
               {
-                "_comment": "EasyPost tracker id doesn't exist",
                 "type": "field_accessor",
                 "field": "data",
                 "filter": {
                   "type": "field_accessor",
                   "field": "custom.cf_JsirGUJdp8RrCI6XwW48xFKEccSwulSCwZ7pAZL84vh",
                   "filter": {
-                    "type": "not_exists"
+                    "type": "is_null"
                   }
                 }
               }
@@ -94,7 +88,6 @@
             "type": "and",
             "filters": [
               {
-                "_comment": "Tracking number changed",
                 "type": "field_accessor",
                 "field": "changed_fields",
                 "filter": {
@@ -103,26 +96,24 @@
                 }
               },
               {
-                "_comment": "Carrier exists",
                 "type": "field_accessor",
                 "field": "data",
                 "filter": {
                   "type": "field_accessor",
                   "field": "custom.cf_2QQR5e6vJUyGzlYBtHddFpdqNp5393nEnUiZk1Ukl9l",
                   "filter": {
-                    "type": "exists"
+                    "type": "non_null"
                   }
                 }
               },
               {
-                "_comment": "EasyPost tracker id doesn't exist",
                 "type": "field_accessor",
                 "field": "data",
                 "filter": {
                   "type": "field_accessor",
                   "field": "custom.cf_JsirGUJdp8RrCI6XwW48xFKEccSwulSCwZ7pAZL84vh",
                   "filter": {
-                    "type": "not_exists"
+                    "type": "is_null"
                   }
                 }
               }
