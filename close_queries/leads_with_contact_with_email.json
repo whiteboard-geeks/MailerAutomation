@@ -48,6 +48,24 @@
                         },
                         "this_object_type": "lead",
                         "type": "has_related"
+                    },
+                    {
+                        "negate": false,
+                        "related_object_type": "task.lead",
+                        "related_query": {
+                            "negate": false,
+                            "queries": [
+                                {
+                                    "mode": "full_words",
+                                    "negate": false,
+                                    "type": "text",
+                                    "value": "Instantly:"
+                                }
+                            ],
+                            "type": "and"
+                        },
+                        "this_object_type": "lead",
+                        "type": "has_related"
                     }
                 ],
                 "type": "and"
