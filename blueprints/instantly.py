@@ -1028,14 +1028,19 @@ def handle_instantly_email_sent():
             origin=calling_function,
         )
 
-        send_email(subject="Instantly Email Sent Webhook Error", body=error_message)
+        # Removed recipient determination code since it's now handled in app.py
+
+        send_email(
+            subject="Instantly Email Sent Webhook Error",
+            body=error_message,
+        )
 
         response_data = {
             "status": "error",
             "message": "An error occurred processing the Instantly email sent webhook",
             "error": str(e),
         }
-        return log_webhook_response(500, response_data, {"error": str(e)})
+        return log_webhook_response(500, response_data, None, error=str(e))
 
 
 @instantly_bp.route("/reply_received", methods=["POST"])
@@ -1227,16 +1232,7 @@ def handle_instantly_reply_received():
         <p><a href="https://app.close.com/lead/{lead_id}/" style="padding: 10px 15px; background-color: #4CAF50; color: white; text-decoration: none; border-radius: 4px; display: inline-block; margin-top: 10px;">View Lead in Close</a></p>
         """
 
-        # Determine recipients based on environment
-        recipients = ["lance@whiteboardgeeks.com"]
-        if env_type.lower() == "production":
-            recipients.extend(
-                [
-                    "barbara.pigg@whiteboardgeeks.com",
-                    "kori.watkins@whiteboardgeeks.com",
-                    "noura.mahmoud@whiteboardgeeks.com",
-                ]
-            )
+        # Removed recipient determination code since it's now handled in app.py
 
         # Prepare text content for the email notification
         text_content = f"""Instantly Reply Received
@@ -1259,7 +1255,6 @@ Time: {datetime.now().strftime("%Y-%m-%d %H:%M:%S")}"""
             notification_result = send_email(
                 subject=f"Instantly Reply: {reply_subject} from {lead_name}",
                 body=notification_html,
-                recipients=recipients,
                 text_content=text_content,
             )
             # Initialize notification status
@@ -1337,6 +1332,8 @@ Time: {datetime.now().strftime("%Y-%m-%d %H:%M:%S")}"""
             route=request.path,
             origin=calling_function,
         )
+
+        # Removed recipient determination code since it's now handled in app.py
 
         # Send email notification
         send_email(subject="Instantly Reply Received Webhook Error", body=error_message)

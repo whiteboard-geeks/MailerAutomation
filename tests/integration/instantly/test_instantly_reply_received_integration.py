@@ -105,6 +105,14 @@ class TestInstantlyReplyReceivedIntegration:
         # Verify the subscription is active
         assert subscription["status"] == "active", "Sequence subscription is not active"
 
+        # Create a task with "Instantly:" in it
+        print("Creating task with 'Instantly:' prefix...")
+        task_data = self.close_api.create_task_for_lead(
+            lead_data["id"], self.mock_payload["campaign_name"]
+        )
+        self.test_data["task_id"] = task_data["id"]
+        print(f"Task created with ID: {task_data['id']}")
+
         print("Waiting 10 seconds for Close to populate lead data for search...")
         sleep(10)
 

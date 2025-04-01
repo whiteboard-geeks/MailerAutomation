@@ -258,8 +258,6 @@ def remind_about_manually_configured_webhooks():
 
 def main():
     """Main function to verify and create all necessary webhooks."""
-    global webhooks_verified
-
     logger.info(f"Starting webhook verification for {PRODUCTION_URL}")
 
     # Verify we have a production URL
