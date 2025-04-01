@@ -1028,14 +1028,29 @@ def handle_instantly_email_sent():
             origin=calling_function,
         )
 
-        send_email(subject="Instantly Email Sent Webhook Error", body=error_message)
+        # Determine recipients based on environment
+        recipients = ["lance@whiteboardgeeks.com"]
+        if ENV_TYPE.lower() == "production":
+            recipients.extend(
+                [
+                    "barbara.pigg@whiteboardgeeks.com",
+                    "kori.watkins@whiteboardgeeks.com",
+                    "noura.mahmoud@whiteboardgeeks.com",
+                ]
+            )
+
+        send_email(
+            subject="Instantly Email Sent Webhook Error",
+            body=error_message,
+            recipients=recipients,
+        )
 
         response_data = {
             "status": "error",
             "message": "An error occurred processing the Instantly email sent webhook",
             "error": str(e),
         }
-        return log_webhook_response(500, response_data, {"error": str(e)})
+        return log_webhook_response(500, response_data, None, error=str(e))
 
 
 @instantly_bp.route("/reply_received", methods=["POST"])
