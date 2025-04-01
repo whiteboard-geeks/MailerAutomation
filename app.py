@@ -338,6 +338,27 @@ ENABLE_DEV_SCHEDULING = (
 
 
 def send_email(subject, body, **kwargs):
+    """
+    Send an email using the Gmail API.
+
+    In production, emails are sent to the entire team by default:
+    - Lance Johnson
+    - Barbara Pigg
+    - Kori Watkins
+    - Noura Mahmoud
+
+    In development/staging, emails are only sent to Lance by default.
+
+    Args:
+        subject (str): The email subject
+        body (str): The HTML content for the email body
+        **kwargs: Additional parameters
+            - recipients: Override default recipients for this specific email
+            - text_content: Plain text version of the email (optional)
+
+    Returns:
+        dict: Response from Gmail API
+    """
     central_time_zone = pytz.timezone("America/Chicago")
     central_time_now = datetime.now(central_time_zone)
     time_now_formatted = central_time_now.strftime("%Y-%m-%d %H:%M:%S%z")
@@ -345,7 +366,14 @@ def send_email(subject, body, **kwargs):
     # Import the send_gmail function from our Gmail blueprint
     from blueprints.gmail import send_gmail
 
-    recipients = kwargs.get("recipients", "Lance Johnson <lance@whiteboardgeeks.com>")
+    # Set default recipients based on environment
+    if env_type.lower() == "production":
+        recipients = "Lance Johnson <lance@whiteboardgeeks.com>, Barbara Pigg <barbara.pigg@whiteboardgeeks.com>, Kori Watkins <kori.watkins@whiteboardgeeks.com>, Noura Mahmoud <noura.mahmoud@whiteboardgeeks.com>"
+    else:
+        recipients = "Lance Johnson <lance@whiteboardgeeks.com>"
+
+    # Override with any explicitly provided recipients
+    recipients = kwargs.get("recipients", recipients)
 
     # Add environment information to the body
     environment_info = f"<p><strong>Environment:</strong> {env_type}</p>"
