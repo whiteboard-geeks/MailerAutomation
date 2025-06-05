@@ -66,12 +66,12 @@ with proper rate limiting and verification.
 
 - [x] Create test file: `tests/integration/instantly/test_redis_rate_limiter.py`
 - [x] Test Redis connection and basic operations
-- [ ] Test leaky bucket rate limiting algorithm
-- [ ] Test concurrent access scenarios:
-  - [ ] Multiple threads trying to acquire tokens simultaneously
-  - [ ] Verify only allowed number of requests proceed
-  - [ ] Test window expiration and token refresh
-- [ ] Test should initially FAIL (no rate limiter implemented)
+- [x] Test leaky bucket rate limiting algorithm
+- [x] Test concurrent access scenarios:
+  - [x] Multiple threads trying to acquire tokens simultaneously
+  - [x] Verify only allowed number of requests proceed
+  - [x] Test window expiration and token refresh
+- [x] Test should initially FAIL (no rate limiter implemented)
 
 #### 2.2 Implement Redis Rate Limiter
 
