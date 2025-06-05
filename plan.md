@@ -75,11 +75,11 @@ with proper rate limiting and verification.
 
 #### 2.2 Implement Redis Rate Limiter
 
-- [ ] Create `utils/rate_limiter.py` with `RedisRateLimiter` class
-- [ ] Implement leaky bucket algorithm using Redis
-- [ ] Handle Redis connection failures with fallback
-- [ ] Add configuration for different API limits (Instantly: 600/minute)
-- [ ] Test should now PASS
+- [x] Create `utils/rate_limiter.py` with `RedisRateLimiter` class
+- [x] Implement leaky bucket algorithm using Redis
+- [x] Handle Redis connection failures with fallback
+- [x] Add configuration for different API limits (Instantly: 600/minute)
+- [x] Test should now PASS
 
 #### 2.3 Integration Test
 

@@ -12,15 +12,63 @@ Pure Leaky Bucket Algorithm:
 
 import time
 import redis
-from typing import Optional, Union
+from typing import Optional, Union, Dict, Any
 import logging
+from dataclasses import dataclass
 
 logger = logging.getLogger(__name__)
 
 
+@dataclass
+class APIRateConfig:
+    """Configuration preset for different API rate limits."""
+
+    name: str
+    requests_per_minute: int
+    requests_per_second: float
+    recommended_safety_factor: float
+    description: str
+
+    @classmethod
+    def instantly(cls) -> "APIRateConfig":
+        """Instantly API rate limit configuration."""
+        return cls(
+            name="instantly",
+            requests_per_minute=600,
+            requests_per_second=10.0,
+            recommended_safety_factor=0.8,  # 80% of limit for safety
+            description="Instantly API: 600 requests/minute = 10 requests/second",
+        )
+
+    @classmethod
+    def close_crm(cls) -> "APIRateConfig":
+        """Close CRM API rate limit configuration."""
+        return cls(
+            name="close_crm",
+            requests_per_minute=300,
+            requests_per_second=5.0,
+            recommended_safety_factor=0.8,
+            description="Close CRM API: 300 requests/minute = 5 requests/second",
+        )
+
+    @classmethod
+    def custom(
+        cls, requests_per_minute: int, safety_factor: float = 0.8
+    ) -> "APIRateConfig":
+        """Custom API rate limit configuration."""
+        requests_per_second = requests_per_minute / 60.0
+        return cls(
+            name="custom",
+            requests_per_minute=requests_per_minute,
+            requests_per_second=requests_per_second,
+            recommended_safety_factor=safety_factor,
+            description=f"Custom API: {requests_per_minute} requests/minute = {requests_per_second:.1f} requests/second",
+        )
+
+
 class RedisRateLimiter:
     """
-    Pure leaky bucket rate limiter with safety factor.
+    Pure leaky bucket rate limiter with safety factor and improved fallback handling.
 
     The leaky bucket accumulates tokens at effective_rate over time.
     No artificial burst_allowance cap - let the algorithm naturally enforce sustained rate.
@@ -28,32 +76,89 @@ class RedisRateLimiter:
 
     def __init__(
         self,
-        redis_client: redis.Redis,
-        requests_per_second: float,
-        safety_factor: float = 0.5,
+        redis_client: Optional[redis.Redis] = None,
+        requests_per_second: Optional[float] = None,
+        safety_factor: float = 0.8,
         window_size_seconds: int = 60,
         fallback_on_redis_error: bool = True,
+        api_config: Optional[APIRateConfig] = None,
+        redis_url: Optional[str] = None,
+        max_redis_retries: int = 3,
+        redis_retry_delay: float = 0.1,
     ):
         """
         Initialize the pure leaky bucket rate limiter.
 
         Args:
-            redis_client: Redis client instance
-            requests_per_second: Maximum API rate limit (e.g., 10 for Instantly)
-            safety_factor: Safety margin (0.5 = 50% of API limit, default: 0.5)
+            redis_client: Redis client instance (optional if redis_url provided)
+            requests_per_second: Maximum API rate limit (optional if api_config provided)
+            safety_factor: Safety margin (0.8 = 80% of API limit, default: 0.8)
             window_size_seconds: Time window for rate limiting (default: 60s)
             fallback_on_redis_error: Allow requests if Redis fails (default: True)
+            api_config: Pre-configured API rate limits (e.g., APIRateConfig.instantly())
+            redis_url: Redis connection URL (if redis_client not provided)
+            max_redis_retries: Maximum retry attempts for Redis operations (default: 3)
+            redis_retry_delay: Delay between Redis retry attempts in seconds (default: 0.1)
         """
-        self.redis_client = redis_client
-        self.api_rate_limit = requests_per_second
-        self.safety_factor = safety_factor
-        self.effective_rate = requests_per_second * safety_factor
+        # Handle API configuration
+        if api_config is not None:
+            self.api_rate_limit = api_config.requests_per_second
+            if safety_factor == 0.8:  # Use recommended safety factor if default
+                self.safety_factor = api_config.recommended_safety_factor
+            else:
+                self.safety_factor = safety_factor
+            self.api_config = api_config
+        elif requests_per_second is not None:
+            self.api_rate_limit = requests_per_second
+            self.safety_factor = safety_factor
+            self.api_config = APIRateConfig.custom(
+                int(requests_per_second * 60), safety_factor
+            )
+        else:
+            raise ValueError(
+                "Either api_config or requests_per_second must be provided"
+            )
+
+        # Handle Redis connection
+        if redis_client is not None:
+            self.redis_client = redis_client
+        elif redis_url is not None:
+            try:
+                self.redis_client = redis.from_url(redis_url)
+                # Test connection
+                self.redis_client.ping()
+                logger.info(f"Successfully connected to Redis at: {redis_url}")
+            except Exception as e:
+                logger.warning(f"Failed to connect to Redis at {redis_url}: {e}")
+                if not fallback_on_redis_error:
+                    raise
+                self.redis_client = None
+        else:
+            # Try default Redis connection
+            try:
+                self.redis_client = redis.Redis(host="localhost", port=6379, db=0)
+                self.redis_client.ping()
+                logger.info("Successfully connected to default Redis (localhost:6379)")
+            except Exception as e:
+                logger.warning(f"Failed to connect to default Redis: {e}")
+                if not fallback_on_redis_error:
+                    raise
+                self.redis_client = None
+
+        self.effective_rate = self.api_rate_limit * self.safety_factor
         self.window_size_seconds = window_size_seconds
         self.fallback_on_redis_error = fallback_on_redis_error
+        self.max_redis_retries = max_redis_retries
+        self.redis_retry_delay = redis_retry_delay
 
         # Calculate token replenishment rate using effective rate
         self.tokens_per_window = self.effective_rate * window_size_seconds
         self.token_replenish_interval = 1.0 / self.effective_rate  # seconds per token
+
+        # Fallback rate limiter (in-memory) for when Redis is unavailable
+        self._fallback_bucket = {"tokens": 0.0, "last_refill": time.time()}
+
+        logger.info(f"Rate limiter initialized: {self}")
 
     def acquire_token(self, key: str) -> bool:
         """
@@ -72,14 +177,98 @@ class RedisRateLimiter:
         Returns:
             bool: True if token acquired (request allowed), False if denied
         """
-        try:
-            return self._acquire_token_redis(key)
-        except redis.RedisError as e:
-            logger.warning(f"Redis error in rate limiter: {e}")
-            return self.fallback_on_redis_error
-        except Exception as e:
-            logger.error(f"Unexpected error in rate limiter: {e}")
-            return self.fallback_on_redis_error
+        if self.redis_client is None:
+            logger.debug(
+                f"Redis unavailable, using fallback rate limiter for key '{key}'"
+            )
+            return self._acquire_token_fallback(key)
+
+        for attempt in range(self.max_redis_retries):
+            try:
+                return self._acquire_token_redis(key)
+            except redis.ConnectionError as e:
+                logger.warning(
+                    f"Redis connection error (attempt {attempt + 1}/{self.max_redis_retries}): {e}"
+                )
+                if attempt < self.max_redis_retries - 1:
+                    time.sleep(
+                        self.redis_retry_delay * (2**attempt)
+                    )  # Exponential backoff
+                    continue
+                else:
+                    logger.error(
+                        f"Redis connection failed after {self.max_redis_retries} attempts"
+                    )
+                    if self.fallback_on_redis_error:
+                        logger.info(
+                            f"Falling back to in-memory rate limiter for key '{key}'"
+                        )
+                        return self._acquire_token_fallback(key)
+                    return False
+            except redis.RedisError as e:
+                logger.warning(
+                    f"Redis error in rate limiter (attempt {attempt + 1}/{self.max_redis_retries}): {e}"
+                )
+                if attempt < self.max_redis_retries - 1:
+                    time.sleep(self.redis_retry_delay)
+                    continue
+                else:
+                    if self.fallback_on_redis_error:
+                        logger.info(
+                            f"Falling back to in-memory rate limiter for key '{key}'"
+                        )
+                        return self._acquire_token_fallback(key)
+                    return False
+            except Exception as e:
+                logger.error(f"Unexpected error in rate limiter: {e}")
+                if self.fallback_on_redis_error:
+                    return self._acquire_token_fallback(key)
+                return False
+
+        # Should not reach here, but fallback just in case
+        if self.fallback_on_redis_error:
+            return self._acquire_token_fallback(key)
+        return False
+
+    def _acquire_token_fallback(self, key: str) -> bool:
+        """
+        Fallback in-memory rate limiter when Redis is unavailable.
+
+        Note: This only works for single-process rate limiting and will not
+        coordinate across multiple application instances.
+        """
+        current_time = time.time()
+
+        # Calculate tokens to add based on elapsed time
+        time_elapsed = current_time - self._fallback_bucket["last_refill"]
+        tokens_to_add = time_elapsed * self.effective_rate
+
+        # Add tokens (no artificial cap)
+        new_token_count = self._fallback_bucket["tokens"] + tokens_to_add
+
+        # Check if we can consume a token
+        if new_token_count >= 1.0:
+            # Consume one token
+            self._fallback_bucket["tokens"] = new_token_count - 1.0
+            self._fallback_bucket["last_refill"] = current_time
+
+            logger.debug(
+                f"Fallback token acquired for key '{key}': "
+                f"tokens={self._fallback_bucket['tokens']:.2f}, "
+                f"elapsed={time_elapsed:.2f}s"
+            )
+            return True
+        else:
+            # Update timestamp but keep token count
+            self._fallback_bucket["tokens"] = new_token_count
+            self._fallback_bucket["last_refill"] = current_time
+
+            logger.debug(
+                f"Fallback token denied for key '{key}': "
+                f"tokens={new_token_count:.2f}, "
+                f"need=1.0"
+            )
+            return False
 
     def _acquire_token_redis(self, key: str) -> bool:
         """
@@ -245,10 +434,13 @@ class RedisRateLimiter:
 
     def __str__(self):
         """String representation of the rate limiter configuration."""
+        redis_status = "connected" if self.redis_client is not None else "fallback"
         return (
             f"RedisRateLimiter("
+            f"config={self.api_config.name}, "
             f"api_limit={self.api_rate_limit}/s, "
             f"safety_factor={self.safety_factor}, "
             f"effective_rate={self.effective_rate}/s, "
+            f"redis={redis_status}, "
             f"pure_leaky_bucket=True)"
         )
