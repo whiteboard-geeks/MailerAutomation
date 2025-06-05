@@ -83,9 +83,9 @@ with proper rate limiting and verification.
 
 #### 2.3 Integration Test
 
-- [ ] Modify timeout test to verify rate limiting works
-- [ ] Test with 700 leads: should see controlled request rate (≤10/second)
-- [ ] HTTP request should still timeout (proving we need more fixes)
+- [x] Modify timeout test to verify rate limiting works
+- [x] Test with 700 leads: should see controlled request rate (≤10/second)
+- [x] HTTP request should still timeout (proving we need more fixes)
 
 ### Step 3: Implement Request Queue System (Fix #2)
 

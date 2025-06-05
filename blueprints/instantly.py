@@ -25,11 +25,43 @@ from close_utils import (
     pause_sequence_subscription,
 )
 
+# Import rate limiter
+from utils.rate_limiter import RedisRateLimiter, APIRateConfig
+
 # Set up blueprint
 instantly_bp = Blueprint("instantly", __name__)
 
 # Configure logging using structlog
 logger = structlog.get_logger("instantly")
+
+# Global rate limiter instance
+_rate_limiter = None
+
+
+def get_rate_limiter():
+    """Get or create the global rate limiter instance."""
+    global _rate_limiter
+    if _rate_limiter is None:
+        try:
+            # Get Redis URL from environment
+            redis_url = os.environ.get("REDISCLOUD_URL")
+
+            if redis_url and redis_url.lower() != "null":
+                _rate_limiter = RedisRateLimiter(
+                    redis_url=redis_url,
+                    api_config=APIRateConfig.instantly(),  # 600 req/min = 10 req/sec
+                    safety_factor=0.8,  # 80% of limit = 8 req/sec effective
+                    fallback_on_redis_error=True,  # Allow requests if Redis fails
+                )
+                logger.info(f"Rate limiter initialized: {_rate_limiter}")
+            else:
+                logger.warning("Redis not configured, rate limiter disabled")
+                _rate_limiter = None
+        except Exception as e:
+            logger.warning(f"Failed to initialize rate limiter: {e}")
+            _rate_limiter = None
+
+    return _rate_limiter
 
 
 def log_webhook_response(status_code, response_data, webhook_data=None, error=None):
@@ -649,6 +681,25 @@ def add_to_instantly_campaign(
         del payload["custom_variables"]
 
     try:
+        # Apply rate limiting before making the API request
+        rate_limiter = get_rate_limiter()
+        if rate_limiter:
+            rate_limiter_key = "instantly_api"
+            start_time = time.time()
+
+            # Wait for rate limiter to allow the request
+            while not rate_limiter.acquire_token(rate_limiter_key):
+                time.sleep(0.1)  # Wait 100ms before retrying
+
+                # Safety check to prevent infinite waiting
+                if time.time() - start_time > 30:
+                    logger.warning("Rate limiter timeout after 30 seconds")
+                    break
+
+            logger.debug(
+                f"Rate limiter allowed request after {time.time() - start_time:.2f}s wait"
+            )
+
         response = requests.post(url, headers=headers, json=payload)
         response.raise_for_status()
 
