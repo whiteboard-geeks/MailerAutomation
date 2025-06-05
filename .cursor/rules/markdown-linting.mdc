@@ -1,0 +1,18 @@
+---
+description: 
+globs: *.md
+alwaysApply: false
+---
+When working with markdown files, always ensure compliance with markdownlint rules:
+
+- Use consistent heading styles (prefer ATX-style headers with #)
+- Maintain proper line length limits
+- Ensure consistent list formatting and indentation
+- Use proper link and image syntax
+- Maintain consistent emphasis styling (prefer **bold** and *italic*)
+- Ensure proper spacing around headers, lists, and code blocks
+- Use consistent code fence syntax with language specifiers
+- Avoid trailing whitespace
+- Ensure files end with a single newline
+
+Before finalizing any markdown changes, verify the content passes markdownlint validation.
