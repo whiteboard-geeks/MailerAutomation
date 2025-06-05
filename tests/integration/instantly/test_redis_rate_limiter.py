@@ -210,12 +210,12 @@ class TestRedisRateLimiter:
             )
 
         # Test configuration: Instantly API limits = 600 requests/minute = 10 requests/second
-        # Using conservative rate: 5 requests/second for testing
+        # Using conservative rate: 5 requests/second for testing (safety_factor=1.0)
         rate_limiter = RedisRateLimiter(
             redis_client=self.redis_client,
             requests_per_second=5,
+            safety_factor=1.0,  # 100% of 5 req/s = 5 req/s effective
             window_size_seconds=60,
-            burst_allowance=10,
         )
 
         limiter_key = f"test_leaky_bucket:{datetime.now().isoformat()}"
@@ -223,12 +223,12 @@ class TestRedisRateLimiter:
 
         print("Testing leaky bucket algorithm with 5 requests/second limit...")
 
-        # Test 1: Should allow initial burst up to burst_allowance
-        print("\n--- Test 1: Initial burst allowance ---")
+        # Test 1: Pure leaky bucket starts empty - rapid requests should be denied
+        print("\n--- Test 1: Pure leaky bucket starts empty ---")
         burst_results = []
         start_time = time.time()
 
-        for i in range(8):  # Try 8 requests quickly (within burst_allowance of 10)
+        for i in range(8):  # Try 8 requests quickly with pure leaky bucket
             allowed = rate_limiter.acquire_token(limiter_key)
             burst_results.append(allowed)
             print(f"Request {i+1}: {'✅ ALLOWED' if allowed else '❌ DENIED'}")
@@ -236,12 +236,13 @@ class TestRedisRateLimiter:
         burst_time = time.time() - start_time
         allowed_count = sum(burst_results)
 
+        # Pure leaky bucket starts with 0 tokens, so rapid requests should mostly be denied
         assert (
-            allowed_count >= 5
-        ), f"Should allow at least 5 requests in burst, got {allowed_count}"
+            allowed_count <= 2
+        ), f"Pure leaky bucket should deny most rapid requests, got {allowed_count} allowed"
         assert burst_time < 2, f"Burst should be fast, took {burst_time:.2f} seconds"
         print(
-            f"✅ Burst test passed: {allowed_count}/8 requests allowed in {burst_time:.2f}s"
+            f"✅ Pure leaky bucket test passed: {allowed_count}/8 requests allowed in {burst_time:.2f}s"
         )
 
         # Test 2: Should rate limit after burst is exhausted
@@ -249,7 +250,6 @@ class TestRedisRateLimiter:
 
         # Try 5 more requests rapidly - should be rate limited
         rapid_results = []
-        rapid_start = time.time()
 
         for i in range(5):
             allowed = rate_limiter.acquire_token(limiter_key)
@@ -286,35 +286,46 @@ class TestRedisRateLimiter:
             f"✅ Token replenishment test passed: {replenish_allowed}/3 requests allowed"
         )
 
-        # Test 4: Verify rate calculation
-        print("\n--- Test 4: Rate calculation verification ---")
+        # Test 4: Verify sustained rate over longer period (pure leaky bucket)
+        print("\n--- Test 4: Sustained rate verification ---")
+
+        # Reset bucket to start fresh for sustained rate test
+        rate_limiter.reset_bucket(limiter_key)
+        print("Reset bucket for sustained rate test...")
 
         total_start = time.time()
         total_requests = []
 
-        # Make 10 requests with proper timing
-        for i in range(10):
+        # Make 30 requests over 3+ seconds to test sustained rate
+        for i in range(30):
             allowed = rate_limiter.acquire_token(limiter_key)
             total_requests.append((time.time(), allowed))
-            if allowed:
-                print(f"Request {i+1}: ✅ ALLOWED at {time.time() - total_start:.2f}s")
-            else:
-                print(f"Request {i+1}: ❌ DENIED at {time.time() - total_start:.2f}s")
-            time.sleep(0.1)  # Small delay between requests
+            if i < 10:  # Only print first 10 for readability
+                if allowed:
+                    print(
+                        f"Request {i+1}: ✅ ALLOWED at {time.time() - total_start:.2f}s"
+                    )
+                else:
+                    print(
+                        f"Request {i+1}: ❌ DENIED at {time.time() - total_start:.2f}s"
+                    )
+            time.sleep(0.1)  # Attempt 10 req/s
 
         total_time = time.time() - total_start
         total_allowed = sum(1 for _, allowed in total_requests if allowed)
         actual_rate = total_allowed / total_time
 
-        print(f"Total time: {total_time:.2f}s")
-        print(f"Total allowed: {total_allowed}/10")
+        print(f"Sustained test: {total_allowed}/30 over {total_time:.1f}s")
         print(f"Actual rate: {actual_rate:.2f} requests/second")
 
-        # Should not exceed configured rate significantly
+        # Should converge to configured rate (5 req/s) over longer period
         assert (
-            actual_rate <= 7
-        ), f"Actual rate {actual_rate:.2f} should not exceed 7 req/s (5 + buffer)"
-        print(f"✅ Rate calculation test passed: {actual_rate:.2f} req/s within limits")
+            actual_rate <= 6.5
+        ), f"Sustained rate {actual_rate:.2f} should not exceed 6.5 req/s (5 + buffer)"
+        assert (
+            actual_rate >= 3.5
+        ), f"Sustained rate {actual_rate:.2f} should be at least 3.5 req/s (not too restrictive)"
+        print(f"✅ Sustained rate test passed: {actual_rate:.2f} req/s within limits")
 
     def test_concurrent_access_scenarios(self):
         """Test concurrent access scenarios for rate limiting."""
@@ -329,15 +340,14 @@ class TestRedisRateLimiter:
                 "until Step 2.2 (Implement Redis Rate Limiter) is completed."
             )
 
-        import threading
         from concurrent.futures import ThreadPoolExecutor, as_completed
 
         # Create rate limiter with strict limits for testing
         rate_limiter = RedisRateLimiter(
             redis_client=self.redis_client,
             requests_per_second=3,  # Very strict limit for testing
+            safety_factor=1.0,  # 100% of 3 req/s = 3 req/s effective
             window_size_seconds=10,
-            burst_allowance=5,
         )
 
         concurrent_key = f"test_concurrent:{datetime.now().isoformat()}"
@@ -393,10 +403,10 @@ class TestRedisRateLimiter:
         print(f"Denied: {denied_count}")
         print(f"Time taken: {concurrent_time:.2f} seconds")
 
-        # Verify only allowed number of requests proceeded
-        # With burst_allowance=5 and 3 req/s, should allow ~5-8 requests max
-        assert allowed_count <= 10, f"Too many requests allowed: {allowed_count}"
-        assert denied_count >= 10, f"Not enough requests denied: {denied_count}"
+        # Verify rate limiting with pure leaky bucket (starts with 0 tokens)
+        # With 3 req/s rate and 20 concurrent requests, most should be denied initially
+        assert allowed_count <= 8, f"Too many requests allowed: {allowed_count}"
+        assert denied_count >= 12, f"Not enough requests denied: {denied_count}"
         print(
             f"✅ Concurrent access control passed: {allowed_count} allowed, {denied_count} denied"
         )
@@ -408,17 +418,22 @@ class TestRedisRateLimiter:
         print("Waiting for rate limit window to expire...")
         time.sleep(11)  # Window size is 10 seconds + buffer
 
-        # Try requests again - should get fresh tokens
+        # Try requests again with spacing to allow token accumulation
         refresh_results = []
+        start_refresh = time.time()
         for i in range(8):
             allowed = rate_limiter.acquire_token(concurrent_key)
             refresh_results.append(allowed)
             print(f"Refresh request {i+1}: {'✅ ALLOWED' if allowed else '❌ DENIED'}")
+            time.sleep(0.5)  # Allow tokens to accumulate between requests
 
         refresh_allowed = sum(refresh_results)
+        refresh_time = time.time() - start_refresh
+
+        # With 3 req/s rate and 0.5s spacing, should allow several requests
         assert (
             refresh_allowed >= 3
-        ), f"Should allow at least 3 requests after window refresh, got {refresh_allowed}"
+        ), f"Should allow at least 3 requests with spaced timing, got {refresh_allowed} over {refresh_time:.1f}s"
         print(
             f"✅ Window refresh test passed: {refresh_allowed}/8 requests allowed after window expiration"
         )
@@ -475,3 +490,56 @@ class TestRedisRateLimiter:
         )
 
         print("\n✅ All concurrent access scenario tests completed")
+
+    def test_safety_factor_effectiveness(self):
+        """Test that safety factor actually reduces the effective rate."""
+        print("\n=== TESTING SAFETY FACTOR EFFECTIVENESS ===")
+
+        from utils.rate_limiter import RedisRateLimiter
+
+        # Test with 50% safety factor - should enforce 5 req/s from 10 req/s API limit
+        rate_limiter = RedisRateLimiter(
+            redis_client=self.redis_client,
+            requests_per_second=10,  # API limit
+            safety_factor=0.5,  # 50% safety = 5 req/s effective
+            window_size_seconds=60,
+        )
+
+        safety_key = f"test_safety_factor:{datetime.now().isoformat()}"
+        self.test_keys.append(safety_key)
+
+        print("Testing 50% safety factor: 10 req/s API → 5 req/s effective")
+
+        # Test sustained rate over longer period
+        allowed_count = 0
+        start_time = time.time()
+
+        # Make 50 requests over 5+ seconds, attempting 10 req/s
+        for i in range(50):
+            if rate_limiter.acquire_token(safety_key):
+                allowed_count += 1
+            time.sleep(0.1)  # Attempt 10 req/s
+
+        total_time = time.time() - start_time
+        actual_rate = allowed_count / total_time
+
+        print(f"Safety factor test: {allowed_count}/50 over {total_time:.1f}s")
+        print(f"Actual rate: {actual_rate:.1f} req/s (expected: ~5.0 req/s)")
+        print(f"API limit: {rate_limiter.api_rate_limit} req/s")
+        print(f"Safety factor: {rate_limiter.safety_factor}")
+        print(f"Effective rate: {rate_limiter.effective_rate} req/s")
+
+        # Verify safety factor is working - rate should be close to 5 req/s, not 10 req/s
+        assert (
+            actual_rate <= 6.5
+        ), f"Rate {actual_rate:.1f} should not exceed 6.5 req/s (5 + buffer)"
+        assert (
+            actual_rate >= 3.5
+        ), f"Rate {actual_rate:.1f} should be at least 3.5 req/s (not too restrictive)"
+        assert (
+            actual_rate < 8.0
+        ), f"Safety factor not working: rate {actual_rate:.1f} too close to API limit {rate_limiter.api_rate_limit}"
+
+        print(
+            f"✅ Safety factor working: {actual_rate:.1f} req/s enforced vs {rate_limiter.api_rate_limit} req/s API limit"
+        )
