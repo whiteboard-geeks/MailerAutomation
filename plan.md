@@ -41,40 +41,22 @@ with proper rate limiting and verification.
 
 ##### Stage 1: Quick Validation (20 leads)
 
-- [ ] **CONCURRENT IMPLEMENTATION**:
-  - [ ] Add `concurrent.futures` import for ThreadPoolExecutor
-  - [ ] Create `send_webhook_request()` helper method for individual requests
-  - [ ] Replace sequential loop with ThreadPoolExecutor (max_workers=50)
-  - [ ] Send all 200 webhook requests simultaneously to trigger faster timeouts
-  - [ ] Process results as they complete using `as_completed()`
-- [ ] **FAIL-FAST IMPLEMENTATION**:
-  - [ ] When first timeout detected in `as_completed()` loop, cancel all
+- [x] **CONCURRENT IMPLEMENTATION**:
+  - [x] Add `concurrent.futures` import for ThreadPoolExecutor
+  - [x] Create `send_webhook_request()` helper method for individual requests
+  - [x] Replace sequential loop with ThreadPoolExecutor (max_workers=50)
+  - [x] Send all webhook requests simultaneously to trigger faster timeouts
+  - [x] Process results as they complete using `as_completed()`
+- [x] **FAIL-FAST IMPLEMENTATION**:
+  - [x] When first timeout detected in `as_completed()` loop, cancel all
     remaining futures
-  - [ ] Use `future.cancel()` on all futures in `future_to_lead` dictionary
-  - [ ] Raise AssertionError immediately with timeout details
-  - [ ] Automatic cleanup still occurs via `teardown_method()`
-  - [ ] Provides much faster test iterations during development
-- [ ] Test with 20 leads first for rapid iteration and feedback
-- [ ] Modify test to use `generate_test_leads(20)` temporarily
-- [ ] Verify timeout behavior occurs quickly (~30-60 seconds)
-- [ ] Get baseline metrics for processing time per lead
-
-##### Stage 2: Comprehensive Testing (200 leads)
-
-- [ ] Scale up to 200 leads for full reproduction
-- [ ] Use default `generate_test_leads(200)`
-- [ ] Measure timeout threshold and processing patterns
-- [ ] Document complete failure scenario for fixing
-
-- [ ] Verify test runs in existing CI/CD pipeline
-
-#### 1.3 CI/CD Integration
-
-- [ ] Add test to existing integration test matrix
-- [ ] Run Stage 1 (20 leads) on staging environment first
-- [ ] Run Stage 2 (200 leads) for comprehensive validation
-- [ ] Expect both stages to FAIL (proving we can reproduce the issue)
-- [ ] Document timeout behavior and processing time metrics
+  - [x] Use `future.cancel()` on all futures in `future_to_lead` dictionary
+  - [x] Raise AssertionError immediately with timeout details
+  - [x] Automatic cleanup still occurs via `teardown_method()`
+  - [x] Provides much faster test iterations during development
+- [x] Test with 20 leads first for rapid iteration and feedback
+- [x] Verify timeout behavior occurs quickly (~30-60 seconds)
+- [x] Get baseline metrics for processing time per lead
 
 ### Step 2: Implement Basic Rate Limiting (Fix #1)
 
@@ -93,9 +75,6 @@ with proper rate limiting and verification.
   - [ ] Modify timeout test to include timing verification
   - [ ] HTTP request should still timeout after 30 seconds
   - [ ] Measure: requests/second should be ≤8 (within rate limit)
-- [ ] **Stage 2**: Test rate limiting with 200 leads
-  - [ ] Confirm rate limiting still works at scale
-  - [ ] Document processing time improvements
 
 ### Step 3: Implement Async Processing (Fix #2)
 
@@ -111,13 +90,10 @@ with proper rate limiting and verification.
 
 #### 3.2 Test Async Processing
 
-- [ ] **Stage 1**: Test async processing with 20 leads
+- [ ] Test async processing with 500 leads
   - [ ] Update test to verify immediate success response (no HTTP timeout)
   - [ ] Add polling to check task completion
   - [ ] Verify leads eventually appear in Instantly
-- [ ] **Stage 2**: Test async processing with 200 leads
-  - [ ] Confirm async processing scales properly
-  - [ ] Test runs in CI/CD pipeline and passes
 
 ### Step 4: Add Progress Tracking (Enhancement #1)
 
@@ -153,6 +129,14 @@ with proper rate limiting and verification.
 - [ ] **Production Scale**: Test with 1,000 leads (staging only)
 - [ ] **Stress Test**: Test with 2,000 leads (manual/staging)
 - [ ] Measure processing time and success rates at each stage
+
+### Step 7: CI/CD Integration
+
+- [ ] Add test to existing integration test matrix
+- [ ] Run Stage 1 (20 leads) on staging environment first
+- [ ] Run Stage 2 (200 leads) for comprehensive validation
+- [ ] Expect both stages to FAIL (proving we can reproduce the issue)
+- [ ] Document timeout behavior and processing time metrics
 
 ## Current CI/CD Integration Plan
 
