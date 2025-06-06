@@ -75,10 +75,10 @@ class TestInstantlyAsyncProcessing:
             )
 
             self.circuit_breaker = CircuitBreaker(
-                redis_client=self.redis_client,
-                service_name=f"instantly_async_test_{self.timestamp}",
+                name=f"instantly_async_test_{self.timestamp}",
                 failure_threshold=5,
-                recovery_timeout=30,
+                timeout=30,
+                redis_client=self.redis_client,
             )
 
         # Base payload structure for Close webhook
