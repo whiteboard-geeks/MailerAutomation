@@ -6,7 +6,6 @@ This module creates and configures the Celery instance for the application.
 import os
 import logging
 from celery import Celery
-import pytz
 import structlog
 from celery.signals import setup_logging
 
@@ -81,6 +80,7 @@ celery = Celery(
     backend=REDISCLOUD_URL,
     include=[
         "blueprints.easypost",
+        "blueprints.instantly",
         "app",
     ],
 )
