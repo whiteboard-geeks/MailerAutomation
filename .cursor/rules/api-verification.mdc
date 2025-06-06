@@ -1,0 +1,34 @@
+---
+description: 
+globs: 
+alwaysApply: true
+---
+When writing code that makes new external API calls, you **MUST** follow this verification process:
+
+## Required Process
+
+### Before Implementation
+1. **Ask the user** about required environment variables, API keys, or configuration
+2. **OR** Make a one-off API call to verify the integration works properly
+
+### What Qualifies as "New External API Call"
+- First-time integration with a new service/API
+- New endpoints on existing services
+- Changes to authentication methods
+- New API parameter requirements
+
+### Verification Steps
+1. **Environment Variables**: Confirm all required API keys and configuration are available
+2. **API Testing**: Use a simple test call to verify connectivity and authentication
+3. **Error Handling**: Ensure proper error handling for common API failure scenarios
+4. **Documentation**: Document any new environment variables or configuration requirements
+
+### Examples of External APIs
+- Payment processors (Stripe, PayPal)
+- Email services (SendGrid, Mailgun)
+- CRM systems (Close.com, Salesforce)
+- Marketing platforms (Instantly.ai)
+- Cloud services (AWS, Google Cloud)
+- Social media APIs (Twitter, Facebook)
+
+This rule ensures reliable integrations and prevents deployment issues due to missing configuration.
