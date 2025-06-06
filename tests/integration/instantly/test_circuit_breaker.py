@@ -1,9 +1,8 @@
 """
 Integration tests for circuit breaker pattern functionality.
 
-This test is designed to FAIL initially to prove we need circuit breaker protection
-before implementing the circuit breaker system. It tests circuit states (CLOSED, OPEN,
-HALF_OPEN), failure threshold triggering, automatic recovery, and API failure scenarios.
+Tests circuit states (CLOSED, OPEN, HALF_OPEN), failure threshold triggering,
+automatic recovery, and API failure scenarios with Redis-backed state persistence.
 """
 
 import os
@@ -88,21 +87,17 @@ class TestInstantlyCircuitBreaker:
         print("✅ Redis circuit breaker state operations working correctly")
 
     def test_circuit_breaker_class_exists(self):
-        """Test that CircuitBreaker class exists - this should FAIL initially."""
+        """Test that CircuitBreaker class exists and can be imported successfully."""
         if not self.redis_client:
             pytest.skip("Redis not available for this test")
 
         print("\n=== TESTING CIRCUIT BREAKER CLASS EXISTENCE ===")
 
-        # This test should FAIL because CircuitBreaker doesn't exist yet
+        # Import CircuitBreaker class
         try:
             from utils.circuit_breaker import CircuitBreaker
         except ImportError:
-            pytest.fail(
-                "CircuitBreaker class not found in utils.circuit_breaker. "
-                "This test is expected to FAIL initially until Step 4.2 "
-                "(Implement Circuit Breaker) is completed."
-            )
+            pytest.fail("CircuitBreaker class not found in utils.circuit_breaker.")
 
         # Test basic initialization
         circuit_breaker = CircuitBreaker(
@@ -128,10 +123,7 @@ class TestInstantlyCircuitBreaker:
         try:
             from utils.circuit_breaker import CircuitBreaker
         except ImportError:
-            pytest.fail(
-                "CircuitBreaker class not found. "
-                "This test is expected to FAIL initially until Step 4.2 is completed."
-            )
+            pytest.fail("CircuitBreaker class not found in utils.circuit_breaker.")
 
         circuit_breaker = CircuitBreaker(
             name=f"test_states_{self.timestamp}",
@@ -184,7 +176,7 @@ class TestInstantlyCircuitBreaker:
         try:
             from utils.circuit_breaker import CircuitBreaker
         except ImportError:
-            pytest.fail("CircuitBreaker class not found. Expected to FAIL initially.")
+            pytest.fail("CircuitBreaker class not found in utils.circuit_breaker.")
 
         # Test different threshold values
         for threshold in [1, 3, 5]:
@@ -223,7 +215,7 @@ class TestInstantlyCircuitBreaker:
         try:
             from utils.circuit_breaker import CircuitBreaker
         except ImportError:
-            pytest.fail("CircuitBreaker class not found. Expected to FAIL initially.")
+            pytest.fail("CircuitBreaker class not found in utils.circuit_breaker.")
 
         circuit_breaker = CircuitBreaker(
             name=f"test_recovery_{self.timestamp}",
@@ -264,7 +256,7 @@ class TestInstantlyCircuitBreaker:
         try:
             from utils.circuit_breaker import CircuitBreaker
         except ImportError:
-            pytest.fail("CircuitBreaker class not found. Expected to FAIL initially.")
+            pytest.fail("CircuitBreaker class not found in utils.circuit_breaker.")
 
         circuit_breaker = CircuitBreaker(
             name=f"test_api_failures_{self.timestamp}",
@@ -325,7 +317,7 @@ class TestInstantlyCircuitBreaker:
         try:
             from utils.circuit_breaker import CircuitBreaker
         except ImportError:
-            pytest.fail("CircuitBreaker class not found. Expected to FAIL initially.")
+            pytest.fail("CircuitBreaker class not found in utils.circuit_breaker.")
 
         circuit_breaker = CircuitBreaker(
             name=f"test_instantly_integration_{self.timestamp}",
@@ -390,7 +382,7 @@ class TestInstantlyCircuitBreaker:
         try:
             from utils.circuit_breaker import CircuitBreaker
         except ImportError:
-            pytest.fail("CircuitBreaker class not found. Expected to FAIL initially.")
+            pytest.fail("CircuitBreaker class not found in utils.circuit_breaker.")
 
         circuit_breaker = CircuitBreaker(
             name=f"test_backoff_{self.timestamp}",
@@ -436,7 +428,7 @@ class TestInstantlyCircuitBreaker:
         try:
             from utils.circuit_breaker import CircuitBreaker
         except ImportError:
-            pytest.fail("CircuitBreaker class not found. Expected to FAIL initially.")
+            pytest.fail("CircuitBreaker class not found in utils.circuit_breaker.")
 
         circuit_breaker = CircuitBreaker(
             name=f"test_metrics_{self.timestamp}",
@@ -482,7 +474,7 @@ class TestInstantlyCircuitBreaker:
         try:
             from utils.circuit_breaker import CircuitBreaker
         except ImportError:
-            pytest.fail("CircuitBreaker class not found. Expected to FAIL initially.")
+            pytest.fail("CircuitBreaker class not found in utils.circuit_breaker.")
 
         # Create two independent circuit breakers
         circuit_1 = CircuitBreaker(
