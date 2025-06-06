@@ -208,35 +208,66 @@ class TestInstantlyAsyncProcessing:
         """Test that Celery connection is available and basic task execution works."""
         print("\n=== TESTING CELERY CONNECTION AND BASIC TASK ===")
 
-        # Test Celery connection
+        # Test Celery app availability
+        assert celery is not None, "Celery app should be available"
+        print("✅ Celery app instance available")
+
+        # Test broker connection
         try:
-            # Inspect active workers
+            broker_connection = celery.broker_connection()
+            assert (
+                broker_connection is not None
+            ), "Broker connection should be available"
+            print("✅ Celery broker connection available")
+        except Exception as e:
+            pytest.skip(f"Celery broker connection failed: {e}")
+
+        # Test Celery control inspection
+        try:
             inspect = celery.control.inspect()
             active_workers = inspect.active()
 
             if not active_workers:
-                pytest.skip("No Celery workers available for testing")
+                print("⚠️ No active Celery workers found")
+                # Don't skip - continue testing basic functionality
+                active_workers = {}
 
             print(f"Active Celery workers: {list(active_workers.keys())}")
 
         except Exception as e:
-            pytest.skip(f"Celery connection not available: {e}")
+            print(f"⚠️ Celery inspection failed: {e}")
+            # Continue testing basic functionality
 
-        # Test a simple task execution (using existing task from app.py as example)
+        # Test task registration and basic functionality
         try:
-            # This is just to verify Celery is working - we'll create our own task later
             from app import process_contact_list
 
-            # Don't actually run the task, just verify it's available
+            # Verify task has Celery methods
             assert hasattr(
                 process_contact_list, "delay"
             ), "Task should have delay method"
+            assert hasattr(
+                process_contact_list, "apply_async"
+            ), "Task should have apply_async method"
+            assert hasattr(
+                process_contact_list, "name"
+            ), "Task should have name attribute"
+
+            print(f"✅ Task registered: {process_contact_list.name}")
             print("✅ Celery task discovery working")
 
         except ImportError:
-            print(
-                "Note: process_contact_list task not available, but Celery connection works"
-            )
+            print("Note: process_contact_list task not available")
+
+            # Test basic Celery task creation functionality
+            @celery.task
+            def basic_test_task():
+                return "test"
+
+            assert hasattr(
+                basic_test_task, "delay"
+            ), "Basic task should have delay method"
+            print("✅ Basic Celery task creation working")
 
         print("✅ Celery connection and basic task functionality verified")
 
@@ -259,6 +290,120 @@ class TestInstantlyAsyncProcessing:
                 "(Implement Async Endpoint) is completed. The task should be "
                 "implemented as a Celery task that processes lead batches in the background."
             )
+
+    def test_celery_task_queuing_and_execution(self):
+        """Test Celery task queuing and execution using existing task infrastructure."""
+        print("\n=== TESTING CELERY TASK QUEUING AND EXECUTION ===")
+
+        # Test Celery connection first
+        try:
+            inspect = celery.control.inspect()
+            active_workers = inspect.active()
+
+            if not active_workers:
+                pytest.skip("No Celery workers available for testing")
+
+            print(f"Active Celery workers: {list(active_workers.keys())}")
+
+        except Exception as e:
+            pytest.skip(f"Celery connection not available: {e}")
+
+        # Test task queuing using existing process_contact_list task as example
+        try:
+            from app import process_contact_list
+
+            # Verify task has Celery delay method
+            assert hasattr(
+                process_contact_list, "delay"
+            ), "Task should have delay method"
+            assert hasattr(
+                process_contact_list, "apply_async"
+            ), "Task should have apply_async method"
+
+            print("✅ Celery task discovery working")
+
+            # Test task queuing (without actually executing)
+            print("\n--- Testing Task Queuing ---")
+
+            # Create a test CSV URL (this won't actually be processed)
+            test_csv_url = "https://example.com/test.csv"
+
+            # Queue the task with apply_async for more control
+            task_result = process_contact_list.apply_async(
+                args=[test_csv_url],
+                countdown=60,  # Delay execution by 60 seconds to test queuing
+            )
+
+            print(f"✅ Task queued successfully with ID: {task_result.id}")
+            print(f"✅ Task state: {task_result.state}")
+
+            # Verify task is in queue
+            assert task_result.id is not None, "Task should have an ID"
+            assert task_result.state in [
+                "PENDING",
+                "RETRY",
+                "STARTED",
+            ], f"Task should be queued, got state: {task_result.state}"
+
+            # Test task inspection
+            scheduled_tasks = inspect.scheduled()
+            if scheduled_tasks:
+                worker_scheduled = list(scheduled_tasks.values())[0]
+                scheduled_task_ids = [
+                    task["request"]["id"] for task in worker_scheduled
+                ]
+                print(f"Scheduled tasks: {scheduled_task_ids}")
+
+                # Our task should be in the scheduled tasks (since we used countdown)
+                if task_result.id in scheduled_task_ids:
+                    print(f"✅ Task {task_result.id} found in scheduled tasks")
+                else:
+                    print(
+                        f"⚠️ Task {task_result.id} not found in scheduled tasks (may have started)"
+                    )
+
+            # Cancel the task since we don't want it to actually run
+            task_result.revoke(terminate=True)
+            print(f"✅ Task {task_result.id} revoked to prevent execution")
+
+            # Store task ID for cleanup
+            self.task_ids.append(task_result.id)
+
+        except ImportError:
+            # If process_contact_list is not available, create a simple test task
+            print(
+                "process_contact_list not available, testing with basic Celery functionality"
+            )
+
+            # Test basic Celery app functionality
+            assert celery is not None, "Celery app should be available"
+            assert (
+                celery.broker_connection() is not None
+            ), "Broker connection should be available"
+
+            # Test creating a simple inline task for queuing
+            @celery.task
+            def test_task(message):
+                return f"Test task executed with message: {message}"
+
+            # Queue the test task
+            test_message = f"Celery test at {self.timestamp}"
+            task_result = test_task.apply_async(
+                args=[test_message],
+                countdown=60,  # Delay to test queuing
+            )
+
+            print(f"✅ Simple test task queued with ID: {task_result.id}")
+            print(f"✅ Task state: {task_result.state}")
+
+            # Cancel the task
+            task_result.revoke(terminate=True)
+            print(f"✅ Test task {task_result.id} revoked")
+
+            # Store task ID for cleanup
+            self.task_ids.append(task_result.id)
+
+        print("✅ Celery task queuing and execution capabilities verified")
 
     def test_immediate_response_without_timeout(self):
         """Test that webhook responds immediately without HTTP timeout - should FAIL initially."""

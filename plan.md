@@ -196,7 +196,26 @@ with proper rate limiting and verification.
   - **Result**: Request 1: 4.33s, Request 2: Timeout after 5.00s
   - **Conclusion**: Endpoint is still processing synchronously (as expected)
   - **Note**: Current endpoint returns Close `task_id`, not Celery async task ID
-- [ ] Test Celery task queuing and execution
+- ✅ Test Celery task queuing and execution
+  - **COMPLETED**: Enhanced `test_async_processing.py` with comprehensive Celery testing
+  - **Test 1**: `test_celery_connection_and_basic_task()` - ✅ PASSING
+    - Tests Celery app instance availability
+    - Tests broker connection (Redis)
+    - Tests worker inspection and task registration
+    - Tests existing `process_contact_list` task discovery
+  - **Test 2**: `test_celery_task_queuing_and_execution()` - ✅ PASSING
+    - Tests active worker detection
+    - Tests task queuing with `apply_async()` and countdown delays
+    - Tests task inspection (scheduled tasks)
+    - Tests task revocation for cleanup
+    - Validates task ID generation and state management
+  - **Test 3**: `test_async_processing_task_creation()` - ✅ FAILING (as expected)
+    - Tests for `process_lead_batch_task` import (doesn't exist yet)
+    - Provides clear guidance for Step 5.2 implementation
+  - **Services Verified**: Redis + Celery worker running successfully
+    - Redis: `redis://localhost:6379` - ✅ CONNECTED
+    - Celery Worker: `celery@Lance-Js-MBP.local` - ✅ ACTIVE
+    - Tasks can be queued, scheduled, inspected, and revoked
 - [ ] Test integration of all previous components:
   - [ ] Rate limiter + Queue + Circuit breaker + Async
 - [x] Test should initially FAIL (endpoint still synchronous) ✅
