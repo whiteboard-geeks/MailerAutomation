@@ -10,7 +10,7 @@ Usage:
 
 Output:
     - Creates leads in Close
-    - Saves lead IDs to scripts/test_leads_3000.json
+    - Saves lead IDs to scripts/test_leads_2999.json
     - Prints progress and final summary
 """
 
@@ -25,12 +25,12 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from tests.utils.close_api import CloseAPI
 
 
-def generate_test_leads(count=3000):
+def generate_test_leads(count=2999):
     """
     Generate the specified number of test leads in Close.
 
     Args:
-        count (int): Number of test leads to create (default: 3000)
+        count (int): Number of test leads to create (default: 2999)
 
     Returns:
         list: List of created lead data with IDs
@@ -93,7 +93,7 @@ def generate_test_leads(count=3000):
     return created_leads, failed_leads
 
 
-def save_leads_to_file(leads_data, filename="test_leads_3000.json"):
+def save_leads_to_file(leads_data, filename="test_leads_2999.json"):
     """
     Save lead data to a JSON file for reuse.
 
@@ -129,7 +129,7 @@ def save_leads_to_file(leads_data, filename="test_leads_3000.json"):
         return None
 
 
-def load_test_leads(filename="test_leads_3000.json"):
+def load_test_leads(filename="test_leads_2999.json"):
     """
     Load test leads from the JSON file.
 
@@ -174,7 +174,7 @@ def main():
         return
 
     # Generate the leads
-    created_leads, failed_leads = generate_test_leads(count=3000)
+    created_leads, failed_leads = generate_test_leads(count=2999)
 
     if not created_leads:
         print("✗ No leads were created successfully. Exiting.")
