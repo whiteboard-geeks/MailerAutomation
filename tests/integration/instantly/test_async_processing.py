@@ -458,13 +458,15 @@ class TestInstantlyAsyncProcessing:
                 if response.status_code in [200, 202]:
                     response_data = response.json()
 
-                    # Check if response includes task_id (indicates async processing)
-                    if "task_id" in response_data:
-                        task_ids_from_response.append(response_data["task_id"])
-                        print(f"   ✅ Got task_id: {response_data['task_id']}")
+                    # Check if response includes celery_task_id (indicates async processing)
+                    if "celery_task_id" in response_data:
+                        task_ids_from_response.append(response_data["celery_task_id"])
+                        print(
+                            f"   ✅ Got celery_task_id: {response_data['celery_task_id']}"
+                        )
                     else:
                         print(
-                            f"   ❌ No task_id in response (indicates synchronous processing)"
+                            f"   ❌ No celery_task_id in response (indicates synchronous processing)"
                         )
 
                 else:
@@ -478,7 +480,7 @@ class TestInstantlyAsyncProcessing:
                 pytest.fail(
                     f"Request {i+1} timed out after {response_time:.2f}s. "
                     f"This indicates the endpoint is still processing synchronously. "
-                    f"Expected: immediate response with task_id for async processing. "
+                    f"Expected: immediate response with celery_task_id for async processing. "
                     f"This test is expected to FAIL until Step 5.2 (async implementation) is completed."
                 )
 
@@ -489,7 +491,7 @@ class TestInstantlyAsyncProcessing:
         print(f"Total time for {len(response_times)} requests: {total_time:.2f}s")
         print(f"Average response time: {avg_response_time:.2f}s")
         print(f"Max response time: {max(response_times):.2f}s")
-        print(f"Task IDs received: {len(task_ids_from_response)}")
+        print(f"Celery task IDs received: {len(task_ids_from_response)}")
 
         # Store task IDs for cleanup
         self.task_ids.extend(task_ids_from_response)
@@ -497,9 +499,9 @@ class TestInstantlyAsyncProcessing:
         # Validation for async implementation
         if not task_ids_from_response:
             pytest.fail(
-                "No task_ids received in responses. This indicates the endpoint is still "
+                "No celery_task_ids received in responses. This indicates the endpoint is still "
                 "processing synchronously instead of queuing async tasks. Expected: "
-                "immediate response with task_id for background processing."
+                "immediate response with celery_task_id for background processing."
             )
 
         if avg_response_time > self.IMMEDIATE_RESPONSE_TIMEOUT:
@@ -509,7 +511,7 @@ class TestInstantlyAsyncProcessing:
                 f"synchronous processing instead of async task queuing."
             )
 
-        print("✅ All requests responded immediately with task IDs")
+        print("✅ All requests responded immediately with Celery task IDs")
 
     def test_background_processing_completion(self):
         """Test that background Celery tasks complete successfully."""
@@ -615,8 +617,8 @@ class TestInstantlyAsyncProcessing:
         # Validation
         success_rate = completed_tasks / len(task_ids)
         assert (
-            success_rate >= 0.8
-        ), f"Success rate too low: {success_rate:.2%} (expected ≥80%)"
+            success_rate == 1.0
+        ), f"Success rate too low: {success_rate:.2%} (expected 100%)"
         assert (
             processing_time < self.BACKGROUND_PROCESSING_TIMEOUT
         ), f"Processing took too long: {processing_time:.2f}s"
