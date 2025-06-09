@@ -6,6 +6,10 @@ This test is designed to FAIL initially to prove we need async processing
 before implementing the full solution. It tests immediate response (no HTTP timeout),
 Celery task queuing and execution, and integration of all previous components.
 
+Uses pre-generated test leads from scripts/generate_test_leads.py to avoid
+creating leads dynamically during testing. Run generate_test_leads.py first
+to create the test leads file.
+
 Key Goals:
 - Test immediate response (no HTTP timeout)
 - Test Celery task queuing and execution
@@ -26,6 +30,7 @@ from utils.rate_limiter import RedisRateLimiter, APIRateConfig
 from utils.async_queue import InstantlyRequestQueue
 from utils.circuit_breaker import CircuitBreaker
 from celery_worker import celery
+from scripts.generate_test_leads import load_test_leads
 
 
 class TestInstantlyAsyncProcessing:
@@ -135,12 +140,8 @@ class TestInstantlyAsyncProcessing:
 
     def teardown_method(self):
         """Cleanup after each test."""
-        # Delete test leads if they were created
-        for lead_id in self.test_data.get("lead_ids", []):
-            try:
-                self.close_api.delete_lead(lead_id)
-            except Exception as e:
-                print(f"Warning: Could not delete test lead {lead_id}: {e}")
+        # NOTE: We don't delete pre-generated test leads as they are reused across tests
+        # The leads are tracked in self.test_data["lead_ids"] but only for reference
 
         # Clean up Redis keys
         if self.redis_client:
@@ -163,46 +164,43 @@ class TestInstantlyAsyncProcessing:
 
     def generate_test_leads(self, count=None):
         """
-        Generate the specified number of test leads in Close.
+        Load pre-generated test leads for async processing tests.
 
         Args:
-            count (int): Number of test leads to create
+            count (int): Number of test leads to return (will slice from pre-generated leads)
 
         Returns:
-            list: List of created lead data
+            list: List of lead data (subset of pre-generated leads)
         """
         if count is None:
             count = self.ASYNC_TEST_LEAD_COUNT
 
-        print(f"\n=== Generating {count} test leads for async processing test ===")
-        created_leads = []
-        self.test_data["lead_ids"] = []
+        print(
+            f"\n=== Loading {count} pre-generated test leads for async processing test ==="
+        )
 
-        for i in range(count):
-            email = f"lance+async+{self.timestamp}+{i}@whiteboardgeeks.com"
+        # Load pre-generated leads from file
+        all_leads = load_test_leads()
 
-            try:
-                lead_data = self.close_api.create_test_lead(
-                    email=email,
-                    first_name="AsyncTestLead",
-                    last_name=str(i),
-                    custom_fields={
-                        "custom.lcf_tRacWU9nMn0l2i0xhizYpewewmw995aWYaJKgDgDb9o": f"Async Test Company {i}",
-                        "custom.cf_DTgmXXPozUH3707H1MYu2PhhDznJjWbtmDcb7zme5a9": f"Async Test Location {self.timestamp}",
-                    },
-                    include_date_location=False,
-                )
-                created_leads.append(lead_data)
-                self.test_data["lead_ids"].append(lead_data["id"])
+        if not all_leads:
+            pytest.skip(
+                "No pre-generated test leads found. Please run 'python scripts/generate_test_leads.py' first."
+            )
 
-                if (i + 1) % 10 == 0:
-                    print(f"Created {i + 1}/{count} async test leads")
+        if len(all_leads) < count:
+            print(
+                f"Warning: Only {len(all_leads)} pre-generated leads available, requested {count}"
+            )
+            count = len(all_leads)
 
-            except Exception as e:
-                print(f"Failed to create async test lead {i}: {e}")
+        # Take subset of leads
+        selected_leads = all_leads[:count]
 
-        print(f"Successfully created {len(created_leads)} async test leads")
-        return created_leads
+        # Track lead IDs for any cleanup (though we won't delete pre-generated leads)
+        self.test_data["lead_ids"] = [lead["id"] for lead in selected_leads]
+
+        print(f"Successfully loaded {len(selected_leads)} pre-generated test leads")
+        return selected_leads
 
     def test_celery_connection_and_basic_task(self):
         """Test that Celery connection is available and basic task execution works."""
@@ -536,14 +534,20 @@ class TestInstantlyAsyncProcessing:
         # Submit tasks to Celery
         for i, lead in enumerate(leads):
             try:
-                # Create task data
+                # Parse name from pre-generated lead data
+                lead_name = lead.get("name", f"TestLead {i}")
+                name_parts = lead_name.split(" ")
+                first_name = name_parts[0] if name_parts else "Test"
+                last_name = " ".join(name_parts[1:]) if len(name_parts) > 1 else str(i)
+
+                # Create task data using pre-generated lead info
                 task_data = {
                     "campaign_name": self.campaign_name,
                     "lead_id": lead["id"],
                     "task_id": f"task_async_test_{self.timestamp}_{i}",
-                    "email": f"lance+async+{self.timestamp}+{i}@whiteboardgeeks.com",
-                    "first_name": "AsyncTestLead",
-                    "last_name": str(i),
+                    "email": lead.get("email", f"test+{i}@example.com"),
+                    "first_name": first_name,
+                    "last_name": last_name,
                     "company_name": f"Async Test Company {i}",
                     "date_location": f"Async Test Location {self.timestamp}",
                 }
