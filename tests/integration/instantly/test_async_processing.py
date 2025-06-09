@@ -408,6 +408,19 @@ class TestInstantlyAsyncProcessing:
         if not self.redis_client:
             pytest.skip("Redis not available for this test")
 
+        # Check for Celery workers
+        try:
+            inspect = celery.control.inspect()
+            active_workers = inspect.active()
+
+            if not active_workers:
+                pytest.skip("No Celery workers available for testing")
+
+            print(f"Active Celery workers: {list(active_workers.keys())}")
+
+        except Exception as e:
+            pytest.skip(f"Celery connection not available: {e}")
+
         print(
             f"\n=== TESTING IMMEDIATE RESPONSE (target: <{self.IMMEDIATE_RESPONSE_TIMEOUT}s) ==="
         )
@@ -517,6 +530,19 @@ class TestInstantlyAsyncProcessing:
         """Test that background Celery tasks complete successfully."""
         if not self.redis_client:
             pytest.skip("Redis not available for this test")
+
+        # Check for Celery workers
+        try:
+            inspect = celery.control.inspect()
+            active_workers = inspect.active()
+
+            if not active_workers:
+                pytest.skip("No Celery workers available for testing")
+
+            print(f"Active Celery workers: {list(active_workers.keys())}")
+
+        except Exception as e:
+            pytest.skip(f"Celery connection not available: {e}")
 
         print(f"\n=== TESTING BACKGROUND PROCESSING COMPLETION ===")
 
@@ -629,6 +655,19 @@ class TestInstantlyAsyncProcessing:
         """Test full integration of rate limiter + queue + circuit breaker + async processing."""
         if not self.redis_client:
             pytest.skip("Redis not available for this test")
+
+        # Check for Celery workers
+        try:
+            inspect = celery.control.inspect()
+            active_workers = inspect.active()
+
+            if not active_workers:
+                pytest.skip("No Celery workers available for testing")
+
+            print(f"Active Celery workers: {list(active_workers.keys())}")
+
+        except Exception as e:
+            pytest.skip(f"Celery connection not available: {e}")
 
         print(
             "\n=== TESTING FULL INTEGRATION (Rate Limiter + Queue + Circuit Breaker + Async) ==="
@@ -749,6 +788,19 @@ class TestInstantlyAsyncProcessing:
         """Test error handling in async processing endpoint."""
         if not self.redis_client:
             pytest.skip("Redis not available for this test")
+
+        # Check for Celery workers
+        try:
+            inspect = celery.control.inspect()
+            active_workers = inspect.active()
+
+            if not active_workers:
+                pytest.skip("No Celery workers available for testing")
+
+            print(f"Active Celery workers: {list(active_workers.keys())}")
+
+        except Exception as e:
+            pytest.skip(f"Celery connection not available: {e}")
 
         print("\n=== TESTING ASYNC ENDPOINT ERROR HANDLING ===")
 
