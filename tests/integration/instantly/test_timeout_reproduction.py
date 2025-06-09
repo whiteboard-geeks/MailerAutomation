@@ -2,7 +2,13 @@
 Integration test to reproduce the timeout issue with the Instantly add_lead endpoint.
 
 This test is designed to FAIL initially to prove we can reproduce the timeout problem
-before implementing any fixes. It generates test leads to trigger Heroku's 30-second timeout.
+before implementing any fixes. It can use pre-generated test leads to avoid creating
+leads every time, which speeds up test execution significantly.
+
+SETUP INSTRUCTIONS:
+1. Generate 3,000 test leads once: python scripts/generate_test_leads.py
+2. Run tests with pre-generated leads (default behavior)
+3. Set USE_PREGENERATED_LEADS = False to create new leads each time
 
 Stage 1: Concurrent testing with 20 leads for rapid iteration and fail-fast behavior
 Stage 2: Comprehensive testing with 200 leads for full reproduction
@@ -20,6 +26,17 @@ from tests.utils.close_api import CloseAPI
 from utils.rate_limiter import RedisRateLimiter, APIRateConfig
 import pytest
 
+# Import the test lead generator functions
+import sys
+
+sys.path.insert(
+    0,
+    os.path.dirname(
+        os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+    ),
+)
+from scripts.generate_test_leads import load_test_leads
+
 
 class TestInstantlyTimeoutReproduction:
     # Configure number of leads for timeout testing (easily adjustable)
@@ -28,6 +45,9 @@ class TestInstantlyTimeoutReproduction:
 
     # New configuration for Step 2.3 rate limiting integration test
     RATE_LIMITING_TEST_LEAD_COUNT = 700
+
+    # Flag to control whether to use pre-generated leads or create new ones
+    USE_PREGENERATED_LEADS = True  # Set to False to create leads each time
 
     def setup_method(self):
         """Setup before each test."""
@@ -116,12 +136,20 @@ class TestInstantlyTimeoutReproduction:
 
     def teardown_method(self):
         """Cleanup after each test."""
-        # Delete test leads if they were created
-        for lead_id in self.test_data.get("lead_ids", []):
-            try:
-                self.close_api.delete_lead(lead_id)
-            except Exception as e:
-                print(f"Warning: Could not delete test lead {lead_id}: {e}")
+        # Only delete test leads if they were created fresh (not pre-generated)
+        if not self.USE_PREGENERATED_LEADS:
+            for lead_id in self.test_data.get("lead_ids", []):
+                try:
+                    self.close_api.delete_lead(lead_id)
+                except Exception as e:
+                    print(f"Warning: Could not delete test lead {lead_id}: {e}")
+        else:
+            # For pre-generated leads, just clear the tracking list
+            lead_count = len(self.test_data.get("lead_ids", []))
+            if lead_count > 0:
+                print(
+                    f"Skipping deletion of {lead_count} pre-generated test leads (reusable)"
+                )
 
         # Clean up rate limiter keys from Redis
         if self.redis_client:
@@ -133,18 +161,54 @@ class TestInstantlyTimeoutReproduction:
 
     def generate_test_leads(self, count=None):
         """
-        Generate the specified number of test leads in Close.
+        Generate or load the specified number of test leads.
 
         Args:
-            count (int): Number of test leads to create (default: uses TIMEOUT_TEST_LEAD_COUNT)
+            count (int): Number of test leads to create/load (default: uses TIMEOUT_TEST_LEAD_COUNT)
 
         Returns:
-            list: List of created lead data
+            list: List of lead data (either pre-generated or newly created)
         """
         if count is None:
             count = self.TIMEOUT_TEST_LEAD_COUNT
 
-        print(f"\n=== Generating {count} test leads ===")
+        # Try to use pre-generated leads if the flag is set
+        if self.USE_PREGENERATED_LEADS:
+            print(f"\n=== Loading {count} pre-generated test leads ===")
+            pregenerated_leads = load_test_leads()
+
+            if len(pregenerated_leads) >= count:
+                # Use the first 'count' leads from the pre-generated set
+                selected_leads = pregenerated_leads[:count]
+
+                # Convert to the format expected by the test (add id to lead_ids for cleanup)
+                self.test_data["lead_ids"] = [lead["id"] for lead in selected_leads]
+
+                # Convert the lead format to match what create_test_lead returns
+                formatted_leads = []
+                for lead in selected_leads:
+                    formatted_lead = {
+                        "id": lead["id"],
+                        "name": lead.get("name", "TimeoutTestLead"),
+                        "date_created": lead.get("created_at"),
+                        # Add other fields that tests might expect
+                        "contacts": [{"emails": [{"email": lead["email"]}]}],
+                    }
+                    formatted_leads.append(formatted_lead)
+
+                print(f"✓ Loaded {len(formatted_leads)} pre-generated test leads")
+                print(
+                    f"  Generated at: {pregenerated_leads[0].get('created_at', 'unknown') if pregenerated_leads else 'unknown'}"
+                )
+                return formatted_leads
+            else:
+                print(
+                    f"⚠️  Warning: Only {len(pregenerated_leads)} pre-generated leads available, need {count}"
+                )
+                print("Falling back to creating new leads...")
+
+        # Fallback to creating new leads (original logic)
+        print(f"\n=== Generating {count} new test leads ===")
         created_leads = []
         self.test_data["lead_ids"] = []
 
