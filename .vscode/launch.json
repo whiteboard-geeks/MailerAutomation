@@ -76,6 +76,24 @@
             "cwd": "${workspaceFolder}"
         },
         {
+            "name": "Instantly Add Lead Integration Test",
+            "type": "debugpy",
+            "request": "launch",
+            "module": "pytest",
+            "args": [
+                "tests/integration/instantly/test_instantly_add_lead_integration.py",
+                "--verbose",
+                "-s"
+            ],
+            "console": "integratedTerminal",
+            "justMyCode": false,
+            "env": {
+                "PYTHONPATH": "${workspaceFolder}",
+                "ENV_TYPE": "test"
+            },
+            "cwd": "${workspaceFolder}"
+        },
+        {
             "name": "Instantly Email Sent Integration Tests",
             "type": "debugpy",
             "request": "launch",
@@ -198,6 +216,15 @@
         {
             "name": "Instantly E2E Compound",
             "configurations": ["Flask", "Celery Worker", "Instantly E2E Tests"],
+            "stopAll": true
+        },
+        {
+            "name": "Instantly Add Lead Integration Compound",
+            "configurations": [
+                "Flask",
+                "Celery Worker",
+                "Instantly Add Lead Integration Test"
+            ],
             "stopAll": true
         },
         {
