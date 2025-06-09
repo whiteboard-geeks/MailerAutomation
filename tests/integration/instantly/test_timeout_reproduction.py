@@ -280,8 +280,8 @@ class TestInstantlyTimeoutReproduction:
                 response_json = response.json()
                 result["response_json"] = response_json
 
-                # Check if this is actually an error disguised as HTTP 200
-                if response.status_code == 200:
+                # Check if this is actually an error disguised as HTTP 202
+                if response.status_code == 202:
                     # Look for error indicators in the response
                     message = response_json.get("message", "")
                     instantly_result = response_json.get("instantly_result", {})
@@ -384,8 +384,8 @@ class TestInstantlyTimeoutReproduction:
                 response_json = response.json()
                 result["response_json"] = response_json
 
-                # Check if this is actually an error disguised as HTTP 200
-                if response.status_code == 200:
+                # Check if this is actually an error disguised as HTTP 202
+                if response.status_code == 202:
                     # Look for error indicators in the response
                     message = response_json.get("message", "")
                     instantly_result = response_json.get("instantly_result", {})
