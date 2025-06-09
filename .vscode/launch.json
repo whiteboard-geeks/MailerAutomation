@@ -149,6 +149,25 @@
             "cwd": "${workspaceFolder}"
         },
         {
+            "name": "Instantly Timeout Reproduction",
+            "type": "debugpy",
+            "request": "launch",
+            "module": "pytest",
+            "args": [
+                "tests/integration/instantly/test_timeout_reproduction.py",
+                "--verbose",
+                "-s"
+            ],
+            "console": "integratedTerminal",
+            "justMyCode": false,
+            "env": {
+                "PYTHONPATH": "${workspaceFolder}",
+                "ENV_TYPE": "test",
+                "REDISCLOUD_URL": "redis://localhost:6379"
+            },
+            "cwd": "${workspaceFolder}"
+        },
+        {
             "name": "All Instantly Tests",
             "type": "debugpy",
             "request": "launch",
@@ -271,6 +290,11 @@
         {
             "name": "EasyPost Full Shipment Lifecycle Tests Compound",
             "configurations": ["Flask", "EasyPost Full Shipment Lifecycle Tests"],
+            "stopAll": true
+        },
+        {
+            "name": "Instantly Timeout Reproduction Compound",
+            "configurations": ["Flask", "Celery Worker", "Instantly Timeout Reproduction"],
             "stopAll": true
         }
     ]
