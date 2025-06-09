@@ -12,7 +12,7 @@ Pure Leaky Bucket Algorithm:
 
 import time
 import redis
-from typing import Optional, Union, Dict, Any
+from typing import Optional
 import logging
 from dataclasses import dataclass
 
