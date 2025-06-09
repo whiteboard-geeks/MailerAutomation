@@ -443,7 +443,7 @@ def add_lead_to_instantly():
 
         # Get the task data
         task_data = event.get("data", {})
-        task_id = task_data.get("id")
+        close_task_id = task_data.get("id")
         task_text = task_data.get("text", "")
         lead_id = task_data.get("lead_id")
 
@@ -475,7 +475,7 @@ def add_lead_to_instantly():
 
         logger.info(
             "async_task_queued",
-            task_id=task_id,
+            close_task_id=close_task_id,
             lead_id=lead_id,
             campaign_name=campaign_name,
             celery_task_id=celery_task.id,
@@ -487,8 +487,8 @@ def add_lead_to_instantly():
                 "status": "success",
                 "message": f"Lead processing queued for Instantly campaign: {campaign_name}",
                 "lead_id": lead_id,
-                "task_id": celery_task.id,  # Return Celery task ID for tracking
-                "close_task_id": task_id,  # Keep original Close task ID for reference
+                "celery_task_id": celery_task.id,  # Celery background task ID
+                "close_task_id": close_task_id,  # Close CRM task ID
                 "campaign_name": campaign_name,
                 "processing_type": "async",
             }
@@ -639,16 +639,21 @@ def get_processed_webhooks():
     Get processed webhooks for testing and monitoring purposes.
 
     Supports filtering by multiple parameters:
-    - task_id: Filter by specific task ID
-    - route: Filter by webhook route (e.g., 'email_sent', 'reply_received')
+    - task_id: Filter by specific task ID (legacy, same as close_task_id)
+    - close_task_id: Filter by Close CRM task ID
+    - route: Filter by webhook route (e.g., 'email_sent', 'reply_received', 'add_lead')
     - email_id: Filter by email activity ID
     - lead_id: Filter by lead ID
     - lead_email: Filter by lead email
 
     Returns all webhooks that match ALL provided filter parameters.
     """
-    # Get filter parameters
+    # Get filter parameters - support both task_id (legacy) and close_task_id
     task_id = request.args.get("task_id")
+    close_task_id = request.args.get("close_task_id")
+    # Use close_task_id if provided, otherwise fall back to task_id for backward compatibility
+    lookup_task_id = close_task_id or task_id
+
     route = request.args.get("route")
     email_id = request.args.get("email_id")
     lead_id = request.args.get("lead_id")
@@ -656,8 +661,8 @@ def get_processed_webhooks():
 
     # Dictionary of filter parameters that were provided
     filters = {}
-    if task_id:
-        filters["task_id"] = task_id
+    if lookup_task_id:
+        filters["close_task_id"] = lookup_task_id
     if route:
         filters["route"] = route
     if email_id:
@@ -667,20 +672,20 @@ def get_processed_webhooks():
     if lead_email:
         filters["lead_email"] = lead_email
 
-    # If task_id is provided, check that specific task first for efficiency
-    if task_id:
-        webhook_data = _webhook_tracker.get(task_id)
+    # If close_task_id/task_id is provided, check that specific task first for efficiency
+    if lookup_task_id:
+        webhook_data = _webhook_tracker.get(lookup_task_id)
         if webhook_data:
-            # Remove task_id from filters since we already matched on it
-            if "task_id" in filters:
-                del filters["task_id"]
+            # Remove close_task_id from filters since we already matched on it
+            if "close_task_id" in filters:
+                del filters["close_task_id"]
 
             # Check if the webhook matches all other filters
             matches_all_filters = True
             for key, value in filters.items():
-                # Handle special case where task_id could be None for some webhooks
+                # Handle special case where close_task_id could be None for some webhooks
                 if (
-                    key == "task_id"
+                    key == "close_task_id"
                     and webhook_data.get(key) is None
                     and value.lower() == "none"
                 ):
@@ -697,14 +702,14 @@ def get_processed_webhooks():
                 return jsonify(
                     {
                         "status": "not_found",
-                        "message": f"Webhook for task_id: {task_id} doesn't match filters: {filter_str}",
+                        "message": f"Webhook for close_task_id: {lookup_task_id} doesn't match filters: {filter_str}",
                     }
                 ), 404
         else:
             return jsonify(
                 {
                     "status": "not_found",
-                    "message": f"No webhook data found for task_id: {task_id}",
+                    "message": f"No webhook data found for close_task_id: {lookup_task_id}",
                 }
             ), 404
 
@@ -717,7 +722,7 @@ def get_processed_webhooks():
 
     # Filter webhooks based on provided parameters
     filtered_webhooks = {}
-    for task_id, webhook in all_webhooks.items():
+    for webhook_key, webhook in all_webhooks.items():
         matches_all_filters = True
         for key, value in filters.items():
             # Special handling for None values that might be stored in the webhook data
@@ -729,7 +734,7 @@ def get_processed_webhooks():
                 break
 
         if matches_all_filters:
-            filtered_webhooks[task_id] = webhook
+            filtered_webhooks[webhook_key] = webhook
 
     # Return filtered results
     if filtered_webhooks:
@@ -865,8 +870,8 @@ def handle_instantly_email_sent():
             return log_webhook_response(401, response_data, data)
 
         # Mark the task as complete
-        task_id = matching_task["id"]
-        complete_url = f"https://api.close.com/api/v1/task/{task_id}/"
+        close_task_id = matching_task["id"]
+        complete_url = f"https://api.close.com/api/v1/task/{close_task_id}/"
         complete_data = {"is_complete": True}
         complete_response = requests.put(
             complete_url, headers=headers, json=complete_data
@@ -924,14 +929,14 @@ def handle_instantly_email_sent():
         email_response.raise_for_status()
 
         logger.info(
-            f"Successfully processed email sent webhook for lead {lead_id} and task {task_id}"
+            f"Successfully processed email sent webhook for lead {lead_id} and task {close_task_id}"
         )
 
         # Track this webhook
         webhook_data = {
             "route": "email_sent",
             "lead_id": lead_id,
-            "task_id": task_id,
+            "close_task_id": close_task_id,
             "campaign_name": campaign_name,
             "processed": True,
             "timestamp": datetime.now().isoformat(),
@@ -941,14 +946,14 @@ def handle_instantly_email_sent():
                 "from": data.get("email_account"),
             },
         }
-        _webhook_tracker.add(task_id, webhook_data)
-        logger.info(f"Recorded email sent webhook for task {task_id}")
+        _webhook_tracker.add(close_task_id, webhook_data)
+        logger.info(f"Recorded email sent webhook for task {close_task_id}")
 
         response_data = {
             "status": "success",
             "message": "Email sent webhook processed successfully",
             "lead_id": lead_id,
-            "task_id": task_id,
+            "close_task_id": close_task_id,
             "email_id": email_response.json()["id"],
         }
         return log_webhook_response(200, response_data, webhook_data)
@@ -1232,16 +1237,23 @@ Time: {datetime.now().strftime("%Y-%m-%d %H:%M:%S")}"""
 
         logger.info(f"Successfully processed reply received webhook for lead {lead_id}")
 
-        # Track this webhook
+        # Track this webhook - use lead_email + timestamp as key since no close_task_id
+        webhook_tracking_key = (
+            f"reply_{lead_email}_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+        )
         webhook_data = {
             "route": "reply_received",
             "lead_id": lead_id,
             "lead_email": lead_email,
-            "task_id": None,
+            "close_task_id": None,  # Reply webhooks don't have associated Close tasks
             "email_id": email_response.json().get("id"),
             "paused_subscriptions": paused_subscriptions,
             "notification_status": notification_status,
         }
+        _webhook_tracker.add(webhook_tracking_key, webhook_data)
+        logger.info(
+            f"Recorded reply received webhook for lead {lead_id} with key {webhook_tracking_key}"
+        )
 
         response_data = {
             "status": "success",
@@ -1249,7 +1261,7 @@ Time: {datetime.now().strftime("%Y-%m-%d %H:%M:%S")}"""
             "data": {
                 "lead_id": lead_id,
                 "email_id": email_response.json().get("id"),
-                "task_id": None,
+                "close_task_id": None,  # Reply webhooks don't have associated Close tasks
                 "paused_subscriptions": paused_subscriptions,
                 "notification_status": notification_status,
             },
@@ -1321,14 +1333,14 @@ def process_lead_batch_task(payload_data):
         # Set up structured logging for this task
         logger.info(
             "process_lead_batch_task_started",
-            task_id=process_lead_batch_task.request.id,
+            celery_task_id=process_lead_batch_task.request.id,
             payload_keys=list(payload_data.keys()) if payload_data else [],
         )
 
         # Extract event data from payload
         event = payload_data.get("event", {})
         task_data = event.get("data", {})
-        task_id = task_data.get("id")
+        close_task_id = task_data.get("id")
         task_text = task_data.get("text", "")
         lead_id = task_data.get("lead_id")
 
@@ -1341,7 +1353,7 @@ def process_lead_batch_task(payload_data):
 
         logger.info(
             "processing_lead_batch",
-            task_id=task_id,
+            close_task_id=close_task_id,
             lead_id=lead_id,
             campaign_name=campaign_name,
             celery_task_id=process_lead_batch_task.request.id,
@@ -1444,7 +1456,7 @@ Error details: {error_msg}
         webhook_data = {
             "route": "add_lead",
             "lead_id": lead_id,
-            "task_id": task_id,
+            "close_task_id": close_task_id,
             "campaign_name": campaign_name,
             "campaign_id": campaign_id,
             "processed": True,
@@ -1454,12 +1466,12 @@ Error details: {error_msg}
             "processing_type": "async",
         }
 
-        # Track in Redis (with expiration)
-        _webhook_tracker.add(task_id, webhook_data)
+        # Track in Redis (with expiration) - use close_task_id as the key
+        _webhook_tracker.add(close_task_id, webhook_data)
 
         logger.info(
             "process_lead_batch_task_completed",
-            task_id=task_id,
+            close_task_id=close_task_id,
             lead_id=lead_id,
             campaign_name=campaign_name,
             celery_task_id=process_lead_batch_task.request.id,
@@ -1470,7 +1482,7 @@ Error details: {error_msg}
             "status": "success",
             "message": f"Lead added to Instantly campaign: {campaign_name}",
             "lead_id": lead_id,
-            "task_id": task_id,
+            "close_task_id": close_task_id,
             "campaign_name": campaign_name,
             "campaign_id": campaign_id,
             "instantly_result": instantly_result,

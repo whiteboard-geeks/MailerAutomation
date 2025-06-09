@@ -81,10 +81,10 @@ class TestInstantlyAddLeadIntegration:
         if self.test_data.get("lead_id"):
             self.close_api.delete_lead(self.test_data["lead_id"])
 
-    def wait_for_webhook_processed(self, task_id, route=None):
+    def wait_for_webhook_processed(self, close_task_id, route=None):
         """Wait for webhook to be processed by checking the webhook tracker API."""
         webhook_endpoint = (
-            f"{self.base_url}/instantly/webhooks/status?task_id={task_id}"
+            f"{self.base_url}/instantly/webhooks/status?close_task_id={close_task_id}"
         )
         if route:
             webhook_endpoint += f"&route={route}"
@@ -102,9 +102,9 @@ class TestInstantlyAddLeadIntegration:
                     webhook_data = response.json().get("data", {})
                     print(f"Webhook data: {webhook_data}")
                     if webhook_data:
-                        # Add task_id to webhook data if not present
-                        if "task_id" not in webhook_data:
-                            webhook_data["task_id"] = task_id
+                        # Add close_task_id to webhook data if not present
+                        if "close_task_id" not in webhook_data:
+                            webhook_data["close_task_id"] = close_task_id
                         return webhook_data
                 elif response.status_code == 404:
                     print(f"404 response content: {response.json()}")
@@ -129,10 +129,10 @@ class TestInstantlyAddLeadIntegration:
         self.test_data["lead_id"] = lead_data["id"]
         print(f"Test lead created with ID: {lead_data['id']}")
 
-        # Update the mock payload with the actual lead ID and task ID
-        task_id = self.mock_payload["event"]["data"]["id"]
+        # Update the mock payload with the actual lead ID and Close task ID
+        close_task_id = self.mock_payload["event"]["data"]["id"]
         self.mock_payload["event"]["data"]["lead_id"] = lead_data["id"]
-        self.test_data["task_id"] = task_id
+        self.test_data["close_task_id"] = close_task_id
 
         # Send the webhook to our endpoint
         print("Sending webhook to endpoint...")
@@ -145,13 +145,15 @@ class TestInstantlyAddLeadIntegration:
 
         # Wait for webhook to be processed
         print("Waiting for webhook to be processed...")
-        webhook_data = self.wait_for_webhook_processed(task_id, "add_lead")
+        webhook_data = self.wait_for_webhook_processed(close_task_id, "add_lead")
 
         # Verify webhook data
         assert webhook_data is not None, "Webhook was not processed"
         assert webhook_data.get("route") == "add_lead", "Webhook route is not add_lead"
         assert webhook_data.get("lead_id") == lead_data["id"], "Lead ID doesn't match"
-        assert webhook_data.get("task_id") == task_id, "Task ID doesn't match"
+        assert (
+            webhook_data.get("close_task_id") == close_task_id
+        ), "Close task ID doesn't match"
         assert (
             webhook_data.get("processed") is True
         ), "Webhook wasn't marked as processed"
@@ -161,5 +163,10 @@ class TestInstantlyAddLeadIntegration:
         assert (
             webhook_data.get("instantly_result", {}).get("status") == "success"
         ), "Instantly API call failed"
+
+        # Verify we have a celery_task_id indicating async processing
+        assert (
+            webhook_data.get("celery_task_id") is not None
+        ), "Celery task ID should be present for async processing"
 
         print("✅ All assertions passed!")
