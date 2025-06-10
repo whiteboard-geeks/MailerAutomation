@@ -80,8 +80,9 @@ def client():
 @pytest.mark.webhook_failures
 def test_campaign_not_found_sends_real_email(client):
     """
-    Integration test for campaign not found error.
-    This will actually send a real email notification.
+    Integration test for campaign not found error with async processing.
+    This will queue the task for background processing (202 status), and
+    the background task will send a real email notification when it fails.
     """
     print("\n--- Testing campaign not found (real email will be sent) ---")
 
@@ -112,15 +113,18 @@ def test_campaign_not_found_sends_real_email(client):
         response_data = response.json
         print(f"Response body: {json.dumps(response_data, indent=2)}")
 
-        # Assert the response has the expected format (200 status code with success status)
+        # Assert the response has the expected format (202 status code for async processing)
         assert (
-            response.status_code == 200
-        ), f"Expected status code 200, got {response.status_code}"
+            response.status_code == 202
+        ), f"Expected status code 202, got {response.status_code}"
         assert (
             response_data.get("status") == "success"
         ), "Response status should be 'success'"
+        assert (
+            response_data.get("processing_type") == "async"
+        ), "Response should indicate async processing"
 
-        print("\n✅ Test passed - Webhook returned 200 with 'success' status")
+        print("\n✅ Test passed - Webhook returned 202 with async processing queued")
         print("Check your email for the notification about campaign not found.")
 
         # Print verification prompt
@@ -129,14 +133,16 @@ def test_campaign_not_found_sends_real_email(client):
             "1. You received an email with subject 'Instantly Campaign Not Found: Campaign That Doesn't Exist'"
         )
         print("2. The email contains error details")
-        print("3. The JSON response has status 'success' despite the error")
+        print("3. The JSON response has status 'success' and processing_type 'async'")
+        print("4. The task was queued for background processing (202 status)")
 
 
 @pytest.mark.webhook_failures
 def test_lead_not_found_sends_real_email(client):
     """
-    Integration test for lead not found error.
-    This will actually send a real email notification.
+    Integration test for lead not found error with async processing.
+    This will queue the task for background processing (202 status), and
+    the background task will send a real email notification when it fails.
     """
     print("\n--- Testing lead not found (real email will be sent) ---")
 
@@ -166,29 +172,38 @@ def test_lead_not_found_sends_real_email(client):
             response_data = response.json
             print(f"Response body: {json.dumps(response_data, indent=2)}")
 
-            # Assert the response has the expected format
+            # Assert the response has the expected format (202 for async processing)
             assert (
-                response.status_code == 200
-            ), f"Expected status code 200, got {response.status_code}"
+                response.status_code == 202
+            ), f"Expected status code 202, got {response.status_code}"
             assert (
                 response_data.get("status") == "success"
             ), "Response status should be 'success'"
+            assert (
+                response_data.get("processing_type") == "async"
+            ), "Response should indicate async processing"
 
-            print("\n✅ Test passed - Webhook returned 200 with 'success' status")
+            print(
+                "\n✅ Test passed - Webhook returned 202 with async processing queued"
+            )
             print("Check your email for the notification about lead not found.")
 
             # Print verification prompt
             print("\nVerify that:")
             print("1. You received an email with subject 'Close Lead Details Error'")
             print("2. The email contains error details")
-            print("3. The JSON response has status 'success' despite the error")
+            print(
+                "3. The JSON response has status 'success' and processing_type 'async'"
+            )
+            print("4. The task was queued for background processing (202 status)")
 
 
 @pytest.mark.webhook_failures
 def test_api_error_sends_real_email(client):
     """
-    Integration test for Instantly API error.
-    This will actually send a real email notification.
+    Integration test for Instantly API error with async processing.
+    This will queue the task for background processing (202 status), and
+    the background task will send a real email notification when it fails.
     """
     print("\n--- Testing Instantly API error (real email will be sent) ---")
 
@@ -231,22 +246,30 @@ def test_api_error_sends_real_email(client):
                 response_data = response.json
                 print(f"Response body: {json.dumps(response_data, indent=2)}")
 
-                # Assert the response has the expected format
+                # Assert the response has the expected format (202 for async processing)
                 assert (
-                    response.status_code == 200
-                ), f"Expected status code 200, got {response.status_code}"
+                    response.status_code == 202
+                ), f"Expected status code 202, got {response.status_code}"
                 assert (
                     response_data.get("status") == "success"
                 ), "Response status should be 'success'"
+                assert (
+                    response_data.get("processing_type") == "async"
+                ), "Response should indicate async processing"
 
-                print("\n✅ Test passed - Webhook returned 200 with 'success' status")
+                print(
+                    "\n✅ Test passed - Webhook returned 202 with async processing queued"
+                )
                 print("Check your email for the notification about API error.")
 
                 # Print verification prompt
                 print("\nVerify that:")
                 print("1. You received an email with subject 'Instantly API Error'")
                 print("2. The email contains error details")
-                print("3. The JSON response has status 'success' despite the error")
+                print(
+                    "3. The JSON response has status 'success' and processing_type 'async'"
+                )
+                print("4. The task was queued for background processing (202 status)")
 
 
 if __name__ == "__main__":
