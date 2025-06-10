@@ -599,36 +599,26 @@ class TestInstantlyAsyncProcessing:
         start_time = time.time()
         completed_tasks = 0
         failed_tasks = 0
+        counted_task_ids = set()  # Track which tasks we've already counted
 
         while (completed_tasks + failed_tasks) < len(task_ids) and (
             time.time() - start_time
         ) < self.BACKGROUND_PROCESSING_TIMEOUT:
             for task_id in task_ids:
+                if task_id in counted_task_ids:
+                    continue  # Skip tasks we've already counted
+
                 result = celery.AsyncResult(task_id)
 
                 if result.ready():
                     if result.successful():
-                        if task_id not in [
-                            t
-                            for t in task_ids
-                            if hasattr(celery.AsyncResult(t), "_counted_success")
-                        ]:
-                            completed_tasks += 1
-                            setattr(
-                                celery.AsyncResult(task_id), "_counted_success", True
-                            )
-                            print(f"✅ Task completed: {task_id}")
+                        completed_tasks += 1
+                        counted_task_ids.add(task_id)
+                        print(f"✅ Task completed: {task_id}")
                     else:
-                        if task_id not in [
-                            t
-                            for t in task_ids
-                            if hasattr(celery.AsyncResult(t), "_counted_failure")
-                        ]:
-                            failed_tasks += 1
-                            setattr(
-                                celery.AsyncResult(task_id), "_counted_failure", True
-                            )
-                            print(f"❌ Task failed: {task_id} - {result.result}")
+                        failed_tasks += 1
+                        counted_task_ids.add(task_id)
+                        print(f"❌ Task failed: {task_id} - {result.result}")
 
             time.sleep(1)  # Check every second
 
