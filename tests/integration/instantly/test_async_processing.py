@@ -465,7 +465,7 @@ class TestInstantlyAsyncProcessing:
 
                 # For async implementation, we expect:
                 # 1. Immediate success response (status 200/202)
-                # 2. Response should include task_id for tracking
+                # 2. Response should include celery_task_id for tracking
                 # 3. Response time should be very fast (< 5 seconds)
 
                 if response.status_code in [200, 202]:
@@ -741,7 +741,7 @@ class TestInstantlyAsyncProcessing:
                     "status_code": response.status_code,
                     "response_time": response_time,
                     "response_data": response.json()
-                    if response.status_code == 200
+                    if response.status_code in [200, 202]
                     else None,
                 }
             )
@@ -762,9 +762,12 @@ class TestInstantlyAsyncProcessing:
         # All should return success with task IDs (for async processing)
         task_ids_received = 0
         for response in webhook_responses:
-            if response["response_data"] and "task_id" in response["response_data"]:
+            if (
+                response["response_data"]
+                and "celery_task_id" in response["response_data"]
+            ):
                 task_ids_received += 1
-                self.task_ids.append(response["response_data"]["task_id"])
+                self.task_ids.append(response["response_data"]["celery_task_id"])
 
         print(
             f"Quick responses: {len([r for r in webhook_responses if r['response_time'] < self.IMMEDIATE_RESPONSE_TIMEOUT])}/{len(webhook_responses)}"
