@@ -123,18 +123,39 @@ class TestInstantlyAddLeadIntegration:
         """Test successful flow of adding a lead to an Instantly campaign."""
         print("\n=== STARTING INTEGRATION TEST: Instantly Add Lead Success ===")
 
-        # Create a test lead in Close
+        # Stage 1: Create a test lead in Close
         print("Creating test lead in Close...")
         lead_data = self.close_api.create_test_lead(include_date_location=True)
         self.test_data["lead_id"] = lead_data["id"]
         print(f"Test lead created with ID: {lead_data['id']}")
 
-        # Update the mock payload with the actual lead ID and Close task ID
+        # Stage 1 Assertions: Verify lead creation
+        assert lead_data is not None, "Lead data should not be None"
+        assert "id" in lead_data, "Lead should have an ID"
+        assert lead_data["id"].startswith("lead_"), "Lead ID should have correct format"
+        print("✅ Stage 1: Lead creation verified")
+
+        # Stage 2: Update the mock payload with the actual lead ID and Close task ID
         close_task_id = self.mock_payload["event"]["data"]["id"]
         self.mock_payload["event"]["data"]["lead_id"] = lead_data["id"]
         self.test_data["close_task_id"] = close_task_id
 
-        # Send the webhook to our endpoint
+        # Stage 2 Assertions: Verify payload preparation
+        assert (
+            self.mock_payload["event"]["data"]["lead_id"] == lead_data["id"]
+        ), "Payload should contain correct lead ID"
+        assert close_task_id.startswith(
+            "task_"
+        ), "Close task ID should have correct format"
+        assert (
+            self.mock_payload["event"]["action"] == "created"
+        ), "Event action should be 'created'"
+        assert (
+            "Test20250227" in self.mock_payload["event"]["data"]["text"]
+        ), "Campaign name should be in task text"
+        print("✅ Stage 2: Payload preparation verified")
+
+        # Stage 3: Send the webhook to our endpoint
         print("Sending webhook to endpoint...")
         response = requests.post(
             f"{self.base_url}/instantly/add_lead",
@@ -143,12 +164,31 @@ class TestInstantlyAddLeadIntegration:
         print(f"Webhook response status: {response.status_code}")
         print(f"Webhook response: {response.json()}")
 
-        # Wait for webhook to be processed
+        # Stage 3 Assertions: Verify webhook submission
+        assert response.status_code in [
+            200,
+            202,
+        ], f"Webhook should return 200 or 202, got {response.status_code}"
+        response_data = response.json()
+        assert "status" in response_data, "Response should contain status"
+        assert response_data["status"] in [
+            "success",
+            "queued",
+        ], "Status should be success or queued"
+        print("✅ Stage 3: Webhook submission verified")
+
+        # Stage 4: Wait for webhook to be processed
         print("Waiting for webhook to be processed...")
         webhook_data = self.wait_for_webhook_processed(close_task_id, "add_lead")
 
-        # Verify webhook data
-        assert webhook_data is not None, "Webhook was not processed"
+        # Stage 4 Assertions: Verify webhook processing initiation
+        assert (
+            webhook_data is not None
+        ), "Webhook data should not be None after processing"
+        assert isinstance(webhook_data, dict), "Webhook data should be a dictionary"
+        print("✅ Stage 4: Webhook processing initiation verified")
+
+        # Stage 5: Final verification of webhook data
         assert webhook_data.get("route") == "add_lead", "Webhook route is not add_lead"
         assert webhook_data.get("lead_id") == lead_data["id"], "Lead ID doesn't match"
         assert (
@@ -160,13 +200,22 @@ class TestInstantlyAddLeadIntegration:
         assert (
             webhook_data.get("campaign_name") == "Test20250227"
         ), "Campaign name doesn't match"
-        assert (
-            webhook_data.get("instantly_result", {}).get("status") == "success"
-        ), "Instantly API call failed"
 
-        # Verify we have a celery_task_id indicating async processing
+        # Stage 5a: Verify Instantly API result
+        instantly_result = webhook_data.get("instantly_result", {})
+        assert instantly_result, "Instantly result should be present"
+        assert (
+            instantly_result.get("status") == "success"
+        ), f"Instantly API call failed: {instantly_result}"
+        print("✅ Stage 5a: Instantly API result verified")
+
+        # Stage 5b: Verify async processing
         assert (
             webhook_data.get("celery_task_id") is not None
         ), "Celery task ID should be present for async processing"
+        celery_task_id = webhook_data.get("celery_task_id")
+        assert isinstance(celery_task_id, str), "Celery task ID should be a string"
+        assert len(celery_task_id) > 0, "Celery task ID should not be empty"
+        print("✅ Stage 5b: Async processing verified")
 
-        print("✅ All assertions passed!")
+        print("✅ Stage 5: Final verification completed - All assertions passed!")
