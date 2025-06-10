@@ -236,8 +236,10 @@ def get_close_encoded_key():
 
 def send_email(subject, body, **kwargs):
     """Send email notification through Gmail."""
-    # Access the send_email function from the main app
-    return current_app.send_email(subject, body, **kwargs)
+    # Import directly to avoid Flask application context issues in Celery tasks
+    from app import send_email as app_send_email
+
+    return app_send_email(subject, body, **kwargs)
 
 
 def get_instantly_campaign_name(task_text):
@@ -528,7 +530,10 @@ def split_name(full_name):
     # Split the name by spaces
     parts = full_name.strip().split()
 
-    if len(parts) == 1:
+    if len(parts) == 0:
+        # Empty string after stripping
+        return "", ""
+    elif len(parts) == 1:
         # Only one word, assume it's the first name
         return parts[0], ""
     else:
@@ -1349,7 +1354,18 @@ def process_lead_batch_task(payload_data):
         if not campaign_name:
             error_msg = f"Could not extract campaign name from task: {task_text}"
             logger.warning("campaign_name_extraction_failed", task_text=task_text)
-            return {"status": "error", "message": error_msg}
+
+            # Send error email notification
+            send_email(
+                subject="Instantly Campaign Name Extraction Error",
+                body=f"Error in async processing: {error_msg}\n\nPayload: {payload_data}\nCelery Task ID: {process_lead_batch_task.request.id}",
+            )
+
+            return {
+                "status": "error",
+                "message": error_msg,
+                "celery_task_id": process_lead_batch_task.request.id,
+            }
 
         logger.info(
             "processing_lead_batch",
