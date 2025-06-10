@@ -14,7 +14,7 @@ from redis import Redis
 import structlog
 import uuid
 
-from flask import Blueprint, request, jsonify, current_app, g
+from flask import Blueprint, request, jsonify, g
 
 from close_utils import (
     get_lead_by_id,
@@ -1354,6 +1354,29 @@ def process_lead_batch_task(payload_data):
     Returns:
         dict: Processing result with status and details
     """
+    import time
+
+    # Start timing the entire task
+    task_start_time = time.time()
+    step_start_time = task_start_time
+
+    def log_timing(step_name, **extra_data):
+        """Helper function to log timing for each step."""
+        nonlocal step_start_time
+        current_time = time.time()
+        step_duration = current_time - step_start_time
+        total_duration = current_time - task_start_time
+
+        logger.info(
+            f"timing_{step_name}",
+            step_duration_seconds=round(step_duration, 3),
+            total_duration_seconds=round(total_duration, 3),
+            celery_task_id=process_lead_batch_task.request.id,
+            **extra_data,
+        )
+        step_start_time = current_time
+        return step_duration
+
     try:
         # Set up structured logging for this task
         logger.info(
@@ -1361,6 +1384,7 @@ def process_lead_batch_task(payload_data):
             celery_task_id=process_lead_batch_task.request.id,
             payload_keys=list(payload_data.keys()) if payload_data else [],
         )
+        log_timing("task_initialization")
 
         # Extract event data from payload
         event = payload_data.get("event", {})
@@ -1368,9 +1392,11 @@ def process_lead_batch_task(payload_data):
         close_task_id = task_data.get("id")
         task_text = task_data.get("text", "")
         lead_id = task_data.get("lead_id")
+        log_timing("data_extraction", close_task_id=close_task_id, lead_id=lead_id)
 
         # Extract campaign name
         campaign_name = get_instantly_campaign_name(task_text)
+        log_timing("campaign_name_extraction", campaign_name=campaign_name)
         if not campaign_name:
             error_msg = f"Could not extract campaign name from task: {task_text}"
             logger.warning("campaign_name_extraction_failed", task_text=task_text)
@@ -1408,6 +1434,11 @@ def process_lead_batch_task(payload_data):
 
         # Check if campaign exists
         campaign_check = campaign_exists(campaign_name)
+        log_timing(
+            "campaign_exists_check",
+            campaign_name=campaign_name,
+            exists=campaign_check.get("exists"),
+        )
         if not campaign_check.get("exists"):
             error_msg = f"Campaign '{campaign_name}' does not exist in Instantly"
             logger.warning("campaign_not_found", campaign_name=campaign_name)
@@ -1449,6 +1480,7 @@ Error details: {error_msg}
 
         # Get lead details from Close
         lead_details = get_lead_by_id(lead_id)
+        log_timing("close_api_get_lead", lead_id=lead_id, success=bool(lead_details))
         if not lead_details:
             error_msg = f"Could not retrieve lead details for lead ID: {lead_id}"
             logger.warning("lead_details_not_found", lead_id=lead_id)
@@ -1483,6 +1515,7 @@ Error details: {error_msg}
         if not email:
             error_msg = f"No email found for lead ID: {lead_id}"
             logger.warning("lead_email_not_found", lead_id=lead_id)
+            log_timing("lead_data_processing_error", error="no_email_found")
 
             # Update webhook tracker with error
             existing_data = _webhook_tracker.get(close_task_id) or {}
@@ -1505,6 +1538,12 @@ Error details: {error_msg}
         date_location = lead_details.get(
             "custom.cf_DTgmXXPozUH3707H1MYu2PhhDznJjWbtmDcb7zme5a9", ""
         )
+        log_timing(
+            "lead_data_processing",
+            email=email,
+            has_company=bool(company_name),
+            has_date_location=bool(date_location),
+        )
 
         logger.info(
             "lead_data_extracted",
@@ -1525,6 +1564,7 @@ Error details: {error_msg}
             company_name=company_name,
             date_location=date_location,
         )
+        log_timing("instantly_api_call", result_status=instantly_result.get("status"))
 
         if instantly_result.get("status") == "error":
             error_msg = (
@@ -1563,6 +1603,10 @@ Error details: {error_msg}
 
         # Update tracker in Redis (with expiration) - use close_task_id as the key
         _webhook_tracker.add(close_task_id, webhook_data)
+        log_timing("webhook_tracker_update")
+
+        # Log final completion timing
+        log_timing("task_completion")
 
         logger.info(
             "process_lead_batch_task_completed",
@@ -1571,6 +1615,7 @@ Error details: {error_msg}
             campaign_name=campaign_name,
             celery_task_id=process_lead_batch_task.request.id,
             instantly_result_status=instantly_result.get("status"),
+            total_duration_seconds=round(time.time() - task_start_time, 3),
         )
 
         return {
@@ -1585,6 +1630,18 @@ Error details: {error_msg}
         }
 
     except Exception as e:
+        # Log timing for error case
+        try:
+            error_duration = time.time() - task_start_time
+            logger.error(
+                "timing_task_error",
+                total_duration_seconds=round(error_duration, 3),
+                celery_task_id=process_lead_batch_task.request.id,
+                error=str(e),
+            )
+        except Exception:
+            pass  # Don't let timing logging cause additional errors
+
         # Capture the traceback
         tb = traceback.format_exc()
         error_message = f"Error in process_lead_batch_task: {str(e)}\nTraceback: {tb}"
