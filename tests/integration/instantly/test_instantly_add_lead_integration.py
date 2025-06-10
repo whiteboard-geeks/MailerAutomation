@@ -88,7 +88,38 @@ class TestInstantlyAddLeadIntegration:
         if self.test_data.get("lead_id"):
             self.close_api.delete_lead(self.test_data["lead_id"])
 
-    def wait_for_webhook_processed(self, close_task_id, route=None):
+    def check_webhook_immediately_available(self, close_task_id, route=None):
+        """Check if webhook entry is immediately available (without waiting for completion)."""
+        webhook_endpoint = (
+            f"{self.base_url}/instantly/webhooks/status?close_task_id={close_task_id}"
+        )
+        if route:
+            webhook_endpoint += f"&route={route}"
+
+        print(f"Checking immediate webhook availability: {webhook_endpoint}")
+        try:
+            response = requests.get(webhook_endpoint)
+            print(f"Immediate check response status: {response.status_code}")
+            if response.status_code == 200:
+                webhook_data = response.json().get("data", {})
+                print(f"Immediate webhook data: {webhook_data}")
+                if webhook_data:
+                    # Add close_task_id to webhook data if not present
+                    if "close_task_id" not in webhook_data:
+                        webhook_data["close_task_id"] = close_task_id
+                    return webhook_data
+            elif response.status_code == 404:
+                print(f"404 response content: {response.json()}")
+                return None
+        except Exception as e:
+            print(f"Error querying webhook API immediately: {e}")
+            return None
+
+        return None
+
+    def wait_for_webhook_processed(
+        self, close_task_id, route=None, wait_for_completion=True
+    ):
         """Wait for webhook to be processed by checking the webhook tracker API."""
         webhook_endpoint = (
             f"{self.base_url}/instantly/webhooks/status?close_task_id={close_task_id}"
@@ -112,7 +143,18 @@ class TestInstantlyAddLeadIntegration:
                         # Add close_task_id to webhook data if not present
                         if "close_task_id" not in webhook_data:
                             webhook_data["close_task_id"] = close_task_id
-                        return webhook_data
+
+                        # If we don't need to wait for completion, return immediately
+                        if not wait_for_completion:
+                            return webhook_data
+
+                        # If we need completion, check if it's processed
+                        if webhook_data.get("processed") is True:
+                            return webhook_data
+
+                        print(
+                            f"Webhook found but not yet processed. Status: {webhook_data.get('status', 'unknown')}"
+                        )
                 elif response.status_code == 404:
                     print(f"404 response content: {response.json()}")
             except Exception as e:
@@ -122,8 +164,9 @@ class TestInstantlyAddLeadIntegration:
             elapsed_time = time.time() - start_time
             print(f"Elapsed time: {int(elapsed_time)} seconds")
 
+        status_description = "completed" if wait_for_completion else "found"
         raise TimeoutError(
-            f"Timed out waiting for webhook after {int(elapsed_time)} seconds"
+            f"Timed out waiting for webhook to be {status_description} after {int(elapsed_time)} seconds"
         )
 
     def test_instantly_add_lead_success(self):
@@ -183,6 +226,34 @@ class TestInstantlyAddLeadIntegration:
             "queued",
         ], "Status should be success or queued"
         print("✅ Stage 3: Webhook submission verified")
+
+        # Stage 3.5: Check immediate webhook availability (should be findable right away)
+        print("Checking immediate webhook availability...")
+        immediate_webhook_data = self.check_webhook_immediately_available(
+            close_task_id, "add_lead"
+        )
+
+        # Stage 3.5 Assertions: Verify webhook is immediately findable
+        assert (
+            immediate_webhook_data is not None
+        ), "Webhook should be immediately findable after submission"
+        assert (
+            immediate_webhook_data.get("route") == "add_lead"
+        ), "Immediate webhook route should be add_lead"
+        assert (
+            immediate_webhook_data.get("lead_id") == lead_data["id"]
+        ), "Immediate webhook lead_id should match"
+        assert (
+            immediate_webhook_data.get("close_task_id") == close_task_id
+        ), "Immediate webhook close_task_id should match"
+        assert (
+            immediate_webhook_data.get("campaign_name") == "Test20250227"
+        ), "Immediate webhook campaign_name should match"
+        assert immediate_webhook_data.get("status") in [
+            "queued",
+            "processing",
+        ], "Initial status should be queued or processing"
+        print("✅ Stage 3.5: Immediate webhook availability verified")
 
         # Stage 4: Wait for webhook to be processed
         print("Waiting for webhook to be processed...")

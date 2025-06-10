@@ -472,8 +472,28 @@ def add_lead_to_instantly():
             f"Queueing async processing for Instantly campaign: {campaign_name} for lead: {lead_id}"
         )
 
+        # Create initial webhook tracker entry immediately for monitoring
+        initial_webhook_data = {
+            "route": "add_lead",
+            "lead_id": lead_id,
+            "close_task_id": close_task_id,
+            "campaign_name": campaign_name,
+            "processed": False,  # Will be updated to True when Celery task completes
+            "timestamp": datetime.now().isoformat(),
+            "processing_type": "async",
+            "status": "queued",  # Initial status
+        }
+        _webhook_tracker.add(close_task_id, initial_webhook_data)
+
+        logger.info(f"Initial webhook tracker entry created for task {close_task_id}")
+
         # Queue the Celery task for async processing immediately - no validation
         celery_task = process_lead_batch_task.delay(data)
+
+        # Update the webhook tracker with the Celery task ID
+        initial_webhook_data["celery_task_id"] = celery_task.id
+        initial_webhook_data["status"] = "processing"
+        _webhook_tracker.add(close_task_id, initial_webhook_data)
 
         logger.info(
             "async_task_queued",
@@ -1355,6 +1375,17 @@ def process_lead_batch_task(payload_data):
             error_msg = f"Could not extract campaign name from task: {task_text}"
             logger.warning("campaign_name_extraction_failed", task_text=task_text)
 
+            # Update webhook tracker with error
+            existing_data = _webhook_tracker.get(close_task_id) or {}
+            error_webhook_data = {
+                **existing_data,
+                "processed": True,
+                "status": "error",
+                "error": error_msg,
+                "completion_timestamp": datetime.now().isoformat(),
+            }
+            _webhook_tracker.add(close_task_id, error_webhook_data)
+
             # Send error email notification
             send_email(
                 subject="Instantly Campaign Name Extraction Error",
@@ -1380,6 +1411,17 @@ def process_lead_batch_task(payload_data):
         if not campaign_check.get("exists"):
             error_msg = f"Campaign '{campaign_name}' does not exist in Instantly"
             logger.warning("campaign_not_found", campaign_name=campaign_name)
+
+            # Update webhook tracker with error
+            existing_data = _webhook_tracker.get(close_task_id) or {}
+            error_webhook_data = {
+                **existing_data,
+                "processed": True,
+                "status": "error",
+                "error": error_msg,
+                "completion_timestamp": datetime.now().isoformat(),
+            }
+            _webhook_tracker.add(close_task_id, error_webhook_data)
 
             # Send error email notification
             close_lead_url = f"https://app.close.com/lead/{lead_id}/"
@@ -1410,6 +1452,18 @@ Error details: {error_msg}
         if not lead_details:
             error_msg = f"Could not retrieve lead details for lead ID: {lead_id}"
             logger.warning("lead_details_not_found", lead_id=lead_id)
+
+            # Update webhook tracker with error
+            existing_data = _webhook_tracker.get(close_task_id) or {}
+            error_webhook_data = {
+                **existing_data,
+                "processed": True,
+                "status": "error",
+                "error": error_msg,
+                "completion_timestamp": datetime.now().isoformat(),
+            }
+            _webhook_tracker.add(close_task_id, error_webhook_data)
+
             send_email(subject="Close Lead Details Error (Async)", body=error_msg)
             return {"status": "error", "message": error_msg}
 
@@ -1429,6 +1483,18 @@ Error details: {error_msg}
         if not email:
             error_msg = f"No email found for lead ID: {lead_id}"
             logger.warning("lead_email_not_found", lead_id=lead_id)
+
+            # Update webhook tracker with error
+            existing_data = _webhook_tracker.get(close_task_id) or {}
+            error_webhook_data = {
+                **existing_data,
+                "processed": True,
+                "status": "error",
+                "error": error_msg,
+                "completion_timestamp": datetime.now().isoformat(),
+            }
+            _webhook_tracker.add(close_task_id, error_webhook_data)
+
             send_email(subject="Close Lead Email Error (Async)", body=error_msg)
             return {"status": "error", "message": error_msg}
 
@@ -1465,24 +1531,37 @@ Error details: {error_msg}
                 f"Failed to add lead to Instantly: {instantly_result.get('message')}"
             )
             logger.error("instantly_api_error", error=error_msg)
+
+            # Update webhook tracker with error
+            existing_data = _webhook_tracker.get(close_task_id) or {}
+            error_webhook_data = {
+                **existing_data,
+                "processed": True,
+                "status": "error",
+                "error": error_msg,
+                "completion_timestamp": datetime.now().isoformat(),
+                "instantly_result": instantly_result,
+            }
+            _webhook_tracker.add(close_task_id, error_webhook_data)
+
             send_email(subject="Instantly API Error (Async)", body=error_msg)
             return {"status": "error", "message": error_msg}
 
-        # Track the successful webhook processing
+        # Update the existing webhook tracker entry with completion data
+        # Get existing entry first to preserve initial data
+        existing_data = _webhook_tracker.get(close_task_id) or {}
+
+        # Update with completion data
         webhook_data = {
-            "route": "add_lead",
-            "lead_id": lead_id,
-            "close_task_id": close_task_id,
-            "campaign_name": campaign_name,
+            **existing_data,  # Preserve existing data
             "campaign_id": campaign_id,
             "processed": True,
-            "timestamp": datetime.now().isoformat(),
+            "completion_timestamp": datetime.now().isoformat(),
             "instantly_result": instantly_result,
-            "celery_task_id": process_lead_batch_task.request.id,
-            "processing_type": "async",
+            "status": "completed",
         }
 
-        # Track in Redis (with expiration) - use close_task_id as the key
+        # Update tracker in Redis (with expiration) - use close_task_id as the key
         _webhook_tracker.add(close_task_id, webhook_data)
 
         logger.info(
@@ -1509,6 +1588,28 @@ Error details: {error_msg}
         # Capture the traceback
         tb = traceback.format_exc()
         error_message = f"Error in process_lead_batch_task: {str(e)}\nTraceback: {tb}"
+
+        # Extract close_task_id for error tracking
+        try:
+            event = payload_data.get("event", {}) if payload_data else {}
+            task_data = event.get("data", {})
+            close_task_id = task_data.get("id")
+
+            if close_task_id:
+                # Update webhook tracker with error
+                existing_data = _webhook_tracker.get(close_task_id) or {}
+                error_webhook_data = {
+                    **existing_data,
+                    "processed": True,
+                    "status": "error",
+                    "error": str(e),
+                    "completion_timestamp": datetime.now().isoformat(),
+                }
+                _webhook_tracker.add(close_task_id, error_webhook_data)
+        except Exception as tracker_error:
+            logger.warning(
+                f"Failed to update webhook tracker for error case: {tracker_error}"
+            )
 
         logger.error(
             "process_lead_batch_task_error",
