@@ -838,7 +838,10 @@ class TestInstantlyAsyncProcessing:
 
         print(f"Missing campaign response: {response.status_code}")
 
-        # Should handle gracefully
-        assert response.status_code == 200, "Should handle missing campaign gracefully"
+        # Should handle gracefully (accept both 200 and 202 for async processing)
+        assert response.status_code in [
+            200,
+            202,
+        ], "Should handle missing campaign gracefully"
 
         print("✅ Error handling tests completed")
