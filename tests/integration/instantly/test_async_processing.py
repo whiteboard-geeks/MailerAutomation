@@ -679,20 +679,27 @@ class TestInstantlyAsyncProcessing:
 
         # Test rate limiter
         print("1. Testing rate limiter...")
+        test_key = f"integration_test_{self.timestamp}"
         for i in range(3):
-            allowed = self.rate_limiter.acquire()
+            allowed = self.rate_limiter.acquire_token(test_key)
             print(
                 f"   Rate limiter request {i+1}: {'✅ Allowed' if allowed else '❌ Rate limited'}"
             )
 
         # Test circuit breaker
         print("2. Testing circuit breaker...")
-        cb_result = self.circuit_breaker.call(
-            lambda: {"status": "success", "test": True}
-        )
-        print(
-            f"   Circuit breaker test call: {'✅ Success' if cb_result.get('status') == 'success' else '❌ Failed'}"
-        )
+        if self.circuit_breaker.can_execute():
+            # Simulate a successful operation
+            self.circuit_breaker.record_success()
+            cb_result = {"status": "success", "test": True}
+            print(f"   Circuit breaker test call: ✅ Success")
+        else:
+            cb_result = {"status": "blocked"}
+            print(f"   Circuit breaker test call: ❌ Blocked (circuit open)")
+
+        # Get circuit breaker metrics
+        metrics = self.circuit_breaker.get_metrics()
+        print(f"   Circuit state: {metrics.get('state', 'UNKNOWN')}")
 
         # Test request queue
         print("3. Testing request queue...")
