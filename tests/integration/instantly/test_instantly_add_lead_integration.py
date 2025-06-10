@@ -72,7 +72,14 @@ class TestInstantlyAddLeadIntegration:
         os.environ.get("ENV_TYPE", "test")
         timestamp = datetime.now().strftime("%Y%m%d%H%M%S")
 
-        # Format the email with lance+env.date pattern
+        # Generate unique task ID for this test run
+        import uuid
+
+        unique_task_id = f"task_test_{uuid.uuid4().hex[:20]}"
+
+        # Update the mock payload with unique identifiers
+        self.mock_payload["event"]["object_id"] = unique_task_id
+        self.mock_payload["event"]["data"]["id"] = unique_task_id
         self.mock_payload["event"]["data"]["lead_name"] = f"Test Instantly{timestamp}"
 
     def teardown_method(self):
