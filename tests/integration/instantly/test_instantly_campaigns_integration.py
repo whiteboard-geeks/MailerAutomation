@@ -72,7 +72,7 @@ def test_get_all_campaigns():
 
 def test_search_campaigns_by_name():
     """Test searching campaigns by name"""
-    search_term = "Test Campaign"
+    search_term = "Test20250227"
     result = get_instantly_campaigns(search=search_term)
 
     assert result["status"] == "success"

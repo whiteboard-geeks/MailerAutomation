@@ -245,7 +245,9 @@ def get_instantly_campaign_name(task_text):
     return remaining
 
 
-def get_instantly_campaigns(limit=100, starting_after=None, fetch_all=False):
+def get_instantly_campaigns(
+    limit=100, starting_after=None, fetch_all=False, search=None
+):
     """
     Get campaigns from Instantly with cursor-based pagination support.
 
@@ -277,6 +279,9 @@ def get_instantly_campaigns(limit=100, starting_after=None, fetch_all=False):
     # Add starting_after parameter if provided
     if starting_after:
         params["starting_after"] = starting_after
+
+    if search:
+        params["search"] = search
 
     try:
         if fetch_all:
