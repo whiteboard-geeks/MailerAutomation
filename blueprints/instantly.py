@@ -229,6 +229,36 @@ ENV_TYPE = os.environ.get("ENV_TYPE", "development")
 BARBARA_USER_ID = "user_8HHUh3SH67YzD8IMakjKoJ9SWputzlUdaihCG95g7as"
 
 
+# --- Redis cache helpers ---
+def get_redis_client():
+    redis_url = os.environ.get("REDISCLOUD_URL")
+    return Redis.from_url(redis_url) if redis_url else None
+
+
+def get_from_cache(key):
+    client = get_redis_client()
+    if client:
+        cached = client.get(key)
+        if cached:
+            try:
+                return json.loads(cached)
+            except Exception as e:
+                logger.warning(f"Failed to decode cache for {key}: {e}")
+    return None
+
+
+def set_to_cache(key, value, expiration_seconds=600):
+    client = get_redis_client()
+    if client:
+        try:
+            client.setex(key, expiration_seconds, json.dumps(value))
+        except Exception as e:
+            logger.warning(f"Failed to set cache for {key}: {e}")
+
+
+# --- End Redis cache helpers ---
+
+
 def get_close_encoded_key():
     """Get Base64 encoded Close API key."""
     return b64encode(f"{CLOSE_API_KEY}:".encode()).decode()
@@ -320,6 +350,15 @@ def get_instantly_campaigns(
     if search:
         params["search"] = search
 
+    cache_key = None
+    CACHE_EXPIRATION_SECONDS = 3600  # 1 hour
+    if search:
+        cache_key = f"instantly:campaign_search:{search.lower().strip()}"
+        cached = get_from_cache(cache_key)
+        if cached:
+            logger.info(f"Returning cached Instantly campaign search for '{search}'")
+            return cached
+
     try:
         if fetch_all:
             # Fetch all pages using cursor-based pagination
@@ -355,11 +394,15 @@ def get_instantly_campaigns(
                     time.sleep(0.5)
 
             # Return combined results
-            return {
+            result = {
                 "status": "success",
                 "campaigns": all_campaigns,
                 "count": len(all_campaigns),
             }
+            # Cache if search is present
+            if search and cache_key:
+                set_to_cache(cache_key, result, CACHE_EXPIRATION_SECONDS)
+            return result
         else:
             # Fetch single page
             response = requests.get(url, headers=headers, params=params)
@@ -370,7 +413,7 @@ def get_instantly_campaigns(
             campaigns = data.get("items", [])
             next_cursor = data.get("next_starting_after")
 
-            return {
+            result = {
                 "status": "success",
                 "campaigns": campaigns,
                 "count": len(campaigns),
@@ -380,6 +423,10 @@ def get_instantly_campaigns(
                     "has_more": bool(next_cursor),
                 },
             }
+            # Cache if search is present
+            if search and cache_key:
+                set_to_cache(cache_key, result, CACHE_EXPIRATION_SECONDS)
+            return result
     except requests.exceptions.RequestException as e:
         error_msg = f"Error fetching campaigns from Instantly: {str(e)}"
         logger.error(error_msg)
