@@ -365,8 +365,11 @@ def campaign_exists(campaign_name):
     if not campaign_name:
         return {"exists": False, "error": "No campaign name provided"}
 
-    # Get all campaigns from Instantly (fetch all pages)
-    campaigns_response = get_instantly_campaigns(fetch_all=True)
+    # Retrieve campaigns using the Instantly API's built-in "search" parameter so we
+    # only make a single request instead of walking every page.  This keeps the
+    # request well under Heroku's 30-second router timeout even when the
+    # Instantly account has thousands of campaigns.
+    campaigns_response = get_instantly_campaigns(search=campaign_name)
 
     # Check if there was an error getting campaigns
     if campaigns_response.get("status") == "error":
