@@ -68,3 +68,18 @@ def test_get_all_campaigns():
         next_cursor = page["pagination"]["next_starting_after"]
 
     assert len(result["campaigns"]) == len(paginated_campaigns)
+
+
+def test_search_campaigns_by_name():
+    """Test searching campaigns by name"""
+    search_term = "Test Campaign"
+    result = get_instantly_campaigns(search=search_term)
+
+    assert result["status"] == "success"
+    assert "campaigns" in result
+    assert "count" in result
+    assert isinstance(result["campaigns"], list)
+
+    # Verify that all returned campaigns contain the search term in their name
+    for campaign in result["campaigns"]:
+        assert search_term.lower() in campaign["name"].lower()
