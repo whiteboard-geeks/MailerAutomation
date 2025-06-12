@@ -1,3 +1,5 @@
+import os
+from redis import Redis
 from blueprints.instantly import get_instantly_campaigns
 
 
@@ -83,3 +85,34 @@ def test_search_campaigns_by_name():
     # Verify that all returned campaigns contain the search term in their name
     for campaign in result["campaigns"]:
         assert search_term.lower() in campaign["name"].lower()
+
+
+def test_campaign_search_caching():
+    """Test that campaign search results are cached in Redis and cache is cleared after test."""
+    search_term = "Test20250227"
+    redis_url = os.environ.get("REDISCLOUD_URL")
+    redis_client = Redis.from_url(redis_url) if redis_url else None
+    cache_key = f"instantly:campaign_search:{search_term.lower().strip()}"
+
+    # Ensure cache is clear before test
+    if redis_client:
+        redis_client.delete(cache_key)
+
+    # First call (should not be cached)
+    result1 = get_instantly_campaigns(search=search_term)
+    assert result1["status"] == "success"
+    assert "campaigns" in result1
+
+    # Second call (should be cached, but will not be until implemented)
+    result2 = get_instantly_campaigns(search=search_term)
+    assert result2["status"] == "success"
+    assert "campaigns" in result2
+
+    # (Failing assertion: check that the cache is used, which will fail until implemented)
+    assert (
+        redis_client and redis_client.get(cache_key) is not None
+    ), "Expected cache to be set after search, but it was not."
+
+    # Clean up: clear the cache key
+    if redis_client:
+        redis_client.delete(cache_key)
