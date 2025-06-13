@@ -61,6 +61,9 @@ class TestInstantlyTimeoutReproduction:
             self.redis_client = redis.from_url(self.redis_url)
             self.redis_client.ping()
             print(f"Successfully connected to Redis at: {self.redis_url}")
+
+            # Warm up Redis connection by doing a few operations
+            self._warmup_redis_connection()
         except Exception as e:
             print(f"Warning: Failed to connect to Redis at {self.redis_url}: {e}")
             self.redis_client = None
@@ -255,11 +258,13 @@ class TestInstantlyTimeoutReproduction:
         payload = self.base_payload.copy()
         payload["event"]["data"]["lead_id"] = lead["id"]
         payload["event"]["data"]["text"] = f"Instantly: {self.campaign_name}"
-        payload["event"]["data"]["id"] = f"task_timeout_test_{self.timestamp}_{index}"
+        close_task_id = f"task_timeout_test_{self.timestamp}_{index}"
+        payload["event"]["data"]["id"] = close_task_id
 
         result = {
             "index": index,
             "lead_id": lead["id"],
+            "close_task_id": close_task_id,
             "status": None,
             "error": None,
             "response_code": None,
@@ -753,7 +758,7 @@ class TestInstantlyTimeoutReproduction:
             if avg_rate > 10:
                 raise AssertionError(
                     f"Rate limiting FAILED: Average rate {avg_rate:.2f} req/s exceeds Instantly limit (10 req/s). "
-                    f"Rate limiter not working properly."
+                    "Rate limiter not working properly."
                 )
             elif avg_rate > 8:
                 print(
@@ -803,9 +808,767 @@ class TestInstantlyTimeoutReproduction:
             raise AssertionError(
                 f"EXPECTED OUTCOME: Rate limiting works ({avg_rate:.2f} req/s ≤ 8) BUT HTTP timeout still occurred "
                 f"({results['timeouts']} times). This proves rate limiting alone is insufficient and "
-                f"async processing (Step 5) is needed to fully solve the timeout issue."
+                "async processing (Step 5) is needed to fully solve the timeout issue."
             )
         else:
             print(
                 "No HTTP timeout occurred - rate limiting may be sufficient for this load"
             )
+
+    def test_add_lead_scaled_testing(self):
+        """
+        Scaled testing for add_lead functionality with 100% success rate requirement.
+
+        This test is configured for reliable operation with zero tolerance for failures.
+        All webhook requests must complete successfully without timeouts, rate limiting,
+        or other errors.
+
+        Configuration for 100% success rate:
+        - Uses sequential execution (use_concurrent = False) for controlled processing
+        - 1.0 second delay between requests to avoid rate limiting
+        - Full Instantly verification enabled by default
+        - Conservative scaling recommendations
+
+        Usage:
+        - Start with 2 leads to verify basic functionality
+        - Gradually increase: 5, 10, 20, 50+ (keeping sequential mode)
+        - All requests must succeed for test to pass
+        - Provides guidance for reliable scaling
+        """
+        # CONFIGURABLE: Change this number to scale up testing
+        num_leads = 5  # Start with 2, then try: 5, 10, 20, 50, 100+
+
+        # CONFIGURABLE: Choose execution mode (using sequential for 100% success rate)
+        use_concurrent = (
+            False  # Set to False for sequential execution (100% success rate)
+        )
+        concurrent_workers = 5  # Number of concurrent workers if using concurrent mode
+        request_delay = 0.1  # Delay between sequential requests (seconds)
+
+        # CONFIGURABLE: Verification options
+        verify_instantly_success = True  # Set to False for HTTP-only testing (faster)
+        verification_timeout = (
+            180  # Seconds to wait for webhook processing (Instantly is slow)
+        )
+        verification_poll_interval = (
+            5  # Seconds between status checks (reduce API calls)
+        )
+
+        print(f"\n=== SCALED ADD_LEAD TESTING ({num_leads} leads) ===")
+        print(f"Campaign: {self.campaign_name}")
+        print(f"Timestamp: {self.timestamp}")
+        print(f"Execution mode: {'Concurrent' if use_concurrent else 'Sequential'}")
+        print(
+            f"Verification mode: {'Full Instantly verification' if verify_instantly_success else 'HTTP response only'}"
+        )
+        if not use_concurrent:
+            print(f"Request delay: {request_delay}s between requests")
+        else:
+            print(f"Concurrent workers: {concurrent_workers}")
+        if verify_instantly_success:
+            print(
+                f"Verification timeout: {verification_timeout}s (poll every {verification_poll_interval}s)"
+            )
+
+        # Generate test leads using existing infrastructure
+        leads = self.generate_test_leads(num_leads)
+        assert (
+            len(leads) >= num_leads
+        ), f"Failed to generate enough test leads. Got {len(leads)}, need {num_leads}"
+
+        print(f"\nProcessing {len(leads)} leads...")
+
+        # Warm up connections before starting the real test to avoid first-lead timing issues
+        if verify_instantly_success:
+            self._warmup_first_webhook_write()
+
+        # Track results and timing
+        results = {
+            "timeouts": 0,
+            "successes": 0,
+            "errors": 0,
+            "rate_limited": 0,
+            "completed": 0,
+            "instantly_failed": 0,  # New: Failed Instantly API calls
+            "webhook_processed": 0,  # New: Successfully processed webhooks
+        }
+        response_codes = {}
+        detailed_results = []  # Store detailed results for analysis
+        start_time = time.time()
+
+        if use_concurrent:
+            # Concurrent execution for stress testing
+            print("Sending webhooks concurrently...")
+
+            with ThreadPoolExecutor(max_workers=concurrent_workers) as executor:
+                # Submit all requests concurrently using verification method
+                future_to_lead = {
+                    executor.submit(
+                        self.send_webhook_request_with_verification,
+                        lead,
+                        i,
+                        verify_instantly_success,
+                        verification_timeout,
+                        verification_poll_interval,
+                    ): (lead, i)
+                    for i, lead in enumerate(leads)
+                }
+
+                print(f"Submitted {len(future_to_lead)} concurrent requests...")
+
+                # Process results as they complete
+                for future in as_completed(future_to_lead):
+                    lead, index = future_to_lead[future]
+
+                    try:
+                        result = future.result()
+                        detailed_results.append(result)
+                        results["completed"] += 1
+
+                        # Track response code distribution
+                        code = result.get("response_code", "None")
+                        response_codes[code] = response_codes.get(code, 0) + 1
+
+                        # Categorize results with new verification status
+                        if result["status"] == "timeout":
+                            results["timeouts"] += 1
+                            print(
+                                f"Lead {result['index']}: TIMEOUT - {result['error']}"
+                            )
+                        elif result["status"] == "success":
+                            results["successes"] += 1
+                            if result.get("webhook_processed"):
+                                results["webhook_processed"] += 1
+                            if verify_instantly_success and result.get(
+                                "instantly_success"
+                            ):
+                                print(
+                                    f"Lead {result['index']}: SUCCESS ✅ (Instantly confirmed)"
+                                )
+                            else:
+                                print(f"Lead {result['index']}: SUCCESS ✅ (HTTP only)")
+                        elif result["status"] == "instantly_failed":
+                            results["instantly_failed"] += 1
+                            print(
+                                f"Lead {result['index']}: INSTANTLY FAILED ❌ - {result['error']}"
+                            )
+                        elif result["status"] == "rate_limited":
+                            results["rate_limited"] += 1
+                            print(
+                                f"Lead {result['index']}: RATE LIMITED - {result['error']}"
+                            )
+                        else:  # error
+                            results["errors"] += 1
+                            print(f"Lead {result['index']}: ERROR - {result['error']}")
+
+                    except Exception as e:
+                        results["errors"] += 1
+                        print(f"Lead {index}: Exception processing result - {e}")
+
+        else:
+            # Sequential execution for controlled testing
+            print("Sending webhooks sequentially...")
+
+            for i, lead in enumerate(leads):
+                print(f"Processing lead {i+1}/{len(leads)}...")
+
+                try:
+                    result = self.send_webhook_request_with_verification(
+                        lead,
+                        i,
+                        verify_instantly_success,
+                        verification_timeout,
+                        verification_poll_interval,
+                    )
+                    detailed_results.append(result)
+                    results["completed"] += 1
+
+                    # Track response code distribution
+                    code = result.get("response_code", "None")
+                    response_codes[code] = response_codes.get(code, 0) + 1
+
+                    # Categorize and log results with verification details
+                    if result["status"] == "timeout":
+                        results["timeouts"] += 1
+                        print(f"  ❌ TIMEOUT - {result['error']}")
+                    elif result["status"] == "success":
+                        results["successes"] += 1
+                        if result.get("webhook_processed"):
+                            results["webhook_processed"] += 1
+                        if verify_instantly_success and result.get("instantly_success"):
+                            print("  ✅ SUCCESS (Instantly confirmed)")
+                        else:
+                            print("  ✅ SUCCESS (HTTP only)")
+                    elif result["status"] == "instantly_failed":
+                        results["instantly_failed"] += 1
+                        print(f"  ❌ INSTANTLY FAILED - {result['error']}")
+                    elif result["status"] == "rate_limited":
+                        results["rate_limited"] += 1
+                        print(f"  🔄 RATE LIMITED - {result['error']}")
+                    else:  # error
+                        results["errors"] += 1
+                        print(f"  ❌ ERROR - {result['error']}")
+
+                    # Add delay between requests if specified
+                    if (
+                        request_delay > 0 and i < len(leads) - 1
+                    ):  # Don't delay after last request
+                        time.sleep(request_delay)
+
+                except Exception as e:
+                    results["errors"] += 1
+                    print(f"  ❌ EXCEPTION - {e}")
+
+        total_time = time.time() - start_time
+
+        # Detailed results analysis
+        print(f"\n=== SCALED TESTING RESULTS ({num_leads} leads) ===")
+        print(f"Execution mode: {'Concurrent' if use_concurrent else 'Sequential'}")
+        print(f"Total webhooks submitted: {len(leads)}")
+        print(f"Requests completed: {results['completed']}")
+        print(f"Total time: {total_time:.2f} seconds")
+
+        if results["completed"] > 0:
+            avg_rate = results["completed"] / total_time
+            print(f"Average rate: {avg_rate:.2f} requests/second")
+
+        print("\nResult breakdown:")
+        print(f"  ✅ HTTP Successes: {results['successes']}")
+        if verify_instantly_success:
+            print(f"  🔄 Webhooks Processed: {results['webhook_processed']}")
+            instantly_success_count = sum(
+                1 for r in detailed_results if r.get("instantly_success")
+            )
+            print(f"  ✅ Instantly Confirmed: {instantly_success_count}")
+            print(f"  ❌ Instantly Failed: {results['instantly_failed']}")
+        print(f"  ❌ Timeouts: {results['timeouts']}")
+        print(f"  🔄 Rate Limited: {results['rate_limited']}")
+        print(f"  ❌ Other Errors: {results['errors']}")
+        print(f"Response codes: {response_codes}")
+
+        # Calculate success rates
+        if results["completed"] > 0:
+            http_success_rate = (results["successes"] / results["completed"]) * 100
+            print(f"HTTP success rate: {http_success_rate:.1f}%")
+
+            if verify_instantly_success:
+                instantly_success_count = sum(
+                    1 for r in detailed_results if r.get("instantly_success")
+                )
+                instantly_success_rate = (
+                    instantly_success_count / results["completed"]
+                ) * 100
+                print(f"Instantly success rate: {instantly_success_rate:.1f}%")
+
+        # Analysis and recommendations
+        print("\n=== ANALYSIS ===")
+
+        if (
+            results["timeouts"] == 0
+            and results["rate_limited"] == 0
+            and results["instantly_failed"] == 0
+        ):
+            if verify_instantly_success:
+                instantly_success_count = sum(
+                    1 for r in detailed_results if r.get("instantly_success")
+                )
+                if instantly_success_count == len(leads):
+                    print(
+                        f"✅ Perfect! All {num_leads} leads successfully added to Instantly!"
+                    )
+                else:
+                    print(
+                        f"⚠️ HTTP success but Instantly verification incomplete: {instantly_success_count}/{len(leads)} confirmed"
+                    )
+            else:
+                print(f"✅ No HTTP issues with {num_leads} leads!")
+                print(
+                    "💡 Consider enabling verify_instantly_success=True for full verification"
+                )
+            print(
+                f"💡 Recommendation: Try scaling up to {num_leads * 2} or {num_leads * 5} leads"
+            )
+
+        elif results["instantly_failed"] > 0:
+            print(
+                f"⚠️ Instantly API failures: {results['instantly_failed']} leads failed to be added"
+            )
+            print(
+                "💡 Check Instantly API status, rate limits, or campaign configuration"
+            )
+
+        elif results["timeouts"] > 0:
+            timeout_rate = (results["timeouts"] / results["completed"]) * 100
+            print(f"⚠️  Timeouts occurred: {results['timeouts']} ({timeout_rate:.1f}%)")
+            print(
+                f"💡 This indicates {num_leads} leads is approaching/exceeding the threshold"
+            )
+
+            if num_leads <= 5:
+                print(
+                    f"🔥 CRITICAL: Timeouts with only {num_leads} leads suggests a serious issue"
+                )
+            elif num_leads <= 20:
+                print(f"⚠️  WARNING: Timeouts starting at {num_leads} leads")
+            else:
+                print(f"📊 INFO: Found timeout threshold around {num_leads} leads")
+
+        elif results["rate_limited"] > 0:
+            rate_limit_rate = (results["rate_limited"] / results["completed"]) * 100
+            print(
+                f"🔄 Rate limiting occurred: {results['rate_limited']} ({rate_limit_rate:.1f}%)"
+            )
+            print(f"💡 API rate limits are being hit with {num_leads} leads")
+
+        # Assertions based on expected behavior
+        print("\n=== ASSERTIONS ===")
+
+        # Basic assertion: all requests should complete
+        assert results["completed"] == len(
+            leads
+        ), f"Not all requests completed: {results['completed']}/{len(leads)}"
+
+        # Require 100% success rate - no timeouts allowed for any number of leads
+        if results["timeouts"] > 0:
+            raise AssertionError(
+                f"TIMEOUT FAILURES: Got {results['timeouts']} timeouts with {num_leads} leads. "
+                f"For 100% success rate, all requests must complete successfully. "
+                f"Consider reducing concurrent workers, increasing delays, or using sequential mode."
+            )
+        else:
+            print(
+                f"✅ PASS: No timeouts with {num_leads} leads (100% success rate target)"
+            )
+
+        # Require no rate limiting failures
+        if results["rate_limited"] > 0:
+            raise AssertionError(
+                f"RATE LIMITING FAILURES: Got {results['rate_limited']} rate limited requests with {num_leads} leads. "
+                f"For 100% success rate, all requests must complete without rate limiting. "
+                f"Consider increasing delays between requests or using sequential mode."
+            )
+
+        # Require 100% success rate for all requests
+        if results["completed"] > 0:
+            http_success_rate = (results["successes"] / results["completed"]) * 100
+
+            if verify_instantly_success:
+                instantly_success_count = sum(
+                    1 for r in detailed_results if r.get("instantly_success")
+                )
+                instantly_success_rate = (
+                    instantly_success_count / results["completed"]
+                ) * 100
+
+                if instantly_success_rate < 100:
+                    raise AssertionError(
+                        f"INSTANTLY SUCCESS RATE NOT 100%: Only {instantly_success_rate:.1f}% of leads confirmed added to Instantly with {num_leads} leads. "
+                        f"HTTP success rate was {http_success_rate:.1f}%. For 100% success rate target, all leads must be successfully added to Instantly. "
+                        f"Failed leads: {results['instantly_failed']}, Other errors: {results['errors']}"
+                    )
+                else:
+                    print(
+                        f"✅ PASS: Instantly success rate {instantly_success_rate:.1f}% = 100% target achieved!"
+                    )
+            else:
+                if http_success_rate < 100:
+                    raise AssertionError(
+                        f"HTTP SUCCESS RATE NOT 100%: Only {http_success_rate:.1f}% HTTP success rate with {num_leads} leads. "
+                        f"For 100% success rate target, all HTTP requests must succeed. "
+                        f"Errors: {results['errors']}, Rate limited: {results['rate_limited']}, Timeouts: {results['timeouts']}"
+                    )
+                else:
+                    print(
+                        f"✅ PASS: HTTP success rate {http_success_rate:.1f}% = 100% target achieved!"
+                    )
+
+        print(f"✅ SCALED TESTING COMPLETED: {num_leads} leads processed successfully")
+
+        # Provide scaling guidance for 100% success rate
+        print("\n=== SCALING GUIDANCE ===")
+        if (
+            results["timeouts"] == 0
+            and results["rate_limited"] == 0
+            and results["errors"] == 0
+        ):
+            next_test_size = min(
+                num_leads * 2, 50
+            )  # Conservative scaling for 100% success rate
+            print(f"💡 NEXT: Try testing with {next_test_size} leads")
+            print("💡 Keep sequential mode (use_concurrent = False) for reliability")
+            print(
+                "💡 Consider increasing request_delay if issues arise with larger batches"
+            )
+        else:
+            print(
+                "💡 100% SUCCESS RATE NOT ACHIEVED: Review failures and adjust configuration"
+            )
+            print(
+                f"💡 Current config: Sequential mode, {request_delay}s delay between requests"
+            )
+            print(
+                f"💡 Consider increasing delay to {request_delay * 2}s for better reliability"
+            )
+
+        # Store results for potential follow-up analysis
+        self.test_data["scaled_test_results"] = {
+            "num_leads": num_leads,
+            "execution_mode": "concurrent" if use_concurrent else "sequential",
+            "results": results,
+            "response_codes": response_codes,
+            "total_time": total_time,
+            "detailed_results": detailed_results,
+        }
+
+    def _warmup_redis_connection(self):
+        """Warm up Redis connection to avoid first-request timing issues."""
+        if not self.redis_client:
+            return
+
+        try:
+            print("🔄 Warming up Redis connection...")
+            warmup_key = f"warmup_{self.timestamp}"
+
+            # Do a few Redis operations to warm up the connection
+            self.redis_client.set(warmup_key, "warmup_value", ex=5)  # 5 second expiry
+            self.redis_client.get(warmup_key)
+            self.redis_client.delete(warmup_key)
+
+            # Test the webhook status endpoint to warm up the Flask app's Redis connection too
+            try:
+                warmup_response = requests.get(
+                    f"{self.base_url}/instantly/webhooks/status", timeout=5
+                )
+                print(f"  Flask app warmup response: {warmup_response.status_code}")
+            except Exception as e:
+                print(f"  Flask app warmup failed (OK): {e}")
+
+            print("✅ Redis connection warmed up successfully")
+        except Exception as e:
+            print(f"⚠️ Redis warmup failed: {e}")
+
+    def _warmup_first_webhook_write(self):
+        """Send a dummy webhook to ensure the first real webhook write is fast."""
+        if not self.redis_client:
+            return
+
+        try:
+            print("🔄 Testing first webhook write timing...")
+
+            # Send a dummy webhook to warm up the webhook tracker
+            dummy_payload = self.base_payload.copy()
+            dummy_task_id = f"warmup_task_{self.timestamp}"
+            dummy_payload["event"]["data"]["id"] = dummy_task_id
+            dummy_payload["event"]["data"]["text"] = "Instantly: TestWarmup"
+            dummy_payload["event"]["data"]["lead_id"] = "warmup_lead"
+
+            start_time = time.time()
+            warmup_response = requests.post(
+                f"{self.base_url}/instantly/add_lead",
+                json=dummy_payload,
+                timeout=10,
+            )
+            write_time = time.time() - start_time
+
+            print(
+                f"  Warmup webhook response: {warmup_response.status_code} in {write_time:.3f}s"
+            )
+
+            # Try to find it immediately to test lookup timing
+            start_time = time.time()
+            immediate_data = self.check_webhook_immediately_available(dummy_task_id)
+            lookup_time = time.time() - start_time
+
+            print(
+                f"  Warmup webhook lookup: {'Found' if immediate_data else 'Not found'} in {lookup_time:.3f}s"
+            )
+
+            # Clean up
+            if self.redis_client:
+                self.redis_client.delete(f"webhook_tracker:{dummy_task_id}")
+
+            print("✅ First webhook write timing tested")
+        except Exception as e:
+            print(f"⚠️ Webhook warmup failed: {e}")
+
+    def check_webhook_immediately_available(self, close_task_id, route=None):
+        """Check if webhook entry is immediately available (without waiting for completion)."""
+        webhook_endpoint = (
+            f"{self.base_url}/instantly/webhooks/status?close_task_id={close_task_id}"
+        )
+        if route:
+            webhook_endpoint += f"&route={route}"
+
+        try:
+            start_time = time.time()
+            response = requests.get(webhook_endpoint, timeout=5)
+            lookup_time = time.time() - start_time
+
+            print(
+                f"DEBUG: Immediate check for {close_task_id} -> Status: {response.status_code} in {lookup_time:.3f}s"
+            )
+
+            if response.status_code == 200:
+                webhook_data = response.json().get("data", {})
+                if webhook_data:
+                    print(
+                        f"DEBUG: Found webhook data with keys: {list(webhook_data.keys())}"
+                    )
+                    # Add close_task_id to webhook data if not present
+                    if "close_task_id" not in webhook_data:
+                        webhook_data["close_task_id"] = close_task_id
+                    return webhook_data
+                else:
+                    print(
+                        f"DEBUG: 200 response but no data field in: {response.json()}"
+                    )
+            elif response.status_code == 404:
+                error_data = response.json()
+                print(
+                    f"DEBUG: 404 - webhook not found: {error_data.get('message', 'No message')}"
+                )
+                return None
+            else:
+                print(
+                    f"DEBUG: Unexpected status {response.status_code}: {response.text[:200]}"
+                )
+        except requests.exceptions.Timeout:
+            print(f"ERROR: Webhook lookup timeout after 5s for {close_task_id}")
+            return None
+        except Exception as e:
+            print(f"ERROR: Exception during webhook lookup for {close_task_id}: {e}")
+            return None
+
+        return None
+
+    def wait_for_webhook_processed(
+        self,
+        close_task_id,
+        route=None,
+        wait_for_completion=True,
+        timeout_seconds=180,
+        poll_interval=5,
+    ):
+        """
+        Wait for webhook to be processed by checking the webhook tracker API.
+
+        Args:
+            close_task_id: The Close task ID to check
+            route: Optional route filter
+            wait_for_completion: Whether to wait for full processing (processed=True)
+            timeout_seconds: Total timeout (default 180s for Instantly processing)
+            poll_interval: Seconds between checks (default 5s for Instantly)
+        """
+        webhook_endpoint = (
+            f"{self.base_url}/instantly/webhooks/status?close_task_id={close_task_id}"
+        )
+        if route:
+            webhook_endpoint += f"&route={route}"
+
+        print(
+            f"Waiting for webhook processing (timeout: {timeout_seconds}s, interval: {poll_interval}s)"
+        )
+        start_time = time.time()
+        elapsed_time = 0
+        check_count = 0
+
+        while elapsed_time < timeout_seconds:
+            check_count += 1
+            try:
+                response = requests.get(webhook_endpoint)
+                print(
+                    f"Check #{check_count} (after {elapsed_time:.0f}s): Status {response.status_code}"
+                )
+
+                if response.status_code == 200:
+                    webhook_data = response.json().get("data", {})
+                    if webhook_data:
+                        # Add close_task_id to webhook data if not present
+                        if "close_task_id" not in webhook_data:
+                            webhook_data["close_task_id"] = close_task_id
+
+                        status = webhook_data.get("status", "unknown")
+                        processed = webhook_data.get("processed", False)
+                        print(
+                            f"  Webhook found: status={status}, processed={processed}"
+                        )
+
+                        # If we don't need to wait for completion, return immediately
+                        if not wait_for_completion:
+                            return webhook_data
+
+                        # If we need completion, check if it's processed
+                        if webhook_data.get("processed") is True:
+                            print(
+                                f"  ✅ Webhook processing completed after {elapsed_time:.0f}s"
+                            )
+                            return webhook_data
+                        else:
+                            print(f"  🔄 Still processing... (status: {status})")
+
+                elif response.status_code == 404:
+                    print("  ⏳ Webhook not found yet, continuing to wait...")
+                else:
+                    print(f"  ⚠️ Unexpected response: {response.status_code}")
+
+            except Exception as e:
+                print(f"  ❌ Error querying webhook API: {e}")
+
+            time.sleep(poll_interval)  # Wait longer between checks for Instantly
+            elapsed_time = time.time() - start_time
+
+        print(f"❌ Timeout after {timeout_seconds}s waiting for webhook processing")
+        return None
+
+    def send_webhook_request_with_verification(
+        self,
+        lead,
+        index,
+        verify_instantly_success=True,
+        timeout_seconds=180,
+        poll_interval=5,
+    ):
+        """
+        Send webhook request and optionally verify it was actually processed by Instantly.
+
+        Args:
+            lead: Lead data dictionary
+            index: Lead index for unique identification
+            verify_instantly_success: Whether to wait for and verify Instantly API success
+            timeout_seconds: Seconds to wait for webhook processing (default 180s for Instantly)
+            poll_interval: Seconds between status checks (default 5s for Instantly)
+
+        Returns:
+            dict: Result with webhook verification data
+        """
+        # Create unique payload for each lead
+        payload = self.base_payload.copy()
+        payload["event"]["data"]["lead_id"] = lead["id"]
+        payload["event"]["data"]["text"] = f"Instantly: {self.campaign_name}"
+        close_task_id = f"task_scaled_test_{self.timestamp}_{index}"
+        payload["event"]["data"]["id"] = close_task_id
+
+        result = {
+            "index": index,
+            "lead_id": lead["id"],
+            "close_task_id": close_task_id,
+            "status": None,
+            "error": None,
+            "response_code": None,
+            "webhook_processed": False,
+            "instantly_success": False,
+            "instantly_result": None,
+        }
+
+        try:
+            # Stage 1: Send webhook with 30-second timeout
+            response = requests.post(
+                f"{self.base_url}/instantly/add_lead",
+                json=payload,
+                timeout=30,
+            )
+
+            result["response_code"] = response.status_code
+
+            # Parse response JSON
+            try:
+                response_json = response.json()
+                result["response_json"] = response_json
+
+                # Check HTTP response status
+                if response.status_code not in [200, 202]:
+                    result["status"] = "error"
+                    result["error"] = f"HTTP {response.status_code}"
+                    return result
+
+                # Check for immediate errors in response
+                message = response_json.get("message", "")
+                if (
+                    "Failed to add lead to Instantly" in message
+                    or "rate limit" in message.lower()
+                    or "429" in message
+                ):
+                    result["status"] = "rate_limited"
+                    result["error"] = f"Rate limited: {message}"
+                    return result
+
+                # Stage 2: If verification is requested, wait for processing
+                if verify_instantly_success:
+                    # Add progressive delay strategy for Redis cold start issues
+                    retry_delays = [
+                        0.1,
+                        0.5,
+                        1.0,
+                    ]  # Progressive delays: 100ms, 500ms, 1s
+                    immediate_webhook_data = None
+
+                    for attempt, delay in enumerate(retry_delays):
+                        if attempt > 0:  # Don't delay on first attempt
+                            print(f"  Retry {attempt}: waiting {delay}s for Redis...")
+                            time.sleep(delay)
+
+                        immediate_webhook_data = (
+                            self.check_webhook_immediately_available(
+                                close_task_id, "add_lead"
+                            )
+                        )
+
+                        if immediate_webhook_data is not None:
+                            if attempt > 0:
+                                print(
+                                    f"  ✅ Webhook found after {attempt + 1} attempts"
+                                )
+                            break
+
+                    if immediate_webhook_data is None:
+                        result["status"] = "error"
+                        result["error"] = (
+                            f"Webhook not findable after {len(retry_delays)} attempts with progressive delays. "
+                            "This may indicate a Redis connection or timing issue."
+                        )
+                        return result
+
+                    # Wait for webhook processing to complete
+                    webhook_data = self.wait_for_webhook_processed(
+                        close_task_id,
+                        "add_lead",
+                        wait_for_completion=True,
+                        timeout_seconds=timeout_seconds,
+                        poll_interval=poll_interval,
+                    )
+
+                    if webhook_data is None:
+                        result["status"] = "timeout"
+                        result["error"] = "Timeout waiting for webhook processing"
+                        return result
+
+                    result["webhook_processed"] = True
+                    result["webhook_data"] = webhook_data
+
+                    # Stage 3: Verify Instantly API success
+                    instantly_result = webhook_data.get("instantly_result", {})
+                    result["instantly_result"] = instantly_result
+
+                    if instantly_result and instantly_result.get("status") == "success":
+                        result["instantly_success"] = True
+                        result["status"] = "success"
+                    else:
+                        result["status"] = "instantly_failed"
+                        result["error"] = f"Instantly API failed: {instantly_result}"
+
+                else:
+                    # No verification requested - just check HTTP response
+                    result["status"] = "success"
+
+            except (ValueError, json.JSONDecodeError):
+                result["status"] = "error"
+                result["error"] = f"HTTP {response.status_code} - Invalid JSON"
+
+        except requests.exceptions.Timeout:
+            result["status"] = "timeout"
+            result["error"] = "HTTP timeout after 30 seconds"
+        except Exception as e:
+            result["status"] = "error"
+            result["error"] = str(e)
+
+        return result
