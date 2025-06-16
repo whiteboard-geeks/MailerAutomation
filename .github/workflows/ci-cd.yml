@@ -185,6 +185,9 @@ jobs:
           heroku_api_key: ${{ secrets.HEROKU_API_KEY }}
           heroku_app_name: "mailer-automation"
           heroku_email: ${{ vars.HEROKU_EMAIL }}
+      - name: Scale Celery worker dyno
+        run: |
+          heroku ps:scale worker=1 --app mailer-automation
   verify-webhooks:
     needs: deploy-to-production
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
