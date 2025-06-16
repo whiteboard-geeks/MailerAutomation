@@ -1,5 +1,6 @@
 import requests
 import os
+import time
 from base64 import b64encode
 from datetime import datetime, timedelta
 import json
@@ -24,6 +25,95 @@ class CloseAPI:
             "Authorization": f"Basic {self.encoded_key}",
         }
         self.base_url = "https://api.close.com/api/v1"
+
+    def _make_request_with_retry(self, method, url, max_retries=3, **kwargs):
+        """
+        Make a request with automatic retry for rate limiting (429 responses).
+
+        Args:
+            method (str): HTTP method ('GET', 'POST', 'PUT', 'DELETE')
+            url (str): Request URL
+            max_retries (int): Maximum number of retries for rate limiting
+            **kwargs: Additional arguments passed to requests
+
+        Returns:
+            requests.Response: The response object
+
+        Raises:
+            Exception: If the request fails after all retries
+        """
+        retry_count = 0
+
+        while retry_count <= max_retries:
+            try:
+                # Make the request
+                response = getattr(requests, method.lower())(url, **kwargs)
+
+                # If we get a 429 (rate limited), check for retry
+                if response.status_code == 429:
+                    if retry_count < max_retries:
+                        # Parse rate limit headers - Close API uses "RateLimit" header
+                        # Format: "limit=240, remaining=238, reset=8"
+                        rate_limit_header = response.headers.get("RateLimit", "")
+                        retry_after_header = response.headers.get("retry-after", "")
+
+                        reset_seconds = None
+
+                        # First try to parse the RateLimit header for reset time
+                        if rate_limit_header:
+                            parts = rate_limit_header.split(",")
+                            for part in parts:
+                                part = part.strip()
+                                if part.startswith("reset="):
+                                    try:
+                                        reset_seconds = float(
+                                            part.split("=")[1].strip()
+                                        )
+                                        break
+                                    except (ValueError, IndexError):
+                                        pass
+
+                        # Fall back to retry-after header if available
+                        if reset_seconds is None and retry_after_header:
+                            try:
+                                reset_seconds = float(retry_after_header)
+                            except (ValueError, TypeError):
+                                pass
+
+                        # If we couldn't parse the reset time, use a default wait
+                        if reset_seconds is None:
+                            reset_seconds = 60  # Default to 60 seconds
+
+                        print(
+                            f"Rate limited (429). Waiting {reset_seconds} seconds before retry {retry_count + 1}/{max_retries}"
+                        )
+                        time.sleep(reset_seconds)
+                        retry_count += 1
+                        continue
+                    else:
+                        # Exceeded max retries for rate limiting
+                        raise Exception(
+                            f"Request failed after {max_retries} retries due to rate limiting"
+                        )
+
+                # Return the response for any other status code (including success)
+                return response
+
+            except requests.exceptions.RequestException as e:
+                if retry_count < max_retries:
+                    print(
+                        f"Request failed: {e}. Retrying {retry_count + 1}/{max_retries}"
+                    )
+                    time.sleep(2)  # Short delay for connection errors
+                    retry_count += 1
+                    continue
+                else:
+                    raise e
+
+        # This should never be reached due to the logic above
+        raise Exception(
+            f"Request failed after {max_retries} retries due to rate limiting"
+        )
 
     def create_test_lead(
         self,
@@ -74,8 +164,8 @@ class CloseAPI:
         if custom_fields:
             payload.update(custom_fields)
 
-        response = requests.post(
-            f"{self.base_url}/lead/", json=payload, headers=self.headers
+        response = self._make_request_with_retry(
+            "POST", f"{self.base_url}/lead/", json=payload, headers=self.headers
         )
 
         if response.status_code != 200:
@@ -119,8 +209,8 @@ class CloseAPI:
         max_retries = 1
 
         while retry_count <= max_retries:
-            response = requests.post(
-                f"{self.base_url}/webhook/", json=payload, headers=self.headers
+            response = self._make_request_with_retry(
+                "POST", f"{self.base_url}/webhook/", json=payload, headers=self.headers
             )
 
             if response.status_code == 201:
@@ -163,8 +253,8 @@ class CloseAPI:
             "due_date": (datetime.now() + timedelta(days=1)).strftime("%Y-%m-%d"),
         }
 
-        response = requests.post(
-            f"{self.base_url}/task/", json=payload, headers=self.headers
+        response = self._make_request_with_retry(
+            "POST", f"{self.base_url}/task/", json=payload, headers=self.headers
         )
 
         if response.status_code != 200:
@@ -174,8 +264,8 @@ class CloseAPI:
 
     def delete_lead(self, lead_id):
         """Delete a lead from Close."""
-        response = requests.delete(
-            f"{self.base_url}/lead/{lead_id}/", headers=self.headers
+        response = self._make_request_with_retry(
+            "DELETE", f"{self.base_url}/lead/{lead_id}/", headers=self.headers
         )
 
         try:
@@ -188,8 +278,8 @@ class CloseAPI:
 
     def delete_webhook(self, webhook_id):
         """Delete a webhook from Close."""
-        response = requests.delete(
-            f"{self.base_url}/webhook/{webhook_id}", headers=self.headers
+        response = self._make_request_with_retry(
+            "DELETE", f"{self.base_url}/webhook/{webhook_id}", headers=self.headers
         )
 
         if response.status_code != 200:
@@ -199,8 +289,8 @@ class CloseAPI:
 
     def get_task(self, task_id):
         """Get a task by ID from Close."""
-        response = requests.get(
-            f"{self.base_url}/task/{task_id}/", headers=self.headers
+        response = self._make_request_with_retry(
+            "GET", f"{self.base_url}/task/{task_id}/", headers=self.headers
         )
 
         if response.status_code != 200:
@@ -213,7 +303,9 @@ class CloseAPI:
         url = f"{self.base_url}/activity/email/"
         params = {"lead_id": lead_id}
 
-        response = requests.get(url, headers=self.headers, params=params)
+        response = self._make_request_with_retry(
+            "GET", url, headers=self.headers, params=params
+        )
 
         if response.status_code != 200:
             raise Exception(f"Failed to get email activities: {response.text}")
@@ -225,7 +317,9 @@ class CloseAPI:
         url = f"{self.base_url}/task/"
         params = {"lead_id": lead_id}
 
-        response = requests.get(url, headers=self.headers, params=params)
+        response = self._make_request_with_retry(
+            "GET", url, headers=self.headers, params=params
+        )
 
         if response.status_code != 200:
             raise Exception(f"Failed to get tasks: {response.text}")
@@ -234,8 +328,8 @@ class CloseAPI:
 
     def get_lead(self, lead_id):
         """Get a lead by ID from Close."""
-        response = requests.get(
-            f"{self.base_url}/lead/{lead_id}/", headers=self.headers
+        response = self._make_request_with_retry(
+            "GET", f"{self.base_url}/lead/{lead_id}/", headers=self.headers
         )
         if response.status_code != 200:
             raise Exception(f"Failed to get lead: {response.text}")
@@ -254,8 +348,8 @@ class CloseAPI:
             dict: The created subscription data
         """
         # Get the contact details to get the email
-        response = requests.get(
-            f"{self.base_url}/contact/{contact_id}/", headers=self.headers
+        response = self._make_request_with_retry(
+            "GET", f"{self.base_url}/contact/{contact_id}/", headers=self.headers
         )
 
         if response.status_code != 200:
@@ -281,7 +375,8 @@ class CloseAPI:
         }
 
         print(f"Sending subscription request with payload: {payload}")
-        response = requests.post(
+        response = self._make_request_with_retry(
+            "POST",
             f"{self.base_url}/sequence_subscription/",
             json=payload,
             headers=self.headers,
@@ -330,7 +425,8 @@ class CloseAPI:
         if not params:
             raise ValueError("Either lead_id or contact_id must be provided")
 
-        response = requests.get(
+        response = self._make_request_with_retry(
+            "GET",
             f"{self.base_url}/sequence_subscription/",
             params=params,
             headers=self.headers,
@@ -351,7 +447,8 @@ class CloseAPI:
         Returns:
             dict: The subscription data
         """
-        response = requests.get(
+        response = self._make_request_with_retry(
+            "GET",
             f"{self.base_url}/sequence_subscription/{subscription_id}/",
             headers=self.headers,
         )
@@ -383,7 +480,8 @@ class CloseAPI:
         max_retries = 1
 
         while retry_count <= max_retries:
-            response = requests.post(
+            response = self._make_request_with_retry(
+                "POST",
                 f"{self.base_url}/webhook",
                 json=webhook_data,
                 headers=self.headers,
@@ -459,8 +557,11 @@ class CloseAPI:
             },
         }
 
-        response = requests.post(
-            f"{self.base_url}/data/search/", json=search_query, headers=self.headers
+        response = self._make_request_with_retry(
+            "POST",
+            f"{self.base_url}/data/search/",
+            json=search_query,
+            headers=self.headers,
         )
 
         if response.status_code != 200:

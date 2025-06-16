@@ -1,0 +1,6 @@
+{
+    "python.testing.pytestArgs": ["tests", "-v", "-s", "--tb=short", "."],
+    "python.testing.unittestEnabled": false,
+    "python.testing.pytestEnabled": true,
+    "python.testing.pytestPath": "pytest"
+}

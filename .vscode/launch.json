@@ -76,6 +76,24 @@
             "cwd": "${workspaceFolder}"
         },
         {
+            "name": "Instantly Add Lead Integration Test",
+            "type": "debugpy",
+            "request": "launch",
+            "module": "pytest",
+            "args": [
+                "tests/integration/instantly/test_instantly_add_lead_integration.py",
+                "--verbose",
+                "-s"
+            ],
+            "console": "integratedTerminal",
+            "justMyCode": false,
+            "env": {
+                "PYTHONPATH": "${workspaceFolder}",
+                "ENV_TYPE": "test"
+            },
+            "cwd": "${workspaceFolder}"
+        },
+        {
             "name": "Instantly Email Sent Integration Tests",
             "type": "debugpy",
             "request": "launch",
@@ -118,6 +136,25 @@
             "module": "pytest",
             "args": [
                 "tests/integration/instantly/test_webhook_tracker_integration.py",
+                "--verbose",
+                "-s"
+            ],
+            "console": "integratedTerminal",
+            "justMyCode": false,
+            "env": {
+                "PYTHONPATH": "${workspaceFolder}",
+                "ENV_TYPE": "test",
+                "REDISCLOUD_URL": "redis://localhost:6379"
+            },
+            "cwd": "${workspaceFolder}"
+        },
+        {
+            "name": "Instantly Timeout Reproduction",
+            "type": "debugpy",
+            "request": "launch",
+            "module": "pytest",
+            "args": [
+                "tests/integration/instantly/test_timeout_reproduction.py",
                 "--verbose",
                 "-s"
             ],
@@ -201,6 +238,15 @@
             "stopAll": true
         },
         {
+            "name": "Instantly Add Lead Integration Compound",
+            "configurations": [
+                "Flask",
+                "Celery Worker",
+                "Instantly Add Lead Integration Test"
+            ],
+            "stopAll": true
+        },
+        {
             "name": "Instantly Email Sent Integration Compound",
             "configurations": [
                 "Flask",
@@ -244,6 +290,11 @@
         {
             "name": "EasyPost Full Shipment Lifecycle Tests Compound",
             "configurations": ["Flask", "EasyPost Full Shipment Lifecycle Tests"],
+            "stopAll": true
+        },
+        {
+            "name": "Instantly Timeout Reproduction Compound",
+            "configurations": ["Flask", "Celery Worker", "Instantly Timeout Reproduction"],
             "stopAll": true
         }
     ]

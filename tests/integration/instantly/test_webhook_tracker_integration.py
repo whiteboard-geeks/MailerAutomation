@@ -82,6 +82,9 @@ class TestWebhookTrackerIntegration:
         assert stored_data["campaign_name"] == webhook_data["campaign_name"]
         assert stored_data["processed"] == webhook_data["processed"]
         assert "timestamp" in stored_data  # Should auto-add timestamp
+        assert (
+            stored_data["task_id"] == task_id
+        )  # Task ID should be automatically added
 
     def test_get_all(self):
         """Test retrieving all webhook data."""
@@ -186,23 +189,36 @@ class TestWebhookTrackerIntegration:
             client = app.test_client()
 
             # Add a test webhook
-            task_id = f"task_{uuid.uuid4().hex[:8]}"
+            close_task_id = f"task_{uuid.uuid4().hex[:8]}"
             webhook_data = {
                 "route": "add_lead",
                 "lead_id": f"lead_{uuid.uuid4().hex[:8]}",
                 "campaign_name": "Endpoint Test",
+                "close_task_id": close_task_id,  # Add close_task_id to match expected structure
                 "processed": True,
                 "test_run": True,
             }
 
-            _webhook_tracker.add(task_id, webhook_data)
-            print(f"Added webhook data for endpoint test, task_id: {task_id}")
+            _webhook_tracker.add(close_task_id, webhook_data)
+            print(f"Added webhook data for endpoint test, task_id: {close_task_id}")
 
-            # Test getting a specific task
-            response = client.get(f"/instantly/webhooks/status?task_id={task_id}")
+            # Test getting a specific task using close_task_id
+            response = client.get(
+                f"/instantly/webhooks/status?close_task_id={close_task_id}"
+            )
             assert response.status_code == 200
             data = json.loads(response.data)
             print(f"Response for specific task: {data}")
+
+            assert data["status"] == "success"
+            assert data["data"]["route"] == "add_lead"
+            assert data["data"]["campaign_name"] == "Endpoint Test"
+
+            # Test backward compatibility with task_id parameter
+            response = client.get(f"/instantly/webhooks/status?task_id={close_task_id}")
+            assert response.status_code == 200
+            data = json.loads(response.data)
+            print(f"Response for specific task (legacy param): {data}")
 
             assert data["status"] == "success"
             assert data["data"]["route"] == "add_lead"
@@ -215,8 +231,8 @@ class TestWebhookTrackerIntegration:
             print(f"Response for all webhooks: {data}")
 
             assert data["status"] == "success"
-            assert task_id in data["data"]
-            assert data["data"][task_id]["route"] == "add_lead"
+            assert close_task_id in data["data"]
+            assert data["data"][close_task_id]["route"] == "add_lead"
 
         finally:
             # Restore original prefix

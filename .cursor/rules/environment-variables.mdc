@@ -1,0 +1,27 @@
+---
+description: 
+globs: 
+alwaysApply: false
+---
+---
+description: Environment variables required for integration tests
+globs: ["tests/**/*", "app.py", "*.py"]
+alwaysApply: false
+---
+
+The following environment variables must be set for integration tests:
+
+## Required Variables
+
+### `CLOSE_API_KEY`
+- **Purpose**: For creating test leads
+- **Required for**: Close.com integration tests
+
+### `INSTANTLY_API_KEY`
+- **Purpose**: For API calls in integration tests
+- **Required for**: Instantly.ai integration tests
+
+### `REDISCLOUD_URL`
+- **Purpose**: Redis connection string
+- **Default**: `redis://localhost:6379/0`
+- **Required for**: All tests that use Redis

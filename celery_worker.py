@@ -6,7 +6,6 @@ This module creates and configures the Celery instance for the application.
 import os
 import logging
 from celery import Celery
-import pytz
 import structlog
 from celery.signals import setup_logging
 
@@ -49,16 +48,19 @@ def setup_celery_logging(**kwargs):
         )
 
     # Set up stdlib logging to work with structlog
-    handler = logging.StreamHandler()
-
-    # Format as JSON for production/staging environments
-    if os.environ.get("ENV_TYPE") in ["production", "staging"]:
-        formatter = logging.Formatter("%(message)s")
-        handler.setFormatter(formatter)
-
     root_logger = logging.getLogger()
-    root_logger.addHandler(handler)
-    root_logger.setLevel(logging.INFO)
+
+    # Only add handler if one doesn't already exist (to prevent duplicates)
+    if not root_logger.handlers:
+        handler = logging.StreamHandler()
+
+        # Format as JSON for production/staging environments
+        if os.environ.get("ENV_TYPE") in ["production", "staging"]:
+            formatter = logging.Formatter("%(message)s")
+            handler.setFormatter(formatter)
+
+        root_logger.addHandler(handler)
+        root_logger.setLevel(logging.INFO)
 
     # Suppress excessive logging from third-party libraries
     logging.getLogger("requests").setLevel(logging.WARNING)
@@ -81,6 +83,7 @@ celery = Celery(
     backend=REDISCLOUD_URL,
     include=[
         "blueprints.easypost",
+        "blueprints.instantly",
         "app",
     ],
 )

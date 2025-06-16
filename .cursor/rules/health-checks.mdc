@@ -1,0 +1,37 @@
+---
+description: 
+globs: 
+alwaysApply: false
+---
+---
+description: Health check commands to verify services are running correctly
+globs: ["tests/**/*"]
+alwaysApply: false
+---
+
+Use these commands to verify that your services are running correctly before running tests.
+
+## Flask Application Health Check
+
+```bash
+# Verify Flask app is responding:
+curl http://localhost:8080/debug/env
+```
+
+**Expected**: The endpoint should return environment information without errors.
+
+## Redis Health Check
+
+```bash
+# Verify Redis is running:
+redis-cli ping
+```
+
+**Expected**: Should return `PONG` if Redis is running properly.
+
+## Troubleshooting
+
+If health checks fail:
+- Ensure services are started in the correct order
+- Check that no other services are using the required ports
+- Verify environment variables are properly set

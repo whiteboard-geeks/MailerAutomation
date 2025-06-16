@@ -1,0 +1,33 @@
+---
+description: 
+globs: 
+alwaysApply: false
+---
+---
+description: Optional services only needed for specific async/webhook test scenarios
+globs: ["tests/**/test_*async*", "tests/**/test_*webhook*", "celery_worker.py"]
+alwaysApply: false
+---
+
+These services are only required for specific test scenarios.
+
+## 3. Celery Worker (Terminal 3)
+
+```bash
+celery -A celery_worker.celery worker --loglevel=info
+```
+
+### When Required
+- Testing async tasks (`.delay()` calls)
+- EasyPost delivery sync tests
+- Contact list processing tests
+
+## 4. ngrok (Terminal 4)
+
+```bash
+ngrok http --domain locust-pleased-thankfully.ngrok-free.app 8080
+```
+
+### When Required
+- Real webhook delivery from external services
+- End-to-end webhook testing

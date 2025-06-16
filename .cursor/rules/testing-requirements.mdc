@@ -1,0 +1,30 @@
+---
+description:
+globs:
+alwaysApply: false
+---
+---
+description: MailerAutomation Testing Requirements Overview
+globs: ["tests/**/*", "test_*.py", "*_test.py"]
+alwaysApply: true
+---
+
+**BEFORE RUNNING ANY INTEGRATION TESTS**, ensure the required services are running in separate terminals.
+
+## Service Categories
+
+### Always Required
+- Redis Server
+- Flask Application
+
+### Optional (Only if needed)
+- Celery Worker - for async tasks and specific tests
+- ngrok - for webhook delivery from external services
+
+## Quick Reference
+Most integration tests only need Redis + Flask. Celery and ngrok are only required for specific async/webhook scenarios.
+
+@required-services.mdc
+@optional-services.mdc
+@environment-variables.mdc
+@health-checks.mdc
