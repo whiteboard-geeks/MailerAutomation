@@ -74,6 +74,15 @@ class TestProcessLeadBatchTask:
 
         # Mock the webhook tracker
         mock_webhook_tracker.add = MagicMock()
+        # Mock the get method to return initial webhook data (simulating existing entry)
+        initial_webhook_data = {
+            "route": "add_lead",
+            "lead_id": "lead_test456",
+            "campaign_name": "Test Campaign",
+            "processed": False,
+            "status": "processing",
+        }
+        mock_webhook_tracker.get = MagicMock(return_value=initial_webhook_data)
 
         # Execute the task
         result = process_lead_batch_task(self.sample_payload)
@@ -310,6 +319,15 @@ class TestProcessLeadBatchTask:
         mock_get_lead_by_id.return_value = complex_lead
         mock_add_to_instantly.return_value = self.sample_instantly_result
         mock_webhook_tracker.add = MagicMock()
+        # Mock the get method to return initial webhook data
+        initial_webhook_data = {
+            "route": "add_lead",
+            "lead_id": "lead_test456",
+            "campaign_name": "Test Campaign",
+            "processed": False,
+            "status": "processing",
+        }
+        mock_webhook_tracker.get = MagicMock(return_value=initial_webhook_data)
 
         # Execute the task
         result = process_lead_batch_task(self.sample_payload)
@@ -356,6 +374,15 @@ class TestProcessLeadBatchTask:
         mock_get_lead_by_id.return_value = lead_without_custom
         mock_add_to_instantly.return_value = self.sample_instantly_result
         mock_webhook_tracker.add = MagicMock()
+        # Mock the get method to return initial webhook data
+        initial_webhook_data = {
+            "route": "add_lead",
+            "lead_id": "lead_test456",
+            "campaign_name": "Test Campaign",
+            "processed": False,
+            "status": "processing",
+        }
+        mock_webhook_tracker.get = MagicMock(return_value=initial_webhook_data)
 
         # Execute the task
         result = process_lead_batch_task(self.sample_payload)
