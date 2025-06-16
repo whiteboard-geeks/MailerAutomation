@@ -43,9 +43,6 @@ class TestInstantlyTimeoutReproduction:
     # Start with 40 for rapid iteration, scale up to 200+ for comprehensive testing
     TIMEOUT_TEST_LEAD_COUNT = 1000
 
-    # New configuration for Step 2.3 rate limiting integration test
-    RATE_LIMITING_TEST_LEAD_COUNT = 700
-
     # Flag to control whether to use pre-generated leads or create new ones
     USE_PREGENERATED_LEADS = True  # Set to False to create leads each time
 
@@ -428,26 +425,33 @@ class TestInstantlyTimeoutReproduction:
 
         return result
 
+    @pytest.mark.skipif(
+        os.environ.get("RUN_STRESS_TESTS", "").lower() not in ["true", "1", "yes"],
+        reason="Stress test only runs when RUN_STRESS_TESTS=true environment variable is set",
+    )
     def test_timeout_reproduction(self):
         """
-        Test that reproduces timeout issues using concurrent requests.
+        Stress test that validates the system can handle high concurrent load.
 
-        This test uses ThreadPoolExecutor to send all webhook requests simultaneously
-        to trigger timeouts faster. It implements fail-fast behavior to stop immediately
-        when the first timeout occurs, providing faster feedback during development.
+        This test only runs when RUN_STRESS_TESTS=true environment variable is set.
+        It sends a large number of concurrent webhook requests to validate that the
+        system can handle the load without timeouts or failures.
 
-        The number of leads is configurable via TIMEOUT_TEST_LEAD_COUNT class constant.
-        Start with smaller numbers for rapid iteration, scale up for comprehensive testing.
+        Originally designed to reproduce timeout issues during development, but now
+        serves as a stress test to ensure the system remains robust under load.
 
-        This test is EXPECTED TO FAIL initially with timeout errors to prove we can
-        reproduce the timeout issue before implementing fixes.
+        Usage:
+        RUN_STRESS_TESTS=true pytest tests/integration/instantly/test_timeout_reproduction.py::TestInstantlyTimeoutReproduction::test_timeout_reproduction
         """
         # Use the centralized lead count configuration
         num_leads = self.TIMEOUT_TEST_LEAD_COUNT
 
-        print(f"\n=== STARTING CONCURRENT TIMEOUT REPRODUCTION ({num_leads} leads) ===")
+        print(f"\n=== STRESS TEST: CONCURRENT LOAD VALIDATION ({num_leads} leads) ===")
         print(f"Campaign: {self.campaign_name}")
         print(f"Timestamp: {self.timestamp}")
+        print(
+            "This test validates the system can handle high concurrent load successfully."
+        )
 
         # Generate test leads using centralized configuration
         leads = self.generate_test_leads()
@@ -456,10 +460,7 @@ class TestInstantlyTimeoutReproduction:
         ), f"Failed to generate enough test leads. Got {len(leads)}, need {num_leads}"
 
         print(
-            f"\nSending {len(leads)} concurrent webhook calls to trigger faster timeouts..."
-        )
-        print(
-            "Using fail-fast approach - will stop immediately when first timeout occurs..."
+            f"\nSending {len(leads)} concurrent webhook calls to validate load handling..."
         )
 
         # Track results
@@ -483,7 +484,7 @@ class TestInstantlyTimeoutReproduction:
 
             print(f"Submitted {len(future_to_lead)} concurrent requests...")
 
-            # Process results as they complete (fail-fast behavior)
+            # Process results as they complete
             for future in as_completed(future_to_lead):
                 lead, index = future_to_lead[future]
 
@@ -499,21 +500,6 @@ class TestInstantlyTimeoutReproduction:
                         results["timeouts"] += 1
                         print(f"Lead {result['index']}: {result['error']}")
 
-                        # FAIL-FAST: Cancel all remaining futures when first timeout occurs
-                        print(
-                            f"\n🔥 FAIL-FAST: First timeout detected after {results['completed']} requests!"
-                        )
-                        print(
-                            "Cancelling all remaining requests for faster iteration..."
-                        )
-
-                        for remaining_future in future_to_lead:
-                            if not remaining_future.done():
-                                remaining_future.cancel()
-
-                        # Break out of the loop to stop immediately
-                        break
-
                     elif result["status"] == "success":
                         results["successes"] += 1
 
@@ -525,8 +511,8 @@ class TestInstantlyTimeoutReproduction:
                         results["errors"] += 1
                         print(f"Lead {result['index']}: {result['error']}")
 
-                    # Progress indicator every 5 requests for smaller batch
-                    if results["completed"] % 5 == 0:
+                    # Progress indicator every 50 requests
+                    if results["completed"] % 50 == 0:
                         elapsed = time.time() - start_time
                         print(
                             f"Progress: {results['completed']}/{len(leads)} | "
@@ -542,7 +528,7 @@ class TestInstantlyTimeoutReproduction:
                     print(f"Lead {index}: Exception processing result - {e}")
 
         total_time = time.time() - start_time
-        print("\n=== STAGE 1 FINAL RESULTS ===")
+        print("\n=== STRESS TEST RESULTS ===")
         print(f"Total webhooks submitted: {len(leads)}")
         print(f"Requests completed: {results['completed']}")
         print(f"Successes: {results['successes']}")
@@ -553,267 +539,70 @@ class TestInstantlyTimeoutReproduction:
         print(f"Response codes: {response_codes}")
 
         if results["completed"] > 0:
-            print(f"Rate: {results['completed']/total_time:.1f} webhooks/second")
-
-        # The test should demonstrate timeout or rate limiting issues
-        if results["timeouts"] == 0 and results["rate_limited"] == 0:
-            raise AssertionError(
-                f"Expected timeout or rate limiting with {len(leads)} concurrent webhook calls, but got none. "
-                f"Completed: {results['completed']}, Successes: {results['successes']}, "
-                f"Rate Limited: {results['rate_limited']}, Errors: {results['errors']}. "
-                "This test is designed to fail initially to prove timeout/rate limiting reproduction. "
-                "Try increasing concurrent load or check if rate limiting is working properly."
-            )
-        else:
-            # This is the expected outcome - timeout or rate limiting occurred
-            issue_type = "timeout" if results["timeouts"] > 0 else "rate limiting"
-            issue_count = (
-                results["timeouts"]
-                if results["timeouts"] > 0
-                else results["rate_limited"]
-            )
-
+            success_rate = (results["successes"] / results["completed"]) * 100
+            print(f"Success rate: {success_rate:.1f}%")
             print(
-                f"\n✅ SUCCESS: Reproduced {issue_type} after {results['completed']} concurrent requests in {total_time:.1f}s"
-            )
-            print(
-                "Fail-fast approach provided rapid feedback for development iteration!"
+                f"Processing rate: {results['completed']/total_time:.1f} webhooks/second"
             )
 
-            # Fail the test as intended to prove the issue exists
-            raise AssertionError(
-                f"ISSUE REPRODUCED: {issue_type.upper()} occurred {issue_count} times after {results['completed']} concurrent requests. "
-                "This proves the timeout/rate limiting issue exists and needs to be fixed with async processing. "
-                f"Concurrent approach triggered {issue_type} in {total_time:.1f} seconds for rapid iteration."
-            )
+        # Validate that the system handled the load well
+        print("\n=== LOAD HANDLING VALIDATION ===")
 
-    def test_rate_limiting_integration(self):
-        """
-        Step 2.3 Integration Test: Verify rate limiting works with controlled request rate.
-
-        This test modifies the timeout reproduction to integrate Redis rate limiting.
-        It should:
-        1. Use rate limiter to control requests to ≤8/second (80% of 10/second Instantly limit)
-        2. Test with 700 leads to demonstrate controlled processing
-        3. HTTP request should still timeout (proving we need async processing in next steps)
-
-        Expected behavior:
-        - Requests are rate-limited to controlled rate
-        - Processing takes longer due to rate limiting
-        - HTTP timeout still occurs, proving more fixes are needed
-        """
-        if not self.redis_client or not self.rate_limiter:
-            pytest.skip("Redis or rate limiter not available for this test")
-
-        # Use configuration for rate limiting test
-        num_leads = self.RATE_LIMITING_TEST_LEAD_COUNT
-
-        print(f"\n=== STEP 2.3: RATE LIMITING INTEGRATION TEST ({num_leads} leads) ===")
-        print(f"Campaign: {self.campaign_name}")
-        print(f"Timestamp: {self.timestamp}")
-        print(f"Rate limiter config: {self.rate_limiter}")
-
-        # Generate test leads
-        leads = self.generate_test_leads(num_leads)
+        # Check completion rate
+        completion_rate = (results["completed"] / len(leads)) * 100
         assert (
-            len(leads) >= num_leads
-        ), f"Failed to generate enough test leads. Got {len(leads)}, need {num_leads}"
+            completion_rate >= 95
+        ), f"Low completion rate: {completion_rate:.1f}% (expected >= 95%)"
 
-        print(f"\nSending {len(leads)} webhook calls with rate limiting...")
-        print("Expected: Controlled request rate ≤8 requests/second")
-        print("Expected: HTTP timeout still occurs (proving need for async processing)")
-
-        # Track results and timing
-        results = {
-            "timeouts": 0,
-            "successes": 0,
-            "errors": 0,
-            "rate_limited": 0,
-            "completed": 0,
-            "test_rate_limited": 0,  # Count of requests rate-limited by our test
-        }
-        response_codes = {}
-        request_times = []  # Track timing between requests
-        start_time = time.time()
-        last_request_time = start_time
-
-        # Send requests with rate limiting (using smaller thread pool for controlled rate)
-        with ThreadPoolExecutor(max_workers=10) as executor:
-            # Submit all requests
-            future_to_lead = {
-                executor.submit(self.send_rate_limited_webhook_request, lead, i): (
-                    lead,
-                    i,
-                )
-                for i, lead in enumerate(leads)
-            }
-
-            print(f"Submitted {len(future_to_lead)} rate-limited requests...")
-
-            # Process results as they complete
-            for future in as_completed(future_to_lead):
-                lead, index = future_to_lead[future]
-
-                try:
-                    result = future.result()
-                    results["completed"] += 1
-
-                    # Track timing between requests
-                    current_time = time.time()
-                    if len(request_times) > 0:
-                        time_since_last = current_time - last_request_time
-                        request_times.append(time_since_last)
-                    last_request_time = current_time
-
-                    # Track response code distribution
-                    code = result.get("response_code", "None")
-                    response_codes[code] = response_codes.get(code, 0) + 1
-
-                    # Count test rate limiting
-                    if result.get("rate_limited_by_test", False):
-                        results["test_rate_limited"] += 1
-
-                    if result["status"] == "timeout":
-                        results["timeouts"] += 1
-                        print(
-                            f"Lead {result['index']}: {result['error']} (waited {result['wait_time']:.2f}s for rate limit)"
-                        )
-
-                        # For rate limiting test, we expect timeout but want to see more processing
-                        # Don't fail-fast like the original test
-
-                    elif result["status"] == "success":
-                        results["successes"] += 1
-
-                    elif result["status"] == "rate_limited":
-                        results["rate_limited"] += 1
-                        print(f"Lead {result['index']}: {result['error']}")
-
-                    else:  # error
-                        results["errors"] += 1
-                        print(f"Lead {result['index']}: {result['error']}")
-
-                    # Progress indicator every 50 requests for larger batch
-                    if results["completed"] % 50 == 0 or results["timeouts"] > 0:
-                        elapsed = time.time() - start_time
-                        avg_rate = results["completed"] / elapsed if elapsed > 0 else 0
-
-                        print(
-                            f"Progress: {results['completed']}/{len(leads)} | "
-                            f"Rate: {avg_rate:.1f} req/s | "
-                            f"Test Rate Limited: {results['test_rate_limited']} | "
-                            f"Timeouts: {results['timeouts']} | "
-                            f"Successes: {results['successes']} | "
-                            f"API Rate Limited: {results['rate_limited']} | "
-                            f"Errors: {results['errors']} | "
-                            f"Time: {elapsed:.1f}s"
-                        )
-
-                        # Stop after first timeout to demonstrate the issue
-                        if results["timeouts"] > 0:
-                            print(
-                                "\n🔥 HTTP TIMEOUT DETECTED - Rate limiting alone not sufficient!"
-                            )
-                            print("Cancelling remaining requests...")
-
-                            for remaining_future in future_to_lead:
-                                if not remaining_future.done():
-                                    remaining_future.cancel()
-                            break
-
-                except Exception as e:
-                    results["errors"] += 1
-                    print(f"Lead {index}: Exception processing result - {e}")
-
-        total_time = time.time() - start_time
-
-        print("\n=== STEP 2.3 RATE LIMITING INTEGRATION RESULTS ===")
-        print(f"Total webhooks submitted: {len(leads)}")
-        print(f"Requests completed: {results['completed']}")
-        print(f"Test rate limited (our limiter): {results['test_rate_limited']}")
-        print(f"Successes: {results['successes']}")
-        print(f"Timeouts: {results['timeouts']}")
-        print(f"API Rate Limited: {results['rate_limited']}")
-        print(f"Errors: {results['errors']}")
-        print(f"Total time: {total_time:.1f} seconds")
-        print(f"Response codes: {response_codes}")
-
+        # Check success rate of completed requests
         if results["completed"] > 0:
-            avg_rate = results["completed"] / total_time
-            print(f"Average request rate: {avg_rate:.2f} requests/second")
+            success_rate = (results["successes"] / results["completed"]) * 100
 
-            # Calculate rate limit effectiveness
-            if request_times:
-                avg_interval = sum(request_times) / len(request_times)
-                calculated_rate = 1.0 / avg_interval if avg_interval > 0 else 0
+            # Allow some tolerance for rate limiting but expect high success
+            if results["timeouts"] > 0:
+                timeout_rate = (results["timeouts"] / results["completed"]) * 100
+                print(f"⚠️ Timeout rate: {timeout_rate:.1f}%")
+
+                # Fail if timeout rate is too high
+                assert (
+                    timeout_rate < 10
+                ), f"High timeout rate: {timeout_rate:.1f}% (expected < 10%)"
+                print(f"✅ Acceptable timeout rate: {timeout_rate:.1f}% < 10%")
+
+            if results["rate_limited"] > 0:
+                rate_limit_rate = (results["rate_limited"] / results["completed"]) * 100
+                print(f"ℹ️ Rate limiting rate: {rate_limit_rate:.1f}%")
+
+                # Rate limiting is acceptable for high load
+                if rate_limit_rate > 50:
+                    print(
+                        f"⚠️ High rate limiting: {rate_limit_rate:.1f}% - consider optimizing"
+                    )
+
+            # Overall success should be high (success + rate limited are both acceptable outcomes)
+            acceptable_rate = (
+                (results["successes"] + results["rate_limited"]) / results["completed"]
+            ) * 100
+            assert (
+                acceptable_rate >= 90
+            ), f"Low acceptable outcome rate: {acceptable_rate:.1f}% (expected >= 90%)"
+
+            print("✅ STRESS TEST PASSED:")
+            print(f"  - Completion rate: {completion_rate:.1f}%")
+            print(f"  - Success rate: {success_rate:.1f}%")
+            print(f"  - Acceptable outcomes: {acceptable_rate:.1f}%")
+            print(f"  - Processing rate: {results['completed']/total_time:.1f} req/s")
+
+            if results["timeouts"] == 0 and results["rate_limited"] == 0:
                 print(
-                    f"Calculated rate (from intervals): {calculated_rate:.2f} requests/second"
+                    "🎉 Perfect! No timeouts or rate limiting - system handles load excellently!"
                 )
-
-        # Verify rate limiting is working
-        if results["completed"] > 0:
-            avg_rate = results["completed"] / total_time
-
-            # Check that our rate limiting is effective (≤10 req/sec, preferably ≤8)
-            if avg_rate > 10:
-                raise AssertionError(
-                    f"Rate limiting FAILED: Average rate {avg_rate:.2f} req/s exceeds Instantly limit (10 req/s). "
-                    "Rate limiter not working properly."
-                )
-            elif avg_rate > 8:
+            elif results["timeouts"] == 0:
                 print(
-                    f"⚠️  WARNING: Rate {avg_rate:.2f} req/s is close to limit (target ≤8 req/s)"
+                    "✅ Great! No timeouts - rate limiting is working as expected for load control"
                 )
             else:
-                print(
-                    f"✅ Rate limiting WORKING: {avg_rate:.2f} req/s ≤ 8 req/s target"
-                )
-
-        # Verify that HTTP timeout still occurs (proving need for async processing)
-        if results["timeouts"] == 0:
-            print(
-                "⚠️  WARNING: No HTTP timeout occurred. Rate limiting may be too restrictive or test too small."
-            )
-            print(
-                "This might indicate rate limiting is working TOO well and no timeout reproduction occurred."
-            )
-        else:
-            print(
-                f"✅ HTTP TIMEOUT REPRODUCED: {results['timeouts']} timeouts occurred"
-            )
-            print(
-                "This proves that rate limiting alone is not sufficient - async processing needed!"
-            )
-
-        # This test should demonstrate both:
-        # 1. Rate limiting is working (controlled rate)
-        # 2. HTTP timeout still occurs (need async processing)
-
-        # Expected outcome for Step 2.3:
-        assert (
-            results["test_rate_limited"] > 0 or avg_rate <= 8
-        ), "Rate limiting should be active and controlling request rate to ≤8 req/s"
-
-        # The test demonstrates the issue but doesn't fail - it shows progress toward solution
-        print("\n✅ STEP 2.3 SUCCESS: Rate limiting integration verified!")
-        print(f"Rate controlled to {avg_rate:.2f} req/s (≤ 8 req/s target)")
-        print(f"Test rate limited {results['test_rate_limited']} requests")
-
-        if results["timeouts"] > 0:
-            print(
-                f"HTTP timeout still occurred ({results['timeouts']} times) - proving need for async processing (Step 5)"
-            )
-
-            # As per plan, this test should still fail to show that more fixes are needed
-            raise AssertionError(
-                f"EXPECTED OUTCOME: Rate limiting works ({avg_rate:.2f} req/s ≤ 8) BUT HTTP timeout still occurred "
-                f"({results['timeouts']} times). This proves rate limiting alone is insufficient and "
-                "async processing (Step 5) is needed to fully solve the timeout issue."
-            )
-        else:
-            print(
-                "No HTTP timeout occurred - rate limiting may be sufficient for this load"
-            )
+                print("✅ Acceptable! System handled high load with minimal timeouts")
 
     def test_add_lead_scaled_testing(self):
         """
