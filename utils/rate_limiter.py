@@ -360,6 +360,26 @@ class RedisRateLimiter:
         finally:
             pipe.reset()
 
+    def _acquire_token_redis_lua(self, key: str) -> bool:
+        """
+        Atomic leaky bucket token acquisition via Redis Lua script.
+        """
+        bucket_key = f"rate_limit:{key}"
+        timestamp_key = f"rate_limit:{key}:timestamp"
+        try:
+            result = self.redis_client.evalsha(
+                self._lua_sha,
+                2,
+                bucket_key,
+                timestamp_key,
+                self.window_size_seconds,
+                self.effective_rate,
+            )
+            return bool(result)
+        except Exception as e:
+            logger.warning(f"Lua script evaluation failed: {e}")
+            return self._acquire_token_redis(key)
+
     def get_bucket_status(self, key: str) -> dict:
         """
         Get current status of the rate limit bucket.
