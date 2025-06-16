@@ -52,6 +52,12 @@ jobs:
           pytest tests/unit/${{ matrix.blueprint }} -v
         env:
           GMAIL_SERVICE_ACCOUNT_INFO: ${{ secrets.GMAIL_SERVICE_ACCOUNT_INFO }}
+          CLOSE_API_KEY: "dummy"
+          INSTANTLY_API_KEY: "dummy"
+          EASYPOST_TEST_API_KEY: "dummy"
+          EASYPOST_PROD_API_KEY: "dummy"
+          TEST_EMAIL_SENDER: "dummy@example.com"
+          TEST_EMAIL_RECIPIENT: "dummy@example.com"
           
   deploy-to-staging:
     needs: blueprint-unit-tests
