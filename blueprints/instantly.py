@@ -41,6 +41,83 @@ logger = structlog.get_logger("instantly")
 _rate_limiter = None
 
 
+def determine_notification_recipients(lead_details, env_type):
+    """
+    Determine notification recipients based on consultant field.
+
+    Args:
+        lead_details (dict): Lead details from Close API
+        env_type (str): Environment type (production/development)
+
+    Returns:
+        tuple: (recipients_string, error_message)
+               recipients_string is None if error or should use default
+               error_message is None if success
+    """
+    # Get the consultant field value
+    consultant_field_key = "custom.lcf_TRIulkQaxJArdGl2k89qY6NKR0ZTYkzjRdeILo1h5fi"
+    consultant = lead_details.get(consultant_field_key)
+    lead_id = lead_details.get("id", "unknown")
+
+    # Check if consultant field is missing, empty, or null
+    if consultant is None:
+        error_msg = f"Consultant field missing for lead {lead_id}. Expected 'Barbara Pigg' or 'April Lowrie'."
+        logger.error("consultant_field_missing", lead_id=lead_id, error=error_msg)
+        return None, error_msg
+
+    if consultant == "":
+        error_msg = f"Consultant field empty for lead {lead_id}. Expected 'Barbara Pigg' or 'April Lowrie'."
+        logger.error("consultant_field_empty", lead_id=lead_id, error=error_msg)
+        return None, error_msg
+
+    # Handle known consultants
+    if consultant == "Barbara Pigg":
+        # Barbara uses default notification behavior (existing team)
+        logger.info(
+            "consultant_determined",
+            lead_id=lead_id,
+            consultant="Barbara Pigg",
+            recipients="default",
+        )
+        return None, None  # None means use default recipients
+
+    elif consultant == "April Lowrie":
+        # April's behavior depends on environment
+        if env_type == "development":
+            # Development: Lance only
+            recipients = "lance@whiteboardgeeks.com"
+            logger.info(
+                "consultant_determined",
+                lead_id=lead_id,
+                consultant="April Lowrie",
+                environment="development",
+                recipients=recipients,
+            )
+            return recipients, None
+        else:
+            # Production: April's team
+            recipients = "april.lowrie@whiteboardgeeks.com,noura.mahmoud@whiteboardgeeks.com,kori.watkins@whiteboardgeeks.com"
+            logger.info(
+                "consultant_determined",
+                lead_id=lead_id,
+                consultant="April Lowrie",
+                environment="production",
+                recipients=recipients,
+            )
+            return recipients, None
+
+    else:
+        # Unknown consultant
+        error_msg = f"Unknown consultant '{consultant}' for lead {lead_id}. Expected 'Barbara Pigg' or 'April Lowrie'."
+        logger.error(
+            "consultant_unknown",
+            lead_id=lead_id,
+            consultant=consultant,
+            error=error_msg,
+        )
+        return None, error_msg
+
+
 def get_rate_limiter():
     """Get or create the global rate limiter instance."""
     global _rate_limiter
@@ -1241,6 +1318,31 @@ def handle_instantly_reply_received():
         # Get environment information
         env_type = os.environ.get("ENV_TYPE", "development")
 
+        # Determine notification recipients based on consultant
+        custom_recipients, consultant_error = determine_notification_recipients(
+            lead_details, env_type
+        )
+
+        if consultant_error:
+            # Return error response for unknown/missing consultant
+            error_msg = f"Error processing reply received webhook: {consultant_error}"
+            logger.error(
+                "consultant_determination_failed",
+                lead_id=lead_id,
+                lead_email=lead_email,
+                error=consultant_error,
+            )
+
+            response_data = {
+                "status": "error",
+                "message": consultant_error,
+                "lead_id": lead_id,
+                "consultant": lead_details.get(
+                    "custom.lcf_TRIulkQaxJArdGl2k89qY6NKR0ZTYkzjRdeILo1h5fi"
+                ),
+            }
+            return log_webhook_response(400, response_data, data)
+
         # Format the notification email content
         notification_html = f"""
         <h2>Instantly Email Reply Received</h2>
@@ -1296,11 +1398,26 @@ Time: {datetime.now().strftime("%Y-%m-%d %H:%M:%S")}"""
         # Send email notification using Gmail API
         try:
             # Send notification email using our wrapper function
-            notification_result = send_email(
-                subject=f"Instantly Reply: {reply_subject} from {lead_name}",
-                body=notification_html,
-                text_content=text_content,
-            )
+            # Pass custom recipients if determined, otherwise use default
+            email_kwargs = {
+                "subject": f"Instantly Reply: {reply_subject} from {lead_name}",
+                "body": notification_html,
+                "text_content": text_content,
+            }
+
+            # Add custom recipients if determined
+            if custom_recipients:
+                email_kwargs["recipients"] = custom_recipients
+                logger.info(
+                    "using_custom_recipients",
+                    lead_id=lead_id,
+                    recipients=custom_recipients,
+                    consultant=lead_details.get(
+                        "custom.lcf_TRIulkQaxJArdGl2k89qY6NKR0ZTYkzjRdeILo1h5fi"
+                    ),
+                )
+
+            notification_result = send_email(**email_kwargs)
             # Initialize notification status
             notification_status = notification_result.get("status", "unknown")
             logger.info(
@@ -1344,6 +1461,10 @@ Time: {datetime.now().strftime("%Y-%m-%d %H:%M:%S")}"""
                 "close_task_id": None,  # Reply webhooks don't have associated Close tasks
                 "paused_subscriptions": paused_subscriptions,
                 "notification_status": notification_status,
+                "consultant": lead_details.get(
+                    "custom.lcf_TRIulkQaxJArdGl2k89qY6NKR0ZTYkzjRdeILo1h5fi"
+                ),
+                "custom_recipients_used": bool(custom_recipients),
             },
         }
 

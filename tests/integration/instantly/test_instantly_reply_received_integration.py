@@ -221,3 +221,165 @@ class TestInstantlyReplyReceivedIntegration:
         ), f"Subscription ID {subscription_id} not found in response"
 
         print("All assertions passed!")
+
+    def test_instantly_reply_received_barbara_consultant_integration(self):
+        """Full integration test for Barbara's lead reply with consultant field."""
+        print("\n=== STARTING INTEGRATION TEST: Barbara Consultant Reply Received ===")
+
+        # Strictly require Gmail credentials
+        assert (
+            self.gmail_configured
+        ), "Gmail service account credentials are not configured"
+
+        # Create test lead with Barbara as consultant
+        print("Creating test lead in Close with Barbara as consultant...")
+        lead_data = self.close_api.create_test_lead(
+            email=self.mock_payload["lead_email"],
+            first_name=self.mock_payload["firstName"],
+            last_name=self.mock_payload["lastName"],
+            consultant="Barbara Pigg",  # Set consultant field
+            include_date_location=True,
+        )
+        self.test_data["lead_id"] = lead_data["id"]
+        print(f"Test lead created with ID: {lead_data['id']}")
+
+        # Get the first contact from the lead
+        lead_details = self.close_api.get_lead(lead_data["id"])
+        contacts = lead_details.get("contacts", [])
+        assert len(contacts) > 0, "No contacts found on the lead"
+        contact = contacts[0]
+        contact_id = contact["id"]
+
+        # Subscribe the contact to a test sequence
+        print(f"Subscribing contact {contact_id} to test sequence...")
+        subscription = self.close_api.subscribe_contact_to_sequence(
+            contact_id=contact_id, sequence_id="seq_5cIemWAjO0ln2WacqpMs6S"
+        )
+        subscription_id = subscription["id"]
+        print(f"Contact subscribed to sequence with subscription ID: {subscription_id}")
+
+        # Verify the subscription is active
+        assert subscription["status"] == "active", "Sequence subscription is not active"
+
+        # Create a task with "Instantly:" in it
+        print("Creating task with 'Instantly:' prefix...")
+        task_data = self.close_api.create_task_for_lead(
+            lead_data["id"], self.mock_payload["campaign_name"]
+        )
+        self.test_data["task_id"] = task_data["id"]
+        print(f"Task created with ID: {task_data['id']}")
+
+        print("Waiting 10 seconds for Close to populate lead data for search...")
+        sleep(10)
+
+        # Send webhook
+        print("Sending mock webhook to endpoint...")
+        response = requests.post(
+            f"{self.base_url}/instantly/reply_received",
+            json=self.mock_payload,
+        )
+        print(f"Webhook response status: {response.status_code}")
+        print(f"Webhook response: {response.json()}")
+
+        # Verify response indicates success with default recipients
+        assert response.status_code == 200
+        response_data = response.json()
+        assert response_data.get("status") == "success"
+
+        # Verify notification was sent (should use default recipients)
+        notification_status = response_data.get("data", {}).get("notification_status")
+        assert notification_status == "success"
+
+        # Verify consultant was logged correctly
+        consultant = response_data.get("data", {}).get("consultant")
+        assert consultant == "Barbara Pigg", f"Expected Barbara Pigg, got {consultant}"
+
+        # Verify custom recipients were NOT used (Barbara uses default)
+        custom_recipients_used = response_data.get("data", {}).get(
+            "custom_recipients_used"
+        )
+        assert (
+            custom_recipients_used is False
+        ), "Barbara should use default recipients, not custom"
+
+        print("Barbara consultant integration test passed!")
+
+    def test_instantly_reply_received_april_consultant_integration(self):
+        """Full integration test for April's lead reply with consultant field."""
+        print("\n=== STARTING INTEGRATION TEST: April Consultant Reply Received ===")
+
+        # Strictly require Gmail credentials
+        assert (
+            self.gmail_configured
+        ), "Gmail service account credentials are not configured"
+
+        # Create test lead with April as consultant
+        print("Creating test lead in Close with April as consultant...")
+        lead_data = self.close_api.create_test_lead(
+            email=self.mock_payload["lead_email"],
+            first_name=self.mock_payload["firstName"],
+            last_name=self.mock_payload["lastName"],
+            consultant="April Lowrie",  # Set consultant field
+            include_date_location=True,
+        )
+        self.test_data["lead_id"] = lead_data["id"]
+        print(f"Test lead created with ID: {lead_data['id']}")
+
+        # Get the first contact from the lead
+        lead_details = self.close_api.get_lead(lead_data["id"])
+        contacts = lead_details.get("contacts", [])
+        assert len(contacts) > 0, "No contacts found on the lead"
+        contact = contacts[0]
+        contact_id = contact["id"]
+
+        # Subscribe the contact to a test sequence
+        print(f"Subscribing contact {contact_id} to test sequence...")
+        subscription = self.close_api.subscribe_contact_to_sequence(
+            contact_id=contact_id, sequence_id="seq_5cIemWAjO0ln2WacqpMs6S"
+        )
+        subscription_id = subscription["id"]
+        print(f"Contact subscribed to sequence with subscription ID: {subscription_id}")
+
+        # Verify the subscription is active
+        assert subscription["status"] == "active", "Sequence subscription is not active"
+
+        # Create a task with "Instantly:" in it
+        print("Creating task with 'Instantly:' prefix...")
+        task_data = self.close_api.create_task_for_lead(
+            lead_data["id"], self.mock_payload["campaign_name"]
+        )
+        self.test_data["task_id"] = task_data["id"]
+        print(f"Task created with ID: {task_data['id']}")
+
+        print("Waiting 10 seconds for Close to populate lead data for search...")
+        sleep(10)
+
+        # Send webhook
+        print("Sending mock webhook to endpoint...")
+        response = requests.post(
+            f"{self.base_url}/instantly/reply_received",
+            json=self.mock_payload,
+        )
+        print(f"Webhook response status: {response.status_code}")
+        print(f"Webhook response: {response.json()}")
+
+        # Verify response indicates success with April's recipients
+        assert response.status_code == 200
+        response_data = response.json()
+        assert response_data.get("status") == "success"
+
+        # Verify notification was sent with custom recipients
+        notification_status = response_data.get("data", {}).get("notification_status")
+        assert notification_status == "success"
+
+        # Verify consultant was logged correctly
+        consultant = response_data.get("data", {}).get("consultant")
+        assert consultant == "April Lowrie", f"Expected April Lowrie, got {consultant}"
+
+        # Verify custom recipients were used
+        custom_recipients_used = response_data.get("data", {}).get(
+            "custom_recipients_used"
+        )
+        assert custom_recipients_used is True, "April should use custom recipients"
+
+        print("April consultant integration test passed!")
