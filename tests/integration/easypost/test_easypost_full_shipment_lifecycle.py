@@ -274,3 +274,180 @@ class TestEasyPostFullShipmentLifecycleIntegration:
 
         print("Lead was successfully updated with delivery information")
         print("All assertions passed!")
+
+    def test_duplicate_delivery_webhook_prevention(self):
+        """Test that duplicate delivery webhooks don't create duplicate custom activities."""
+        print(
+            "\n=== STARTING INTEGRATION TEST: Duplicate Delivery Webhook Prevention ==="
+        )
+
+        # Use a different tracking number to avoid conflicts with other tests
+        duplicate_test_tracking_number = "EZ4000000004"
+        duplicate_test_carrier = "USPS"
+
+        # Create a test lead in Close with tracking number and carrier
+        print("Creating test lead in Close with tracking information...")
+        lead_data = self.close_api.create_test_lead(
+            first_name=self.test_first_name,
+            last_name=f"{self.test_last_name}Duplicate",
+            email=f"lance+duplicate.easypost{datetime.now().strftime('%Y%m%d%H%M%S')}@whiteboardgeeks.com",
+            custom_fields={
+                "custom.cf_iSOPYKzS9IPK20gJ8eH9Q74NT7grCQW9psqo4lZR3Ii": duplicate_test_tracking_number,
+                "custom.cf_2QQR5e6vJUyGzlYBtHddFpdqNp5393nEnUiZk1Ukl9l": duplicate_test_carrier,
+            },
+            include_date_location=False,  # Exclude Date & Location Mailer Delivered field
+        )
+        duplicate_lead_id = lead_data["id"]
+        print(f"Test lead created with ID: {duplicate_lead_id}")
+
+        # Update the mock payload for this test
+        duplicate_mock_payload = self.mock_payload.copy()
+        duplicate_mock_payload["event"]["lead_id"] = duplicate_lead_id
+        duplicate_mock_payload["event"]["object_id"] = duplicate_lead_id
+        duplicate_mock_payload["event"]["data"]["id"] = duplicate_lead_id
+        duplicate_mock_payload["event"]["data"]["name"] = (
+            f"{self.test_first_name} {self.test_last_name}Duplicate"
+        )
+        duplicate_mock_payload["event"]["data"]["display_name"] = (
+            f"{self.test_first_name} {self.test_last_name}Duplicate"
+        )
+        duplicate_mock_payload["event"]["data"][
+            "custom.cf_2QQR5e6vJUyGzlYBtHddFpdqNp5393nEnUiZk1Ukl9l"
+        ] = [duplicate_test_carrier]
+        duplicate_mock_payload["event"]["data"][
+            "custom.cf_iSOPYKzS9IPK20gJ8eH9Q74NT7grCQW9psqo4lZR3Ii"
+        ] = duplicate_test_tracking_number
+
+        # Send the mock webhook to create_tracker endpoint
+        print("Sending mock webhook to create_tracker endpoint...")
+        response = requests.post(
+            f"{self.base_url}/easypost/create_tracker",
+            json=duplicate_mock_payload,
+        )
+
+        assert response.status_code == 200, "Create tracker request failed"
+        assert (
+            response.json()["status"] == "success"
+        ), "Create tracker request was not successful"
+
+        # Store tracker ID
+        tracker_id = response.json()["tracker_id"]
+        print(f"EasyPost tracker created with ID: {tracker_id}")
+
+        # Prepare mock delivery webhook payload
+        delivery_payload = {
+            "id": f"evt_test_duplicate_{datetime.now().strftime('%Y%m%d%H%M%S')}",
+            "result": self.delivery_webhook_payload.copy(),
+        }
+
+        # Update the delivery webhook payload with the test data
+        delivery_payload["result"]["id"] = tracker_id
+        delivery_payload["result"]["tracking_code"] = duplicate_test_tracking_number
+        delivery_payload["result"]["carrier"] = duplicate_test_carrier
+
+        # Send the FIRST delivery webhook
+        print("Sending FIRST mock delivery status webhook...")
+        first_delivery_response = requests.post(
+            f"{self.base_url}/easypost/delivery_status",
+            json=delivery_payload,
+        )
+
+        print(
+            f"First delivery status response code: {first_delivery_response.status_code}"
+        )
+        print(f"First delivery status response: {first_delivery_response.json()}")
+
+        assert (
+            first_delivery_response.status_code == 200
+        ), "First delivery status update failed"
+
+        # Wait for the first webhook to be processed
+        print("Waiting for first delivery status to be processed...")
+        first_webhook_data = self.wait_for_webhook_processed(
+            tracking_code=duplicate_test_tracking_number
+        )
+
+        # Verify first webhook was processed successfully
+        assert (
+            first_webhook_data is not None
+        ), "First delivery_status webhook was not processed"
+        assert (
+            first_webhook_data.get("processed") is True
+        ), "First delivery_status webhook wasn't marked as processed"
+        assert (
+            first_webhook_data.get("result") == "Success"
+        ), f"First delivery_status webhook processing failed: {first_webhook_data.get('error', 'Unknown error')}"
+        print("First delivery_status webhook was successfully processed")
+
+        # Check custom activities after first webhook - should be exactly 1
+        mailer_delivered_activity_type = "custom.actitype_3KhBfWgjtVfiGYbczbgOWv"
+        activities_after_first = self.close_api.get_lead_custom_activities(
+            duplicate_lead_id, mailer_delivered_activity_type
+        )
+
+        print(f"Custom activities after first webhook: {len(activities_after_first)}")
+        assert (
+            len(activities_after_first) == 1
+        ), f"Expected exactly 1 custom activity after first webhook, but found {len(activities_after_first)}"
+
+        # Send the SECOND delivery webhook (duplicate)
+        print("Sending SECOND (duplicate) mock delivery status webhook...")
+
+        # Create a new event ID for the second webhook to simulate a real duplicate scenario
+        delivery_payload["id"] = (
+            f"evt_test_duplicate2_{datetime.now().strftime('%Y%m%d%H%M%S')}"
+        )
+
+        second_delivery_response = requests.post(
+            f"{self.base_url}/easypost/delivery_status",
+            json=delivery_payload,
+        )
+
+        print(
+            f"Second delivery status response code: {second_delivery_response.status_code}"
+        )
+        print(f"Second delivery status response: {second_delivery_response.json()}")
+
+        assert (
+            second_delivery_response.status_code == 200
+        ), "Second delivery status update failed"
+
+        # Wait a moment for the second webhook to be processed
+        print("Waiting for second delivery status to be processed...")
+        time.sleep(
+            2
+        )  # Short wait since we don't expect it to create new webhook tracker data
+
+        # Check custom activities after second webhook - should STILL be exactly 1 (no duplicate created)
+        activities_after_second = self.close_api.get_lead_custom_activities(
+            duplicate_lead_id, mailer_delivered_activity_type
+        )
+
+        print(f"Custom activities after second webhook: {len(activities_after_second)}")
+        assert (
+            len(activities_after_second) == 1
+        ), f"Expected exactly 1 custom activity after second webhook (no duplicate), but found {len(activities_after_second)}"
+
+        # Verify the single activity has the correct information
+        activity = activities_after_second[0]
+
+        # Handle potential prefix differences in activity type ID
+        expected_type = mailer_delivered_activity_type.replace("custom.", "")
+        actual_type = activity["custom_activity_type_id"].replace("custom.", "")
+        assert (
+            actual_type == expected_type
+        ), f"Activity has wrong type. Expected: {expected_type}, Got: {actual_type}"
+
+        assert (
+            activity["lead_id"] == duplicate_lead_id
+        ), "Activity is associated with wrong lead"
+
+        print("✅ SUCCESS: Duplicate delivery webhook prevention working correctly!")
+        print(
+            "✅ Only one custom activity exists after two identical delivery webhooks"
+        )
+
+        # Cleanup: Delete the test lead
+        self.close_api.delete_lead(duplicate_lead_id)
+        print(f"Cleaned up test lead: {duplicate_lead_id}")
+        print("All assertions passed!")

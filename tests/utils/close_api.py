@@ -568,3 +568,27 @@ class CloseAPI:
             raise Exception(f"Failed to search leads: {response.text}")
 
         return response.json().get("data", [])
+
+    def get_lead_custom_activities(self, lead_id, activity_type_id):
+        """Get custom activities for a lead filtered by activity type.
+
+        Args:
+            lead_id (str): The lead ID to get activities for
+            activity_type_id (str): The custom activity type ID to filter by
+
+        Returns:
+            list: List of custom activities matching the criteria
+        """
+        params = {"lead_id": lead_id, "custom_activity_type_id": activity_type_id}
+
+        response = self._make_request_with_retry(
+            "GET",
+            f"{self.base_url}/activity/custom/",
+            params=params,
+            headers=self.headers,
+        )
+
+        if response.status_code != 200:
+            raise Exception(f"Failed to get custom activities: {response.text}")
+
+        return response.json().get("data", [])
