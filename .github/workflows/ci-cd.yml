@@ -91,6 +91,7 @@ jobs:
     needs: deploy-to-staging
     runs-on: ubuntu-latest
     strategy:
+      max-parallel: 1  
       matrix:
         blueprint: [instantly, easypost, gmail]  # Added gmail to the integration test matrix
     steps:

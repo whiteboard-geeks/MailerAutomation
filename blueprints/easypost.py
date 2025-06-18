@@ -440,8 +440,74 @@ def update_delivery_information_for_lead(lead_id, delivery_information):
     return response_data
 
 
+def check_existing_mailer_delivered_activities(lead_id):
+    """
+    Check if there are existing 'Mailer Delivered' custom activities for a lead.
+
+    Args:
+        lead_id (str): The ID of the lead to check
+
+    Returns:
+        bool: True if existing activities found, False otherwise
+    """
+    try:
+        headers = {
+            "Content-Type": "application/json",
+            "Authorization": f"Basic {get_close_encoded_key()}",
+        }
+
+        params = {
+            "lead_id": lead_id,
+            "custom_activity_type_id": "custom.actitype_3KhBfWgjtVfiGYbczbgOWv",  # Mailer Delivered activity type
+        }
+
+        response = requests.get(
+            "https://api.close.com/api/v1/activity/custom/",
+            params=params,
+            headers=headers,
+        )
+
+        if response.status_code == 200:
+            response_data = response.json()
+            activities = response_data.get("data", [])
+
+            # Return True if any mailer delivered activities found, False otherwise
+            has_existing_delivered_activities = len(activities) > 0
+
+            if has_existing_delivered_activities:
+                logger.info(
+                    f"Found {len(activities)} existing mailer delivered activities for lead {lead_id}"
+                )
+            else:
+                logger.info(
+                    f"No existing mailer delivered activities found for lead {lead_id}"
+                )
+
+            return has_existing_delivered_activities
+        else:
+            logger.error(
+                f"Failed to check existing activities for lead {lead_id}: {response.status_code}, {response.text}"
+            )
+            # Fail-safe: return False to allow activity creation if check fails
+            return False
+
+    except Exception as e:
+        logger.error(
+            f"Error checking existing mailer delivered activities for lead {lead_id}: {str(e)}"
+        )
+        # Fail-safe: return False to allow activity creation if check fails
+        return False
+
+
 def create_package_delivered_custom_activity_in_close(lead_id, delivery_information):
     """Create a custom activity in Close for delivered package."""
+    # Check if there are already existing mailer delivered activities for this lead
+    if check_existing_mailer_delivered_activities(lead_id):
+        logger.info(
+            f"Mailer delivered custom activity already exists for lead {lead_id}, skipping creation"
+        )
+        return {"status": "skipped", "reason": "duplicate_activity_exists"}
+
     headers = {
         "Content-Type": "application/json",
         "Authorization": f"Basic {get_close_encoded_key()}",
