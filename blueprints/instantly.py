@@ -59,16 +59,22 @@ def determine_notification_recipients(lead_details, env_type):
     consultant = lead_details.get(consultant_field_key)
     lead_id = lead_details.get("id", "unknown")
 
-    # Check if consultant field is missing, empty, or null
+    # Handle missing, empty, or null consultant field gracefully
     if consultant is None:
-        error_msg = f"Consultant field missing for lead {lead_id}. Expected 'Barbara Pigg' or 'April Lowrie'."
-        logger.error("consultant_field_missing", lead_id=lead_id, error=error_msg)
-        return None, error_msg
+        logger.warning(
+            "consultant_field_missing",
+            lead_id=lead_id,
+            message=f"Consultant field missing for lead {lead_id}. Using default recipients.",
+        )
+        return None, None  # Use default recipients
 
     if consultant == "":
-        error_msg = f"Consultant field empty for lead {lead_id}. Expected 'Barbara Pigg' or 'April Lowrie'."
-        logger.error("consultant_field_empty", lead_id=lead_id, error=error_msg)
-        return None, error_msg
+        logger.warning(
+            "consultant_field_empty",
+            lead_id=lead_id,
+            message=f"Consultant field empty for lead {lead_id}. Using default recipients.",
+        )
+        return None, None  # Use default recipients
 
     # Handle known consultants
     if consultant == "Barbara Pigg":
@@ -107,15 +113,14 @@ def determine_notification_recipients(lead_details, env_type):
             return recipients, None
 
     else:
-        # Unknown consultant
-        error_msg = f"Unknown consultant '{consultant}' for lead {lead_id}. Expected 'Barbara Pigg' or 'April Lowrie'."
-        logger.error(
+        # Unknown consultant - log warning but use default recipients
+        logger.warning(
             "consultant_unknown",
             lead_id=lead_id,
             consultant=consultant,
-            error=error_msg,
+            message=f"Unknown consultant '{consultant}' for lead {lead_id}. Using default recipients.",
         )
-        return None, error_msg
+        return None, None  # Use default recipients instead of returning error
 
 
 def get_rate_limiter():

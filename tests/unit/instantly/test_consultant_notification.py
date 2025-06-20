@@ -166,79 +166,75 @@ class TestConsultantNotification:
         ), f"Expected Lance only in development, got {recipients}"
         assert error is None, "No error should occur for April's leads in development"
 
-    def test_unknown_consultant_returns_error(self):
-        """Test that unknown consultant returns error."""
+    def test_unknown_consultant_uses_default_recipients(self):
+        """Test that unknown consultant uses default recipients (graceful fallback)."""
         recipients, error = determine_notification_recipients(
             self.unknown_consultant_lead_details, "production"
         )
 
-        # Unknown consultant should return error
-        assert recipients is None, "Recipients should be None for unknown consultant"
-        assert error is not None, "Error should be returned for unknown consultant"
+        # Unknown consultant should use default recipients (no error)
         assert (
-            "John Doe" in error
-        ), "Error message should include the unknown consultant name"
-        assert "lead_unknown_789" in error, "Error message should include the lead ID"
+            recipients is None
+        ), "Recipients should be None (default) for unknown consultant"
+        assert (
+            error is None
+        ), "No error should be returned for unknown consultant (graceful fallback)"
 
-    def test_empty_consultant_returns_error(self):
-        """Test that empty consultant field returns error."""
+    def test_empty_consultant_uses_default_recipients(self):
+        """Test that empty consultant field uses default recipients (graceful fallback)."""
         recipients, error = determine_notification_recipients(
             self.empty_consultant_lead_details, "production"
         )
 
-        # Empty consultant should return error
-        assert recipients is None, "Recipients should be None for empty consultant"
-        assert error is not None, "Error should be returned for empty consultant"
+        # Empty consultant should use default recipients (no error)
         assert (
-            "empty" in error.lower() or "missing" in error.lower()
-        ), "Error message should indicate empty/missing consultant"
+            recipients is None
+        ), "Recipients should be None (default) for empty consultant"
+        assert (
+            error is None
+        ), "No error should be returned for empty consultant (graceful fallback)"
 
-    def test_missing_consultant_field_returns_error(self):
-        """Test that missing consultant field returns error."""
+    def test_missing_consultant_field_uses_default_recipients(self):
+        """Test that missing consultant field uses default recipients (graceful fallback)."""
         recipients, error = determine_notification_recipients(
             self.missing_consultant_lead_details, "production"
         )
 
-        # Missing consultant field should return error
+        # Missing consultant field should use default recipients (no error)
         assert (
             recipients is None
-        ), "Recipients should be None for missing consultant field"
+        ), "Recipients should be None (default) for missing consultant field"
         assert (
-            error is not None
-        ), "Error should be returned for missing consultant field"
-        assert (
-            "missing" in error.lower() or "not found" in error.lower()
-        ), "Error message should indicate missing consultant field"
+            error is None
+        ), "No error should be returned for missing consultant field (graceful fallback)"
 
-    def test_null_consultant_returns_error(self):
-        """Test that null consultant field returns error."""
+    def test_null_consultant_uses_default_recipients(self):
+        """Test that null consultant field uses default recipients (graceful fallback)."""
         recipients, error = determine_notification_recipients(
             self.null_consultant_lead_details, "production"
         )
 
-        # Null consultant should return error
-        assert recipients is None, "Recipients should be None for null consultant"
-        assert error is not None, "Error should be returned for null consultant"
+        # Null consultant should use default recipients (no error)
         assert (
-            "empty" in error.lower() or "missing" in error.lower()
-        ), "Error message should indicate empty/missing consultant"
+            recipients is None
+        ), "Recipients should be None (default) for null consultant"
+        assert (
+            error is None
+        ), "No error should be returned for null consultant (graceful fallback)"
 
-    def test_consultant_case_sensitive(self):
-        """Test that consultant matching is case sensitive."""
+    def test_consultant_case_sensitive_uses_default_recipients(self):
+        """Test that case-mismatched consultant uses default recipients (graceful fallback)."""
         recipients, error = determine_notification_recipients(
             self.lowercase_consultant_lead_details, "production"
         )
 
-        # Lowercase "april lowrie" should not be recognized
+        # Lowercase "april lowrie" should use default recipients (no error)
         assert (
             recipients is None
-        ), "Recipients should be None for case-mismatched consultant"
+        ), "Recipients should be None (default) for case-mismatched consultant"
         assert (
-            error is not None
-        ), "Error should be returned for case-mismatched consultant"
-        assert (
-            "april lowrie" in error
-        ), "Error message should include the actual (lowercase) consultant name"
+            error is None
+        ), "No error should be returned for case-mismatched consultant (graceful fallback)"
 
     def test_consultant_field_key_constant(self):
         """Test that we're using the correct consultant field key."""
