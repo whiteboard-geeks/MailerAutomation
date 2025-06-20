@@ -123,8 +123,19 @@ class CloseAPI:
         email_suffix=None,
         custom_fields=None,
         include_date_location=True,
+        consultant=None,
     ):
-        """Create a test lead in Close."""
+        """Create a test lead in Close.
+
+        Args:
+            email (str, optional): Contact email
+            first_name (str, optional): Contact first name
+            last_name (str, optional): Contact last name
+            email_suffix (str, optional): Suffix for generated email
+            custom_fields (dict, optional): Additional custom fields
+            include_date_location (bool): Whether to include date/location field
+            consultant (str, optional): Consultant name for custom field
+        """
         # Generate unique email to avoid conflicts
         timestamp = datetime.now().strftime("%Y%m%d%H%M%S")  # Format as YYYYMMDDhhmmss
         email_suffix = email_suffix or timestamp
@@ -158,6 +169,12 @@ class CloseAPI:
         if include_date_location:
             payload["custom.cf_DTgmXXPozUH3707H1MYu2PhhDznJjWbtmDcb7zme5a9"] = (
                 "2/27 to Richmond, VA"  # Date & Location Mailer Delivered
+            )
+
+        # Add consultant field if provided
+        if consultant:
+            payload["custom.lcf_TRIulkQaxJArdGl2k89qY6NKR0ZTYkzjRdeILo1h5fi"] = (
+                consultant
             )
 
         # Add any custom fields provided
