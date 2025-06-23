@@ -132,19 +132,36 @@ close_rate_limit:limits:/api/v1/lead/{id}/      # Discovered limits cache
 - Preserves full paths for static endpoints (e.g., `/api/v1/data/search/`)
 - Comprehensive error handling with clear error messages
 
-#### 1.3 Rate Limiter Core Logic
+#### 1.3 Rate Limiter Core Logic ✅ COMPLETED
 
 - **File**: `utils/rate_limiter.py` (added to existing file)
 - **Tests**: `tests/unit/close_rate_limiter/test_rate_limiter_core.py`
 - **Class**: `CloseRateLimiter`
 
-**Test Cases**:
+**Test Cases** (All 21 tests passing):
 
-- First call to unknown endpoint (uses conservative default)
-- Subsequent calls use discovered limits
-- Response header updates
-- Invalid headers don't break existing limits
-- Multiple endpoints with different limits
+- ✅ First call to unknown endpoint (uses conservative default)
+- ✅ Subsequent calls use discovered limits
+- ✅ Response header updates
+- ✅ Invalid headers don't break existing limits
+- ✅ Multiple endpoints with different limits
+- ✅ Endpoint-specific rate limiting isolation
+- ✅ Dynamic limit discovery from headers
+- ✅ Limit persistence and retrieval in Redis
+- ✅ Safety factor application to discovered limits
+- ✅ Integration with existing RedisRateLimiter
+- ✅ Fallback behavior when Redis unavailable
+- ✅ Redis key structure for endpoints
+
+**Implementation Details**:
+
+- `CloseRateLimiter` class extends `RedisRateLimiter` with endpoint-specific functionality
+- Conservative default rate (1 req/sec) for unknown endpoints
+- Dynamic limit discovery from Close API response headers
+- Endpoint-specific Redis buckets with key structure: `close_rate_limit:limits:/api/v1/endpoint/`
+- Safety factor applied to discovered limits (default 80%)
+- Comprehensive error handling and fallback mechanisms
+- All methods properly tested with mocked Redis client
 
 ### Phase 2: Integration with close_utils.py
 
@@ -270,10 +287,13 @@ tests/utils/close_api.py         # Enhanced test helpers
 ## Progress Summary
 
 **Phase 1.1 COMPLETED** ✅
-**Phase 1.2 COMPLETED** ✅
+**Phase 1.2 COMPLETED** ✅  
+**Phase 1.3 COMPLETED** ✅
 
 - Header parsing function implemented and fully tested (13 test cases passing)
 - Endpoint extraction function implemented and fully tested (17 test methods passing)
-- Both functions handle all edge cases robustly with comprehensive error handling
-- Functions work together to provide the foundation for Close API rate limiting
-- Ready to proceed to Phase 1.3 (Rate Limiter Core Logic)
+- CloseRateLimiter class implemented and fully tested (21 test cases passing)
+- All core components handle edge cases robustly with comprehensive error handling
+- Dynamic rate limiter with endpoint-specific functionality working correctly
+- Conservative defaults, safety factors, and Redis integration all functional
+- Ready to proceed to Phase 2 (Integration with close_utils.py)
