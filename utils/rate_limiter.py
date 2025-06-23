@@ -466,6 +466,111 @@ class RedisRateLimiter:
         )
 
 
+def extract_endpoint_key(url: str) -> str:
+    """
+    Extract consistent endpoint key from Close API URL for rate limiting.
+
+    Converts Close API URLs into normalized endpoint keys by extracting the
+    root resource path. All operations on the same resource type share the
+    same rate limit bucket.
+
+    Examples:
+        https://api.close.com/api/v1/lead/lead_123/ -> /api/v1/lead/
+        https://api.close.com/api/v1/lead/lead_456/activity/ -> /api/v1/lead/
+        https://api.close.com/api/v1/data/search/ -> /api/v1/data/search/
+
+    Args:
+        url: Full Close API URL
+
+    Returns:
+        str: Normalized endpoint key (e.g., "/api/v1/lead/")
+
+    Raises:
+        ValueError: If URL is invalid or not a Close API URL
+    """
+    # Input validation
+    if url is None:
+        raise ValueError("Invalid URL: URL cannot be None")
+
+    if not isinstance(url, str):
+        raise ValueError("URL must be a string")
+
+    url = url.strip()
+    if not url:
+        raise ValueError("Invalid URL: URL cannot be empty")
+
+    # Parse URL
+    try:
+        from urllib.parse import urlparse
+
+        parsed = urlparse(url)
+    except Exception as e:
+        raise ValueError(f"Invalid URL format: {str(e)}")
+
+    # Validate scheme
+    if parsed.scheme not in ["http", "https"]:
+        raise ValueError("Invalid URL format: URL must use http or https")
+
+    # Validate domain (case-insensitive)
+    if parsed.netloc.lower() != "api.close.com":
+        raise ValueError("Not a Close API URL: URL must be for api.close.com")
+
+    # Extract and validate path
+    path = parsed.path
+    if not path or path == "/":
+        raise ValueError("Not a Close API endpoint: Missing API path")
+
+    # Ensure path starts with /api/ (case-insensitive)
+    if not path.lower().startswith("/api/"):
+        raise ValueError("Not a Close API endpoint: Path must start with /api/")
+
+    # Split path into segments
+    path_segments = [seg for seg in path.split("/") if seg]  # Remove empty segments
+
+    # Validate minimum path structure: ['api', 'v1', 'resource']
+    if len(path_segments) < 3:
+        raise ValueError("Not a Close API endpoint: Invalid path structure")
+
+    # Validate API version (case-insensitive)
+    if path_segments[0].lower() != "api":
+        raise ValueError("Not a Close API endpoint: Path must start with /api/")
+
+    if path_segments[1].lower() != "v1":
+        raise ValueError("Unsupported API version: Only v1 is supported")
+
+    # Extract root resource (3rd segment) - preserve original case
+    root_resource = path_segments[2]
+
+    # Build normalized endpoint key - preserve original case from path
+    # For resource endpoints (lead, task, contact, activity), use root
+    # For static endpoints (data/search, me, status), preserve full path
+
+    # Check if this is a resource endpoint (has potential ID in 4th segment)
+    if len(path_segments) >= 4:
+        # Check if 4th segment looks like a resource ID
+        potential_id = path_segments[3]
+
+        # Close resource IDs typically follow patterns like: lead_123, task_456, cont_789, acti_123
+        resource_id_patterns = ["lead_", "task_", "cont_", "acti_", "user_", "org_"]
+
+        # If 4th segment starts with known resource ID pattern, this is a resource endpoint
+        if any(potential_id.startswith(pattern) for pattern in resource_id_patterns):
+            # Return root resource endpoint - preserve original case
+            return f"/{path_segments[0]}/{path_segments[1]}/{root_resource}/"
+
+    # For static endpoints or unrecognized patterns, preserve the full path structure
+    # but normalize to ensure trailing slash
+    if root_resource.lower() in ["data"]:
+        # Special handling for data endpoints like /api/v1/data/search/
+        if len(path_segments) >= 4:
+            return f"/{path_segments[0]}/{path_segments[1]}/{root_resource}/{path_segments[3]}/"
+        else:
+            return f"/{path_segments[0]}/{path_segments[1]}/{root_resource}/"
+    else:
+        # For other static endpoints (me, status, etc.) - preserve original case
+        return f"/{path_segments[0]}/{path_segments[1]}/{root_resource}/"
+
+
 def parse_close_ratelimit_header(header_value: Optional[str]) -> dict:
     """
     Parse Close's ratelimit header format.
