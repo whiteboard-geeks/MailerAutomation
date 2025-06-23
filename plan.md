@@ -105,7 +105,7 @@ close_rate_limit:limits:/api/v1/lead/{id}/      # Discovered limits cache
 
 #### 1.2 Endpoint Extraction
 
-- **File**: `utils/close_rate_limiter.py`
+- **File**: `utils/rate_limiter.py` (added to existing file)
 - **Tests**: `tests/unit/close_rate_limiter/test_endpoint_extraction.py`
 - **Function**: `extract_endpoint_key()`
 
@@ -118,7 +118,7 @@ close_rate_limit:limits:/api/v1/lead/{id}/      # Discovered limits cache
 
 #### 1.3 Rate Limiter Core Logic
 
-- **File**: `utils/close_rate_limiter.py`
+- **File**: `utils/rate_limiter.py` (added to existing file)
 - **Tests**: `tests/unit/close_rate_limiter/test_rate_limiter_core.py`
 - **Class**: `CloseRateLimiter`
 
@@ -189,8 +189,7 @@ close_rate_limit:limits:/api/v1/lead/{id}/      # Discovered limits cache
 
 ```txt
 utils/
-├── rate_limiter.py              # Enhanced with Close header parsing ✅
-└── close_rate_limiter.py        # New Close-specific rate limiter (TBD)
+└── rate_limiter.py              # All rate limiting logic (generic + Close-specific) ✅
 
 tests/unit/close_rate_limiter/
 ├── test_header_parsing.py       # Test header parsing logic ✅
