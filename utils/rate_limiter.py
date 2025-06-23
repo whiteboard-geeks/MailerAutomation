@@ -464,3 +464,93 @@ class RedisRateLimiter:
             f"redis={redis_status}, "
             f"pure_leaky_bucket=True)"
         )
+
+
+def parse_close_ratelimit_header(header_value: Optional[str]) -> dict:
+    """
+    Parse Close's ratelimit header format.
+
+    Args:
+        header_value: The ratelimit header value from Close API response
+                     Format: "limit=160; remaining=159; reset=8"
+
+    Returns:
+        dict: Parsed rate limit information with keys: limit, remaining, reset
+
+    Raises:
+        ValueError: If header format is invalid or missing required fields
+    """
+    if not header_value:
+        raise ValueError("Invalid ratelimit header format: header is None or empty")
+
+    if not isinstance(header_value, str):
+        raise ValueError("Invalid ratelimit header format: header must be a string")
+
+    header_value = header_value.strip()
+    if not header_value:
+        raise ValueError("Invalid ratelimit header format: header is empty")
+
+    # Parse the header format: "limit=160; remaining=159; reset=8"
+    # Split by semicolon and parse each key=value pair
+    parsed_data = {}
+    required_fields = ["limit", "remaining", "reset"]
+    valid_pairs_found = False
+
+    try:
+        parts = header_value.split(";")
+        for part in parts:
+            part = part.strip()
+            if "=" not in part:
+                continue
+
+            key, value = part.split("=", 1)
+            key = key.strip().lower()
+            value = value.strip()
+
+            if not value:
+                raise ValueError(
+                    f"Invalid ratelimit header format: empty value for {key}"
+                )
+
+            valid_pairs_found = True
+
+            # Only process required fields, ignore additional fields with non-numeric values
+            if key in required_fields:
+                # Convert to integer (handle float values by converting to int)
+                try:
+                    parsed_data[key] = int(float(value))
+                except (ValueError, TypeError):
+                    raise ValueError(
+                        f"Invalid ratelimit header format: non-numeric value '{value}' for {key}"
+                    )
+            else:
+                # For additional fields, try to parse as numeric but ignore if not
+                try:
+                    parsed_data[key] = int(float(value))
+                except (ValueError, TypeError):
+                    # Ignore non-numeric additional fields
+                    pass
+
+        # If no valid key=value pairs were found, it's an invalid format
+        if not valid_pairs_found:
+            raise ValueError(
+                "Invalid ratelimit header format: no valid key=value pairs found"
+            )
+
+    except Exception as e:
+        if isinstance(e, ValueError) and "Invalid ratelimit header format" in str(e):
+            raise
+        raise ValueError(f"Invalid ratelimit header format: {str(e)}")
+
+    # Check for required fields
+    missing_fields = [field for field in required_fields if field not in parsed_data]
+
+    if missing_fields:
+        raise ValueError(f"Missing required fields: {', '.join(missing_fields)}")
+
+    # Return only the required fields (ignore any additional fields)
+    return {
+        "limit": parsed_data["limit"],
+        "remaining": parsed_data["remaining"],
+        "reset": parsed_data["reset"],
+    }
