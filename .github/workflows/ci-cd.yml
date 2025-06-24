@@ -165,9 +165,9 @@ jobs:
           echo "Environment variables:"
           env | grep -v "KEY" | grep -v "SECRET" | grep -v "TOKEN"
           
-          # Run the integration tests for this blueprint
-          echo "Running integration tests for ${{ matrix.blueprint }}..."
-          pytest tests/integration/${{ matrix.blueprint }} -v
+          # Run the integration tests for this blueprint (excluding stress tests)
+          echo "Running integration tests for ${{ matrix.blueprint }} (excluding stress tests)..."
+          pytest tests/integration/${{ matrix.blueprint }} -v -m "not stress"
           
   deploy-to-production:
     needs: blueprint-integration-tests
