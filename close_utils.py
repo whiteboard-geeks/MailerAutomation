@@ -11,6 +11,7 @@ import json
 import functools
 
 import requests
+from utils.rate_limiter import CloseRateLimiter
 
 # Configure logging
 logger = logging.getLogger(__name__)
@@ -18,6 +19,142 @@ logger = logging.getLogger(__name__)
 # Get API key from environment
 CLOSE_API_KEY = os.environ.get("CLOSE_API_KEY")
 CLOSE_ENCODED_KEY = b64encode(f"{CLOSE_API_KEY}:".encode()).decode()
+
+# Initialize global Close rate limiter
+_close_rate_limiter = None
+
+
+def get_close_rate_limiter():
+    """
+    Get or create the global Close rate limiter instance.
+
+    Returns:
+        CloseRateLimiter: Global rate limiter instance
+    """
+    global _close_rate_limiter
+    if _close_rate_limiter is None:
+        try:
+            import redis
+            import os
+
+            # Try to connect to Redis
+            redis_url = os.environ.get("REDISCLOUD_URL", "redis://localhost:6379/0")
+            redis_client = redis.from_url(redis_url)
+            redis_client.ping()  # Test connection
+
+            _close_rate_limiter = CloseRateLimiter(
+                redis_client=redis_client,
+                conservative_default_rps=1.0,  # Conservative 1 req/sec for unknown endpoints
+                safety_factor=0.8,  # 80% safety margin
+                cache_expiration_seconds=3600,  # 1 hour cache
+            )
+            logger.info("Close rate limiter initialized with Redis")
+
+        except Exception as e:
+            logger.warning(f"Failed to initialize Redis for Close rate limiter: {e}")
+            # Fallback to in-memory rate limiter
+            _close_rate_limiter = CloseRateLimiter(
+                redis_client=None,
+                conservative_default_rps=1.0,
+                safety_factor=0.8,
+                fallback_on_redis_error=True,
+            )
+            logger.info("Close rate limiter initialized with in-memory fallback")
+
+    return _close_rate_limiter
+
+
+def close_rate_limit(max_retries=3, initial_delay=1):
+    """
+    Decorator that adds Close-specific rate limiting and retry logic to a function.
+
+    This decorator:
+    1. Applies endpoint-specific rate limiting before making requests
+    2. Parses rate limit headers from responses to learn actual limits
+    3. Provides retry logic with exponential backoff for non-rate-limit errors
+    4. Maintains backward compatibility with existing retry_with_backoff behavior
+
+    Args:
+        max_retries (int): Maximum number of retry attempts
+        initial_delay (int): Initial delay in seconds before first retry
+
+    Returns:
+        function: Decorated function with rate limiting and retry logic
+    """
+
+    def decorator(func):
+        @functools.wraps(func)
+        def wrapper(*args, **kwargs):
+            # Get the URL from function arguments
+            url = None
+            if len(args) >= 2:
+                url = args[1]  # Second argument is typically the URL
+            elif "url" in kwargs:
+                url = kwargs["url"]
+
+            rate_limiter = get_close_rate_limiter()
+            delay = initial_delay
+            last_exception = None
+
+            for attempt in range(max_retries + 1):
+                try:
+                    # Apply rate limiting before making the request
+                    if url and url.startswith("https://api.close.com"):
+                        if not rate_limiter.acquire_token_for_endpoint(url):
+                            logger.warning(f"Rate limited for endpoint: {url}")
+                            # Wait a bit and try again (this counts as an attempt)
+                            if attempt < max_retries:
+                                sleep(delay)
+                                delay *= 2
+                                continue
+                            else:
+                                raise requests.exceptions.RequestException(
+                                    "Rate limit exceeded after retries"
+                                )
+
+                    # Make the actual request
+                    response = func(*args, **kwargs)
+
+                    # Parse rate limit headers from response to learn actual limits
+                    if (
+                        url
+                        and url.startswith("https://api.close.com")
+                        and hasattr(response, "headers")
+                    ):
+                        rate_limiter.update_from_response_headers(url, response)
+
+                    return response
+
+                except requests.exceptions.RequestException as e:
+                    last_exception = e
+
+                    # Don't retry on 4xx errors (except 429 rate limit)
+                    if hasattr(e, "response") and e.response is not None:
+                        status_code = e.response.status_code
+                        if 400 <= status_code < 500 and status_code != 429:
+                            logger.error(
+                                f"Client error {status_code} for {func.__name__}: {str(e)}"
+                            )
+                            raise last_exception
+
+                    if attempt == max_retries:
+                        logger.error(
+                            f"Max retries ({max_retries}) exceeded for {func.__name__}: {str(e)}"
+                        )
+                        raise last_exception
+
+                    logger.warning(
+                        f"Attempt {attempt + 1}/{max_retries + 1} failed for {func.__name__}. "
+                        f"Retrying in {delay} seconds. Error: {str(e)}"
+                    )
+                    sleep(delay)
+                    delay *= 2  # Exponential backoff
+
+            raise last_exception
+
+        return wrapper
+
+    return decorator
 
 
 def load_query(file_name):
@@ -95,10 +232,16 @@ def get_close_headers():
     }
 
 
-@retry_with_backoff(max_retries=3, initial_delay=1)
+@close_rate_limit(max_retries=3, initial_delay=1)
 def make_close_request(method, url, **kwargs):
     """
-    Make a request to the Close API with retry logic.
+    Make a request to the Close API with dynamic rate limiting and retry logic.
+
+    This function now includes:
+    - Endpoint-specific rate limiting before requests
+    - Dynamic limit discovery from response headers
+    - Retry logic with exponential backoff
+    - Backward compatibility with existing functionality
 
     Args:
         method (str): HTTP method (get, post, put, delete)

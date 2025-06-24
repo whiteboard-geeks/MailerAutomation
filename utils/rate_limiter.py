@@ -156,7 +156,8 @@ class RedisRateLimiter:
         self.token_replenish_interval = 1.0 / self.effective_rate  # seconds per token
 
         # Fallback rate limiter (in-memory) for when Redis is unavailable
-        self._fallback_bucket = {"tokens": 0.0, "last_refill": time.time()}
+        # Use per-key buckets for proper isolation
+        self._fallback_buckets = {}
 
         logger.info(f"Rate limiter initialized: {self}")
 
@@ -239,29 +240,35 @@ class RedisRateLimiter:
         """
         current_time = time.time()
 
+        # Get or create bucket for this key
+        if key not in self._fallback_buckets:
+            self._fallback_buckets[key] = {"tokens": 0.0, "last_refill": current_time}
+
+        bucket = self._fallback_buckets[key]
+
         # Calculate tokens to add based on elapsed time
-        time_elapsed = current_time - self._fallback_bucket["last_refill"]
+        time_elapsed = current_time - bucket["last_refill"]
         tokens_to_add = time_elapsed * self.effective_rate
 
         # Add tokens (no artificial cap)
-        new_token_count = self._fallback_bucket["tokens"] + tokens_to_add
+        new_token_count = bucket["tokens"] + tokens_to_add
 
         # Check if we can consume a token
         if new_token_count >= 1.0:
             # Consume one token
-            self._fallback_bucket["tokens"] = new_token_count - 1.0
-            self._fallback_bucket["last_refill"] = current_time
+            bucket["tokens"] = new_token_count - 1.0
+            bucket["last_refill"] = current_time
 
             logger.debug(
                 f"Fallback token acquired for key '{key}': "
-                f"tokens={self._fallback_bucket['tokens']:.2f}, "
+                f"tokens={bucket['tokens']:.2f}, "
                 f"elapsed={time_elapsed:.2f}s"
             )
             return True
         else:
             # Update timestamp but keep token count
-            self._fallback_bucket["tokens"] = new_token_count
-            self._fallback_bucket["last_refill"] = current_time
+            bucket["tokens"] = new_token_count
+            bucket["last_refill"] = current_time
 
             logger.debug(
                 f"Fallback token denied for key '{key}': "
@@ -463,4 +470,419 @@ class RedisRateLimiter:
             f"effective_rate={self.effective_rate}/s, "
             f"redis={redis_status}, "
             f"pure_leaky_bucket=True)"
+        )
+
+
+def extract_endpoint_key(url: str) -> str:
+    """
+    Extract consistent endpoint key from Close API URL for rate limiting.
+
+    Converts Close API URLs into normalized endpoint keys by extracting the
+    root resource path. All operations on the same resource type share the
+    same rate limit bucket.
+
+    Examples:
+        https://api.close.com/api/v1/lead/lead_123/ -> /api/v1/lead/
+        https://api.close.com/api/v1/lead/lead_456/activity/ -> /api/v1/lead/
+        https://api.close.com/api/v1/data/search/ -> /api/v1/data/search/
+
+    Args:
+        url: Full Close API URL
+
+    Returns:
+        str: Normalized endpoint key (e.g., "/api/v1/lead/")
+
+    Raises:
+        ValueError: If URL is invalid or not a Close API URL
+    """
+    # Input validation
+    if url is None:
+        raise ValueError("Invalid URL: URL cannot be None")
+
+    if not isinstance(url, str):
+        raise ValueError("URL must be a string")
+
+    url = url.strip()
+    if not url:
+        raise ValueError("Invalid URL: URL cannot be empty")
+
+    # Parse URL
+    try:
+        from urllib.parse import urlparse
+
+        parsed = urlparse(url)
+    except Exception as e:
+        raise ValueError(f"Invalid URL format: {str(e)}")
+
+    # Validate scheme
+    if parsed.scheme not in ["http", "https"]:
+        raise ValueError("Invalid URL format: URL must use http or https")
+
+    # Validate domain (case-insensitive)
+    if parsed.netloc.lower() != "api.close.com":
+        raise ValueError("Not a Close API URL: URL must be for api.close.com")
+
+    # Extract and validate path
+    path = parsed.path
+    if not path or path == "/":
+        raise ValueError("Not a Close API endpoint: Missing API path")
+
+    # Ensure path starts with /api/ (case-insensitive)
+    if not path.lower().startswith("/api/"):
+        raise ValueError("Not a Close API endpoint: Path must start with /api/")
+
+    # Split path into segments
+    path_segments = [seg for seg in path.split("/") if seg]  # Remove empty segments
+
+    # Validate minimum path structure: ['api', 'v1', 'resource']
+    if len(path_segments) < 3:
+        raise ValueError("Not a Close API endpoint: Invalid path structure")
+
+    # Validate API version (case-insensitive)
+    if path_segments[0].lower() != "api":
+        raise ValueError("Not a Close API endpoint: Path must start with /api/")
+
+    if path_segments[1].lower() != "v1":
+        raise ValueError("Unsupported API version: Only v1 is supported")
+
+    # Extract root resource (3rd segment) - preserve original case
+    root_resource = path_segments[2]
+
+    # Build normalized endpoint key - preserve original case from path
+    # For resource endpoints (lead, task, contact, activity), use root
+    # For static endpoints (data/search, me, status), preserve full path
+
+    # Check if this is a resource endpoint (has potential ID in 4th segment)
+    if len(path_segments) >= 4:
+        # Check if 4th segment looks like a resource ID
+        potential_id = path_segments[3]
+
+        # Close resource IDs typically follow patterns like: lead_123, task_456, cont_789, acti_123
+        resource_id_patterns = ["lead_", "task_", "cont_", "acti_", "user_", "org_"]
+
+        # If 4th segment starts with known resource ID pattern, this is a resource endpoint
+        if any(potential_id.startswith(pattern) for pattern in resource_id_patterns):
+            # Return root resource endpoint - preserve original case
+            return f"/{path_segments[0]}/{path_segments[1]}/{root_resource}/"
+
+    # For static endpoints or unrecognized patterns, preserve the full path structure
+    # but normalize to ensure trailing slash
+    if root_resource.lower() in ["data"]:
+        # Special handling for data endpoints like /api/v1/data/search/
+        if len(path_segments) >= 4:
+            return f"/{path_segments[0]}/{path_segments[1]}/{root_resource}/{path_segments[3]}/"
+        else:
+            return f"/{path_segments[0]}/{path_segments[1]}/{root_resource}/"
+    else:
+        # For other static endpoints (me, status, etc.) - preserve original case
+        return f"/{path_segments[0]}/{path_segments[1]}/{root_resource}/"
+
+
+def parse_close_ratelimit_header(header_value: Optional[str]) -> dict:
+    """
+    Parse Close's ratelimit header format.
+
+    Args:
+        header_value: The ratelimit header value from Close API response
+                     Format: "limit=160; remaining=159; reset=8"
+
+    Returns:
+        dict: Parsed rate limit information with keys: limit, remaining, reset
+
+    Raises:
+        ValueError: If header format is invalid or missing required fields
+    """
+    if not header_value:
+        raise ValueError("Invalid ratelimit header format: header is None or empty")
+
+    if not isinstance(header_value, str):
+        raise ValueError("Invalid ratelimit header format: header must be a string")
+
+    header_value = header_value.strip()
+    if not header_value:
+        raise ValueError("Invalid ratelimit header format: header is empty")
+
+    # Parse the header format: "limit=160; remaining=159; reset=8"
+    # Split by semicolon and parse each key=value pair
+    parsed_data = {}
+    required_fields = ["limit", "remaining", "reset"]
+    valid_pairs_found = False
+
+    try:
+        parts = header_value.split(";")
+        for part in parts:
+            part = part.strip()
+            if "=" not in part:
+                continue
+
+            key, value = part.split("=", 1)
+            key = key.strip().lower()
+            value = value.strip()
+
+            if not value:
+                raise ValueError(
+                    f"Invalid ratelimit header format: empty value for {key}"
+                )
+
+            valid_pairs_found = True
+
+            # Only process required fields, ignore additional fields with non-numeric values
+            if key in required_fields:
+                # Convert to integer (handle float values by converting to int)
+                try:
+                    parsed_data[key] = int(float(value))
+                except (ValueError, TypeError):
+                    raise ValueError(
+                        f"Invalid ratelimit header format: non-numeric value '{value}' for {key}"
+                    )
+            else:
+                # For additional fields, try to parse as numeric but ignore if not
+                try:
+                    parsed_data[key] = int(float(value))
+                except (ValueError, TypeError):
+                    # Ignore non-numeric additional fields
+                    pass
+
+        # If no valid key=value pairs were found, it's an invalid format
+        if not valid_pairs_found:
+            raise ValueError(
+                "Invalid ratelimit header format: no valid key=value pairs found"
+            )
+
+    except Exception as e:
+        if isinstance(e, ValueError) and "Invalid ratelimit header format" in str(e):
+            raise
+        raise ValueError(f"Invalid ratelimit header format: {str(e)}")
+
+    # Check for required fields
+    missing_fields = [field for field in required_fields if field not in parsed_data]
+
+    if missing_fields:
+        raise ValueError(f"Missing required fields: {', '.join(missing_fields)}")
+
+    # Return only the required fields (ignore any additional fields)
+    return {
+        "limit": parsed_data["limit"],
+        "remaining": parsed_data["remaining"],
+        "reset": parsed_data["reset"],
+    }
+
+
+class CloseRateLimiter(RedisRateLimiter):
+    """
+    Dynamic rate limiter for Close.com API with endpoint-specific rate limiting.
+
+    Extends RedisRateLimiter to provide:
+    - Endpoint-specific rate limiting (different limits for different endpoints)
+    - Dynamic limit discovery from Close API response headers
+    - Conservative defaults for unknown endpoints
+    - Safety factor application to discovered limits
+    """
+
+    def __init__(
+        self,
+        redis_client: Optional[redis.Redis] = None,
+        conservative_default_rps: float = 1.0,
+        safety_factor: float = 0.8,
+        cache_expiration_seconds: int = 3600,  # 1 hour cache for discovered limits
+        **kwargs,
+    ):
+        """
+        Initialize Close.com dynamic rate limiter.
+
+        Args:
+            redis_client: Redis client instance
+            conservative_default_rps: Default rate for unknown endpoints (req/sec)
+            safety_factor: Safety margin for discovered limits (0.8 = 80% of API limit)
+            cache_expiration_seconds: How long to cache discovered limits
+            **kwargs: Additional arguments passed to RedisRateLimiter
+        """
+        # Set instance attributes first
+        self.conservative_default_rps = conservative_default_rps
+        self.cache_expiration_seconds = cache_expiration_seconds
+
+        # Initialize parent with conservative default
+        super().__init__(
+            redis_client=redis_client,
+            requests_per_second=conservative_default_rps,
+            safety_factor=safety_factor,
+            **kwargs,
+        )
+
+        logger.info(
+            f"CloseRateLimiter initialized: conservative_default={conservative_default_rps} req/s, safety_factor={safety_factor}"
+        )
+
+    def acquire_token_for_endpoint(self, endpoint_url: str) -> bool:
+        """
+        Acquire a rate limit token for a specific Close API endpoint.
+
+        Args:
+            endpoint_url: Full Close API URL (e.g., "https://api.close.com/api/v1/lead/lead_123/")
+
+        Returns:
+            bool: True if token acquired (request allowed), False if rate limited
+        """
+        try:
+            # Extract consistent endpoint key from URL
+            endpoint_key = extract_endpoint_key(endpoint_url)
+
+            # Check if we have cached limits for this endpoint
+            cached_limits = self._get_cached_limits(endpoint_key)
+
+            if cached_limits:
+                # Use discovered limits with safety factor
+                effective_rate = (
+                    cached_limits["limit"] * self.safety_factor / 60.0
+                )  # Convert to req/sec
+
+                # Create temporary rate limiter with discovered limits
+                temp_limiter = RedisRateLimiter(
+                    redis_client=self.redis_client,
+                    requests_per_second=effective_rate,
+                    safety_factor=1.0,  # Already applied above
+                    fallback_on_redis_error=self.fallback_on_redis_error,
+                )
+
+                # Use endpoint-specific bucket key
+                bucket_key = f"close_endpoint:{endpoint_key}"
+                return temp_limiter.acquire_token(bucket_key)
+            else:
+                # Use conservative default for unknown endpoints
+                bucket_key = f"close_endpoint:{endpoint_key}"
+                return self.acquire_token(bucket_key)
+
+        except Exception as e:
+            logger.error(f"Error in acquire_token_for_endpoint: {e}")
+            # Fallback to conservative default
+            return self.acquire_token(f"close_fallback:{endpoint_url}")
+
+    def update_from_response_headers(self, endpoint_url: str, response) -> None:
+        """
+        Update rate limits based on Close API response headers.
+
+        Args:
+            endpoint_url: Full Close API URL
+            response: HTTP response object with headers
+        """
+        try:
+            # Check if response has rate limit headers
+            if not hasattr(response, "headers") or not response.headers:
+                return
+
+            ratelimit_header = response.headers.get("ratelimit")
+            if not ratelimit_header:
+                return
+
+            # Parse the rate limit header
+            try:
+                parsed_limits = parse_close_ratelimit_header(ratelimit_header)
+
+                # Extract endpoint key
+                endpoint_key = extract_endpoint_key(endpoint_url)
+
+                # Cache the discovered limits
+                self._cache_limits(endpoint_key, parsed_limits)
+
+                logger.info(f"Updated rate limits for {endpoint_key}: {parsed_limits}")
+
+            except ValueError as e:
+                logger.warning(
+                    f"Failed to parse rate limit header '{ratelimit_header}': {e}"
+                )
+
+        except Exception as e:
+            logger.error(f"Error updating limits from response headers: {e}")
+
+    def get_endpoint_limits(self, endpoint_key: str) -> dict:
+        """
+        Get cached rate limits for a specific endpoint.
+
+        Args:
+            endpoint_key: Normalized endpoint key (e.g., "/api/v1/lead/")
+
+        Returns:
+            dict: Cached limits or empty dict if not found
+        """
+        try:
+            return self._get_cached_limits(endpoint_key) or {}
+        except Exception as e:
+            logger.error(f"Error getting endpoint limits: {e}")
+            return {}
+
+    def _extract_endpoint_key(self, endpoint_url: str) -> str:
+        """
+        Extract endpoint key from URL (wrapper for extract_endpoint_key function).
+
+        Args:
+            endpoint_url: Full Close API URL
+
+        Returns:
+            str: Normalized endpoint key
+        """
+        return extract_endpoint_key(endpoint_url)
+
+    def _get_cached_limits(self, endpoint_key: str) -> Optional[dict]:
+        """
+        Retrieve cached rate limits for an endpoint from Redis.
+
+        Args:
+            endpoint_key: Normalized endpoint key
+
+        Returns:
+            dict: Cached limits or None if not found
+        """
+        try:
+            if not self.redis_client:
+                return None
+
+            cache_key = f"close_rate_limit:limits:{endpoint_key}"
+            cached_data = self.redis_client.get(cache_key)
+
+            if cached_data:
+                import json
+
+                return json.loads(cached_data.decode("utf-8"))
+
+        except Exception as e:
+            logger.warning(f"Error retrieving cached limits for {endpoint_key}: {e}")
+
+        return None
+
+    def _cache_limits(self, endpoint_key: str, limits: dict) -> None:
+        """
+        Cache discovered rate limits for an endpoint in Redis.
+
+        Args:
+            endpoint_key: Normalized endpoint key
+            limits: Parsed rate limit data
+        """
+        try:
+            if not self.redis_client:
+                return
+
+            cache_key = f"close_rate_limit:limits:{endpoint_key}"
+
+            import json
+
+            cached_data = json.dumps(limits)
+
+            # Cache with expiration
+            self.redis_client.setex(
+                cache_key, self.cache_expiration_seconds, cached_data
+            )
+
+            logger.debug(f"Cached limits for {endpoint_key}: {limits}")
+
+        except Exception as e:
+            logger.error(f"Error caching limits for {endpoint_key}: {e}")
+
+    def __str__(self):
+        """String representation of the Close rate limiter."""
+        return (
+            f"CloseRateLimiter("
+            f"conservative_default={self.conservative_default_rps}/s, "
+            f"safety_factor={self.safety_factor}, "
+            f"cache_expiration={self.cache_expiration_seconds}s, "
+            f"redis={'connected' if self.redis_client else 'fallback'})"
         )
