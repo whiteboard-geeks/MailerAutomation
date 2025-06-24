@@ -8,6 +8,7 @@ End-to-end integration test for the complete Instantly workflow:
 import os
 import time
 import requests
+import pytest
 from datetime import datetime
 from tests.utils.close_api import CloseAPI
 
@@ -289,12 +290,19 @@ class TestInstantlyE2EAddLeadThenEmailSent:
 
         return payload
 
+    @pytest.mark.stress
     def test_instantly_e2e_add_lead_then_email_sent(self):
         """
         End-to-end test: Add lead to Instantly campaign, wait for email to be sent,
         then verify email sent webhook processing.
 
         This test can take several minutes as it waits for Instantly to actually send the email.
+
+        This test is marked as 'stress' because it:
+        - Takes 2-10 minutes to complete
+        - Makes real API calls to external services (Close CRM, Instantly.ai)
+        - Is resource-intensive and not suitable for frequent CI/CD runs
+        - Should only be run during stress testing scenarios
         """
         # Track test start time for duration calculation
         self.test_start_time = time.time()
