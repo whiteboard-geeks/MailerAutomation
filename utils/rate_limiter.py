@@ -156,7 +156,8 @@ class RedisRateLimiter:
         self.token_replenish_interval = 1.0 / self.effective_rate  # seconds per token
 
         # Fallback rate limiter (in-memory) for when Redis is unavailable
-        self._fallback_bucket = {"tokens": 0.0, "last_refill": time.time()}
+        # Use per-key buckets for proper isolation
+        self._fallback_buckets = {}
 
         logger.info(f"Rate limiter initialized: {self}")
 
@@ -239,29 +240,35 @@ class RedisRateLimiter:
         """
         current_time = time.time()
 
+        # Get or create bucket for this key
+        if key not in self._fallback_buckets:
+            self._fallback_buckets[key] = {"tokens": 0.0, "last_refill": current_time}
+
+        bucket = self._fallback_buckets[key]
+
         # Calculate tokens to add based on elapsed time
-        time_elapsed = current_time - self._fallback_bucket["last_refill"]
+        time_elapsed = current_time - bucket["last_refill"]
         tokens_to_add = time_elapsed * self.effective_rate
 
         # Add tokens (no artificial cap)
-        new_token_count = self._fallback_bucket["tokens"] + tokens_to_add
+        new_token_count = bucket["tokens"] + tokens_to_add
 
         # Check if we can consume a token
         if new_token_count >= 1.0:
             # Consume one token
-            self._fallback_bucket["tokens"] = new_token_count - 1.0
-            self._fallback_bucket["last_refill"] = current_time
+            bucket["tokens"] = new_token_count - 1.0
+            bucket["last_refill"] = current_time
 
             logger.debug(
                 f"Fallback token acquired for key '{key}': "
-                f"tokens={self._fallback_bucket['tokens']:.2f}, "
+                f"tokens={bucket['tokens']:.2f}, "
                 f"elapsed={time_elapsed:.2f}s"
             )
             return True
         else:
             # Update timestamp but keep token count
-            self._fallback_bucket["tokens"] = new_token_count
-            self._fallback_bucket["last_refill"] = current_time
+            bucket["tokens"] = new_token_count
+            bucket["last_refill"] = current_time
 
             logger.debug(
                 f"Fallback token denied for key '{key}': "
