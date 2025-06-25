@@ -97,13 +97,22 @@ def test_lead_not_found_sends_real_email(client):
     print("\n--- Testing lead not found (real email will be sent) ---")
     print("Email will be sent to the hardcoded recipient in the send_email function")
 
-    # Mock requests.get to simulate lead not found in Close
-    with patch("requests.get") as mock_get:
-        # Configure the mock to return a 404 status code
+    # Mock make_close_request to simulate lead not found in Close
+    with patch("blueprints.easypost.make_close_request") as mock_make_request:
+        # Configure the mock to raise HTTPError for 404
+        from requests.exceptions import HTTPError
+
         mock_response = MagicMock()
         mock_response.status_code = 404
         mock_response.text = "Not Found"
-        mock_get.return_value = mock_response
+        mock_response.url = "https://api.close.com/api/v1/lead/lead_123456"
+
+        # Create HTTPError that would be raised by raise_for_status()
+        http_error = HTTPError(
+            "404 Client Error: Not Found for url: https://api.close.com/api/v1/lead/lead_123456"
+        )
+        http_error.response = mock_response
+        mock_make_request.side_effect = http_error
 
         # Send the webhook payload
         start_time = time.time()
@@ -127,16 +136,16 @@ def test_lead_not_found_sends_real_email(client):
         assert (
             response_data.get("status") == "success"
         ), "Response status should be 'success'"
-        assert "Failed to fetch lead data" in response_data.get(
+        assert "Error creating EasyPost tracker: 404 Client Error" in response_data.get(
             "message", ""
-        ), "Message should mention lead not found"
+        ), "Message should mention the 404 error"
 
         print("\n✅ Test passed - Webhook returned 200 with 'success' status")
         print("Check your email for the notification about lead not found.")
 
         # Print verification prompt
         print("\nVerify that:")
-        print("1. You received an email with subject 'Close Lead Data Fetch Error'")
+        print("1. You received an email with subject 'EasyPost Tracker Creation Error'")
         print("2. The email contains error details about the failed fetch")
         print("3. The JSON response has status 'success' despite the error")
 
@@ -150,8 +159,8 @@ def test_missing_tracking_info_sends_real_email(client):
     print("\n--- Testing missing tracking info (real email will be sent) ---")
     print("Email will be sent to the hardcoded recipient in the send_email function")
 
-    # Mock requests.get to simulate lead with missing tracking info
-    with patch("requests.get") as mock_get:
+    # Mock make_close_request to simulate lead with missing tracking info
+    with patch("blueprints.easypost.make_close_request") as mock_make_request:
         # Configure the mock to return a lead without tracking number or carrier
         mock_response = MagicMock()
         mock_response.status_code = 200
@@ -160,7 +169,7 @@ def test_missing_tracking_info_sends_real_email(client):
             "name": "Test Lead",
             # No tracking info fields
         }
-        mock_get.return_value = mock_response
+        mock_make_request.return_value = mock_response
 
         # Send the webhook payload
         start_time = time.time()
@@ -208,7 +217,7 @@ def test_easypost_api_error_sends_real_email(client):
     print("Email will be sent to the hardcoded recipient in the send_email function")
 
     # Mock sequence for a lead with tracking info but EasyPost API error
-    with patch("requests.get") as mock_get:
+    with patch("blueprints.easypost.make_close_request") as mock_make_request:
         with patch("blueprints.easypost.get_easypost_client") as mock_get_client:
             # Configure the mock to return a lead with tracking info
             mock_response = MagicMock()
@@ -219,7 +228,7 @@ def test_easypost_api_error_sends_real_email(client):
                 "custom.cf_iSOPYKzS9IPK20gJ8eH9Q74NT7grCQW9psqo4lZR3Ii": "1Z999AA10123456789",
                 "custom.cf_2QQR5e6vJUyGzlYBtHddFpdqNp5393nEnUiZk1Ukl9l": "UPS",
             }
-            mock_get.return_value = mock_response
+            mock_make_request.return_value = mock_response
 
             # Set up the EasyPost client mock to raise an exception
             mock_client = MagicMock()
