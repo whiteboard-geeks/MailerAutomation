@@ -19,10 +19,10 @@ from flask import Blueprint, request, jsonify, g
 from close_utils import (
     get_lead_by_id,
     search_close_leads,
-    get_close_headers,
     create_email_search_query,
     get_sequence_subscriptions,
     pause_sequence_subscription,
+    make_close_request,
 )
 
 # Import rate limiter
@@ -1007,10 +1007,8 @@ def handle_instantly_email_sent():
         logger.info("lead_found", lead_id=lead_id, lead_email=lead_email)
 
         # Get all tasks for the lead
-        headers = get_close_headers()
         tasks_url = f"https://api.close.com/api/v1/task/?lead_id={lead_id}"
-        tasks_response = requests.get(tasks_url, headers=headers)
-        tasks_response.raise_for_status()
+        tasks_response = make_close_request("get", tasks_url)
         tasks = tasks_response.json().get("data", [])
 
         # Log task information
@@ -1035,10 +1033,7 @@ def handle_instantly_email_sent():
         close_task_id = matching_task["id"]
         complete_url = f"https://api.close.com/api/v1/task/{close_task_id}/"
         complete_data = {"is_complete": True}
-        complete_response = requests.put(
-            complete_url, headers=headers, json=complete_data
-        )
-        complete_response.raise_for_status()
+        make_close_request("put", complete_url, json=complete_data)
 
         # Get the contact with the matching email
         lead_details = get_lead_by_id(lead_id)
@@ -1087,8 +1082,7 @@ def handle_instantly_email_sent():
         }
 
         email_url = "https://api.close.com/api/v1/activity/email/"
-        email_response = requests.post(email_url, headers=headers, json=email_data)
-        email_response.raise_for_status()
+        email_response = make_close_request("post", email_url, json=email_data)
 
         logger.info(
             f"Successfully processed email sent webhook for lead {lead_id} and task {close_task_id}"
@@ -1282,10 +1276,8 @@ def handle_instantly_reply_received():
             "template_id": None,
         }
 
-        headers = get_close_headers()
         email_url = "https://api.close.com/api/v1/activity/email/"
-        email_response = requests.post(email_url, headers=headers, json=email_data)
-        email_response.raise_for_status()
+        email_response = make_close_request("post", email_url, json=email_data)
 
         # Pause any active sequence subscriptions for this contact
         subscriptions = get_sequence_subscriptions(lead_id=lead_id)

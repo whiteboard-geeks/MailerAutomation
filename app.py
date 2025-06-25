@@ -18,6 +18,7 @@ from celery import Celery
 import pytz
 import pytest
 import structlog
+from close_utils import make_close_request
 
 
 # Configure structlog
@@ -467,11 +468,6 @@ def update_delivery_information_for_lead(lead_id, delivery_information):
                 return False
         return True
 
-    headers = {
-        "Content-Type": "application/json",
-        "Authorization": f"Basic {CLOSE_ENCODED_KEY}",
-    }
-
     custom_field_ids = {
         "date_and_location_of_mailer_delivered": {
             "type": "text",
@@ -524,10 +520,10 @@ def update_delivery_information_for_lead(lead_id, delivery_information):
         ],
     }
 
-    response = requests.put(
+    response = make_close_request(
+        "put",
         f"https://api.close.com/api/v1/lead/{lead_id}",
         json=lead_update_data,
-        headers=headers,
     )
     response_data = response.json()
     data_updated = verify_delivery_information_updated(response_data, lead_update_data)
@@ -541,11 +537,6 @@ def update_delivery_information_for_lead(lead_id, delivery_information):
 
 
 def create_package_delivered_custom_activity_in_close(lead_id, delivery_information):
-    headers = {
-        "Content-Type": "application/json",
-        "Authorization": f"Basic {CLOSE_ENCODED_KEY}",
-    }
-
     custom_activity_field_ids = {
         "date_and_location_of_mailer_delivered": {
             "type": "text",
@@ -595,10 +586,10 @@ def create_package_delivered_custom_activity_in_close(lead_id, delivery_informat
         ],
     }
 
-    response = requests.post(
+    response = make_close_request(
+        "post",
         "https://api.close.com/api/v1/activity/custom/",
         json=lead_activity_data,
-        headers=headers,
     )
     response_data = response.json()
     logger.info(f"Delivery activity updated for lead {lead_id}: {response.json()}")
@@ -723,13 +714,9 @@ def search_close_for_contact_by_email_or_phone(contact):
         "results_limit": None,
         "sort": [],
     }
-    headers = {
-        "Content-Type": "application/json",
-        "Authorization": f"Basic {CLOSE_ENCODED_KEY}",
-    }
-    response = requests.post(
+    response = make_close_request(
+        "post",
         "https://api.close.com/api/v1/data/search",
-        headers=headers,
         json=close_query_to_find_lead_by_email_or_phone,
     )
     resp_data = response.json()

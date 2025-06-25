@@ -7,12 +7,16 @@ import os
 import json
 from datetime import datetime, date
 import traceback
-import requests
 from flask import Blueprint, request, jsonify, g
 import easypost
 from redis import Redis
 import structlog
-from close_utils import load_query, search_close_leads, get_lead_by_id
+from close_utils import (
+    load_query,
+    search_close_leads,
+    get_lead_by_id,
+    make_close_request,
+)
 from celery_worker import celery
 import uuid
 
@@ -179,18 +183,10 @@ def create_easypost_tracker():
             send_email(subject="EasyPost Tracker Creation Error", body=error_msg)
             return jsonify({"status": "success", "message": error_msg}), 200
 
-        # Get close API key
-        get_close_encoded_key()
-
         # Get lead data from Close
-        headers = {
-            "Content-Type": "application/json",
-            "Authorization": f"Basic {CLOSE_ENCODED_KEY}",
-        }
-
-        response = requests.get(
+        response = make_close_request(
+            "get",
             f"https://api.close.com/api/v1/lead/{lead_id}",
-            headers=headers,
         )
 
         if response.status_code != 200:
@@ -300,15 +296,10 @@ def update_easypost_tracker_id_for_lead(lead_id, update_information):
         ],
     }
 
-    headers = {
-        "Content-Type": "application/json",
-        "Authorization": f"Basic {get_close_encoded_key()}",
-    }
-
-    response = requests.put(
+    response = make_close_request(
+        "put",
         f"https://api.close.com/api/v1/lead/{lead_id}",
         json=lead_update_data,
-        headers=headers,
     )
 
     response_data = response.json()
@@ -362,11 +353,6 @@ def update_delivery_information_for_lead(lead_id, delivery_information):
                 return False
         return True
 
-    headers = {
-        "Content-Type": "application/json",
-        "Authorization": f"Basic {get_close_encoded_key()}",
-    }
-
     custom_field_ids = {
         "date_and_location_of_mailer_delivered": {
             "type": "text",
@@ -419,10 +405,10 @@ def update_delivery_information_for_lead(lead_id, delivery_information):
         ],
     }
 
-    response = requests.put(
+    response = make_close_request(
+        "put",
         f"https://api.close.com/api/v1/lead/{lead_id}",
         json=lead_update_data,
-        headers=headers,
     )
     if response.status_code != 200:
         logger.error(
@@ -451,20 +437,15 @@ def check_existing_mailer_delivered_activities(lead_id):
         bool: True if existing activities found, False otherwise
     """
     try:
-        headers = {
-            "Content-Type": "application/json",
-            "Authorization": f"Basic {get_close_encoded_key()}",
-        }
-
         params = {
             "lead_id": lead_id,
             "custom_activity_type_id": "custom.actitype_3KhBfWgjtVfiGYbczbgOWv",  # Mailer Delivered activity type
         }
 
-        response = requests.get(
+        response = make_close_request(
+            "get",
             "https://api.close.com/api/v1/activity/custom/",
             params=params,
-            headers=headers,
         )
 
         if response.status_code == 200:
@@ -507,11 +488,6 @@ def create_package_delivered_custom_activity_in_close(lead_id, delivery_informat
             f"Mailer delivered custom activity already exists for lead {lead_id}, skipping creation"
         )
         return {"status": "skipped", "reason": "duplicate_activity_exists"}
-
-    headers = {
-        "Content-Type": "application/json",
-        "Authorization": f"Basic {get_close_encoded_key()}",
-    }
 
     custom_activity_field_ids = {
         "date_and_location_of_mailer_delivered": {
@@ -562,10 +538,10 @@ def create_package_delivered_custom_activity_in_close(lead_id, delivery_informat
         ],
     }
 
-    response = requests.post(
+    response = make_close_request(
+        "post",
         "https://api.close.com/api/v1/activity/custom/",
         json=lead_activity_data,
-        headers=headers,
     )
     response_data = response.json()
     logger.info(f"Delivery activity updated for lead {lead_id}: {response.json()}")
