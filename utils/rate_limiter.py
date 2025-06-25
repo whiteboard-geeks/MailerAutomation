@@ -730,11 +730,25 @@ class CloseRateLimiter(RedisRateLimiter):
             # Check if we have cached limits for this endpoint
             cached_limits = self._get_cached_limits(endpoint_key)
 
+            # Enhanced debug logging
+            logger.debug(f"Rate limit debug - endpoint_url: {endpoint_url}")
+            logger.debug(f"Rate limit debug - endpoint_key: {endpoint_key}")
+            logger.debug(f"Rate limit debug - cached_limits: {cached_limits}")
+
             if cached_limits:
                 # Use discovered limits with safety factor
+                # FIXED: Use actual reset window instead of assuming 60 seconds
+                reset_window = cached_limits.get(
+                    "reset", 60
+                )  # Default to 60 if missing
                 effective_rate = (
-                    cached_limits["limit"] * self.safety_factor / 60.0
-                )  # Convert to req/sec
+                    cached_limits["limit"] * self.safety_factor / reset_window
+                )  # Convert to req/sec using actual window
+
+                logger.info(
+                    f"Rate limit debug - using discovered rate for {endpoint_key}: {effective_rate}/s "
+                    f"(from limit={cached_limits['limit']}, reset={reset_window}s, safety_factor={self.safety_factor})"
+                )
 
                 # Create temporary rate limiter with discovered limits
                 temp_limiter = RedisRateLimiter(
@@ -746,16 +760,29 @@ class CloseRateLimiter(RedisRateLimiter):
 
                 # Use endpoint-specific bucket key
                 bucket_key = f"close_endpoint:{endpoint_key}"
-                return temp_limiter.acquire_token(bucket_key)
+                result = temp_limiter.acquire_token(bucket_key)
+                logger.debug(
+                    f"Rate limit debug - token acquisition result for {endpoint_key}: {result}"
+                )
+                return result
             else:
                 # Use conservative default for unknown endpoints
+                logger.info(
+                    f"Rate limit debug - using conservative default for {endpoint_key}: {self.conservative_default_rps}/s (no cached limits)"
+                )
                 bucket_key = f"close_endpoint:{endpoint_key}"
-                return self.acquire_token(bucket_key)
+                result = self.acquire_token(bucket_key)
+                logger.debug(
+                    f"Rate limit debug - token acquisition result for {endpoint_key} (conservative): {result}"
+                )
+                return result
 
         except Exception as e:
             logger.error(f"Error in acquire_token_for_endpoint: {e}")
             # Fallback to conservative default
-            return self.acquire_token(f"close_fallback:{endpoint_url}")
+            fallback_key = f"close_fallback:{endpoint_url}"
+            logger.warning(f"Rate limit debug - using fallback key: {fallback_key}")
+            return self.acquire_token(fallback_key)
 
     def update_from_response_headers(self, endpoint_url: str, response) -> None:
         """
