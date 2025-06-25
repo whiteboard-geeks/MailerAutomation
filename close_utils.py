@@ -288,7 +288,6 @@ def create_email_search_query(email):
     return query_template
 
 
-@retry_with_backoff(max_retries=3, initial_delay=1)
 def search_close_leads(query):
     """
     Search for leads in Close using a query.
@@ -351,7 +350,6 @@ def search_close_leads(query):
         return []  # Return empty list instead of None
 
 
-@retry_with_backoff(max_retries=3, initial_delay=1)
 def get_lead_by_id(lead_id):
     """
     Get a lead by its ID from Close.
@@ -381,7 +379,6 @@ def get_lead_by_id(lead_id):
         return None
 
 
-@retry_with_backoff(max_retries=3, initial_delay=1)
 def get_lead_email_activities(lead_id):
     """
     Get all email activities for a lead.
@@ -404,7 +401,6 @@ def get_lead_email_activities(lead_id):
         return []
 
 
-@retry_with_backoff(max_retries=3, initial_delay=1)
 def get_task(task_id):
     """
     Get a task by its ID from Close.
@@ -426,7 +422,6 @@ def get_task(task_id):
         return None
 
 
-@retry_with_backoff(max_retries=3, initial_delay=1)
 def create_task(lead_id, text, assigned_to=None, date=None, is_complete=False):
     """
     Create a task in Close CRM.
@@ -469,7 +464,6 @@ def create_task(lead_id, text, assigned_to=None, date=None, is_complete=False):
         return None
 
 
-@retry_with_backoff(max_retries=3, initial_delay=1)
 def get_sequence_subscriptions(lead_id=None, contact_id=None, sequence_id=None):
     """
     Get sequence subscriptions for a lead or contact.
@@ -511,7 +505,6 @@ def get_sequence_subscriptions(lead_id=None, contact_id=None, sequence_id=None):
         return []
 
 
-@retry_with_backoff(max_retries=3, initial_delay=1)
 def pause_sequence_subscription(subscription_id, status_reason="replied"):
     """
     Pause a sequence subscription.
