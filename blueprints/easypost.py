@@ -7,7 +7,7 @@ import os
 import json
 from datetime import datetime, date
 import traceback
-from flask import Blueprint, request, jsonify, g
+from flask import Blueprint, request, jsonify
 import easypost
 from redis import Redis
 import structlog
@@ -171,17 +171,88 @@ def send_email(subject, body, **kwargs):
 
 @easypost_bp.route("/create_tracker", methods=["POST"])
 def create_easypost_tracker():
-    """Create an EasyPost tracker for a lead in Close."""
+    """Create an EasyPost tracker for a lead in Close - Async Processing."""
     try:
-        # Get lead ID from request
-        data = request.json.get("event").get("data")
+        # Quick validation of request data
+        if not request.json or not request.json.get("event"):
+            return jsonify(
+                {"status": "error", "message": "Invalid request format"}
+            ), 400
+
+        data = request.json.get("event").get("data", {})
+        lead_id = data.get("id")
+
+        if not lead_id:
+            return jsonify({"status": "error", "message": "No lead_id provided"}), 400
+
+        # Queue the task for background processing
+        task = create_tracker_task.delay(request.json)
+
+        # Store initial webhook data for tracking
+        webhook_data = {
+            "event_id": f"create_tracker_{lead_id}_{datetime.now().isoformat()}",
+            "lead_id": lead_id,
+            "route": "create_tracker",
+            "timestamp": datetime.now().isoformat(),
+            "processed": False,
+            "task_id": task.id,
+        }
+
+        # Use lead_id as tracker key for webhook tracking
+        _webhook_tracker.add(f"create_tracker_{lead_id}", webhook_data)
+
+        logger.info(
+            f"EasyPost tracker creation task queued: {task.id} for lead {lead_id}"
+        )
+
+        return jsonify(
+            {
+                "status": "accepted",
+                "message": "Tracker creation task queued for background processing",
+                "celery_task_id": task.id,
+                "lead_id": lead_id,
+            }
+        ), 202
+
+    except Exception as e:
+        error_msg = f"Error queuing EasyPost tracker creation task: {str(e)}"
+        logger.error(error_msg)
+        return jsonify({"status": "error", "message": error_msg}), 500
+
+
+@celery.task(
+    name="easypost.create_tracker_task",
+    bind=True,
+    soft_time_limit=300,  # 5 minutes timeout
+    time_limit=360,  # 6 minutes hard timeout
+    max_retries=3,
+    default_retry_delay=60,  # 1 minute retry delay
+)
+def create_tracker_task(self, payload_data):
+    """
+    Celery task to create EasyPost tracker in the background.
+    This contains the original synchronous logic from create_easypost_tracker.
+    """
+    try:
+        # Extract data from payload
+        data = payload_data.get("event", {}).get("data", {})
         lead_id = data.get("id")
 
         if not lead_id:
             error_msg = "No lead_id provided"
             logger.error(error_msg)
             send_email(subject="EasyPost Tracker Creation Error", body=error_msg)
-            return jsonify({"status": "success", "message": error_msg}), 200
+
+            # Update webhook tracker
+            webhook_data = {
+                "processed": True,
+                "result": "Error",
+                "error": error_msg,
+                "timestamp": datetime.now().isoformat(),
+            }
+            _webhook_tracker.add(f"create_tracker_{lead_id}", webhook_data)
+
+            return {"status": "error", "message": error_msg}
 
         # Get lead data from Close
         response = make_close_request(
@@ -193,7 +264,17 @@ def create_easypost_tracker():
             error_msg = f"Failed to fetch lead data: {response.text}"
             logger.error(error_msg)
             send_email(subject="Close Lead Data Fetch Error", body=error_msg)
-            return jsonify({"status": "success", "message": error_msg}), 200
+
+            # Update webhook tracker
+            webhook_data = {
+                "processed": True,
+                "result": "Error",
+                "error": error_msg,
+                "timestamp": datetime.now().isoformat(),
+            }
+            _webhook_tracker.add(f"create_tracker_{lead_id}", webhook_data)
+
+            return {"status": "error", "message": error_msg}
 
         lead_data = response.json()
 
@@ -207,19 +288,19 @@ def create_easypost_tracker():
 
         if not tracking_number or not carrier_field:
             # Get request ID which serves as run ID
-            run_id = getattr(g, "request_id", str(uuid.uuid4()))
+            run_id = str(uuid.uuid4())
 
             # Prepare detailed error message with debugging information
             detailed_error_message = f"""
             <h2>EasyPost Tracker Missing Data</h2>
             <p><strong>Error:</strong> Lead doesn't have tracking number or carrier</p>
             <p><strong>Lead ID:</strong> {lead_id}</p>
-            <p><strong>Route:</strong> {request.path}</p>
+            <p><strong>Route:</strong> create_tracker (async)</p>
             <p><strong>Run ID:</strong> {run_id}</p>
             <p><strong>Time:</strong> {datetime.now().isoformat()}</p>
             
             <h3>Request Data:</h3>
-            <pre>{json.dumps(request.json, indent=2, default=str)}</pre>
+            <pre>{json.dumps(payload_data, indent=2, default=str)}</pre>
             
             <h3>Lead Data:</h3>
             <pre>{json.dumps(lead_data, indent=2, default=str)}</pre>
@@ -230,18 +311,26 @@ def create_easypost_tracker():
                 error="Lead doesn't have tracking number or carrier",
                 lead_id=lead_id,
                 run_id=run_id,
-                route=request.path,
+                route="create_tracker (async)",
             )
 
             send_email(
                 subject="EasyPost Tracker Missing Data", body=detailed_error_message
             )
-            return jsonify(
-                {
-                    "status": "success",
-                    "message": "Lead doesn't have tracking number or carrier",
-                }
-            ), 200
+
+            # Update webhook tracker
+            webhook_data = {
+                "processed": True,
+                "result": "Missing Data",
+                "error": "Lead doesn't have tracking number or carrier",
+                "timestamp": datetime.now().isoformat(),
+            }
+            _webhook_tracker.add(f"create_tracker_{lead_id}", webhook_data)
+
+            return {
+                "status": "success",
+                "message": "Lead doesn't have tracking number or carrier",
+            }
 
         carrier = carrier_field[0] if isinstance(carrier_field, list) else carrier_field
 
@@ -258,20 +347,49 @@ def create_easypost_tracker():
 
         logger.info(f"EasyPost Tracker Created: {tracker} for lead {lead_id}")
 
-        return jsonify(
-            {
-                "status": "success",
-                "tracker_id": tracker.id,
-                "tracking_code": tracking_number,
-                "carrier": carrier,
-            }
-        ), 200
+        # Update webhook tracker with success
+        webhook_data = {
+            "processed": True,
+            "result": "Success",
+            "tracker_id": tracker.id,
+            "tracking_code": tracking_number,
+            "carrier": carrier,
+            "lead_id": lead_id,
+            "timestamp": datetime.now().isoformat(),
+        }
+        # Store using both lead_id and tracker_id for different lookup scenarios
+        _webhook_tracker.add(f"create_tracker_{lead_id}", webhook_data)
+        _webhook_tracker.add(tracker.id, webhook_data)
+
+        return {
+            "status": "success",
+            "tracker_id": tracker.id,
+            "tracking_code": tracking_number,
+            "carrier": carrier,
+        }
 
     except Exception as e:
         error_msg = f"Error creating EasyPost tracker: {str(e)}"
         logger.error(error_msg)
+        logger.error(f"Traceback: {traceback.format_exc()}")
         send_email(subject="EasyPost Tracker Creation Error", body=error_msg)
-        return jsonify({"status": "success", "message": error_msg}), 200
+
+        # Update webhook tracker with error
+        if "lead_id" in locals():
+            webhook_data = {
+                "processed": True,
+                "result": "Error",
+                "error": error_msg,
+                "timestamp": datetime.now().isoformat(),
+            }
+            _webhook_tracker.add(f"create_tracker_{lead_id}", webhook_data)
+
+        # Try to retry the task if possible
+        try:
+            raise self.retry(exc=e)
+        except Exception as retry_error:
+            logger.warning(f"Failed to retry task: {retry_error}")
+            return {"status": "error", "message": error_msg}
 
 
 def update_easypost_tracker_id_for_lead(lead_id, update_information):
@@ -550,27 +668,31 @@ def create_package_delivered_custom_activity_in_close(lead_id, delivery_informat
 
 @easypost_bp.route("/delivery_status", methods=["POST"])
 def handle_package_delivery_update():
-    """Handle package delivery status updates from EasyPost webhook."""
+    """Handle package delivery status updates from EasyPost webhook - Async Processing."""
     try:
+        # Quick validation of request data
+        if not request.json or "result" not in request.json:
+            return jsonify(
+                {"status": "error", "message": "Invalid request format"}
+            ), 400
+
         tracking_data = request.json["result"]
         easy_post_event_id = request.json["id"]
         logger.info(f"EasyPost Event ID: {easy_post_event_id}")
 
-        # Store webhook data for status tracking
-        webhook_data = {
-            "event_id": easy_post_event_id,
-            "tracking_code": tracking_data.get("tracking_code"),
-            "carrier": tracking_data.get("carrier"),
-            "status": tracking_data.get("status"),
-            "route": "delivery_status",
-            "timestamp": datetime.now().isoformat(),
-            "processed": False,
-        }
-
+        # Quick check for non-delivered status - handle immediately without queuing
         if tracking_data["status"] != "delivered":
             logger.info("Tracking status is not 'delivered'; webhook did not run.")
-            webhook_data["processed"] = True
-            webhook_data["result"] = "Not delivered"
+            webhook_data = {
+                "event_id": easy_post_event_id,
+                "tracking_code": tracking_data.get("tracking_code"),
+                "carrier": tracking_data.get("carrier"),
+                "status": tracking_data.get("status"),
+                "route": "delivery_status",
+                "timestamp": datetime.now().isoformat(),
+                "processed": True,
+                "result": "Not delivered",
+            }
             _webhook_tracker.add(tracking_data.get("id"), webhook_data)
 
             return jsonify(
@@ -580,15 +702,26 @@ def handle_package_delivery_update():
                 }
             ), 200
 
+        # Quick check for delivered to original sender - handle immediately
         if (
-            tracking_data["tracking_details"][-1]["message"]
+            tracking_data.get("tracking_details")
+            and len(tracking_data["tracking_details"]) > 0
+            and tracking_data["tracking_details"][-1].get("message")
             == "Delivered, To Original Sender"
         ):
             logger.info(
                 "Tracking status is 'delivered', but it is delivered to the original sender; webhook did not run."
             )
-            webhook_data["processed"] = True
-            webhook_data["result"] = "Delivered to original sender"
+            webhook_data = {
+                "event_id": easy_post_event_id,
+                "tracking_code": tracking_data.get("tracking_code"),
+                "carrier": tracking_data.get("carrier"),
+                "status": tracking_data.get("status"),
+                "route": "delivery_status",
+                "timestamp": datetime.now().isoformat(),
+                "processed": True,
+                "result": "Delivered to original sender",
+            }
             _webhook_tracker.add(tracking_data.get("id"), webhook_data)
 
             return jsonify(
@@ -597,6 +730,62 @@ def handle_package_delivery_update():
                     "message": "Tracking status is 'delivered', but it is delivered to the original sender; webhook did not run.",
                 }
             ), 200
+
+        # Queue the task for background processing
+        task = process_delivery_status_task.delay(request.json)
+
+        # Store initial webhook data for tracking
+        webhook_data = {
+            "event_id": easy_post_event_id,
+            "tracking_code": tracking_data.get("tracking_code"),
+            "carrier": tracking_data.get("carrier"),
+            "status": tracking_data.get("status"),
+            "route": "delivery_status",
+            "timestamp": datetime.now().isoformat(),
+            "processed": False,
+            "task_id": task.id,
+        }
+
+        # Use tracker ID as key for webhook tracking
+        _webhook_tracker.add(tracking_data.get("id"), webhook_data)
+
+        logger.info(
+            f"EasyPost delivery status task queued: {task.id} for tracker {tracking_data.get('id')}"
+        )
+
+        return jsonify(
+            {
+                "status": "accepted",
+                "message": "Delivery status processing task queued for background processing",
+                "celery_task_id": task.id,
+                "tracker_id": tracking_data.get("id"),
+                "tracking_code": tracking_data.get("tracking_code"),
+            }
+        ), 202
+
+    except Exception as e:
+        error_msg = f"Error queuing EasyPost delivery status task: {str(e)}"
+        logger.error(error_msg)
+        return jsonify({"status": "error", "message": error_msg}), 500
+
+
+@celery.task(
+    name="easypost.process_delivery_status_task",
+    bind=True,
+    soft_time_limit=300,  # 5 minutes timeout
+    time_limit=360,  # 6 minutes hard timeout
+    max_retries=3,
+    default_retry_delay=60,  # 1 minute retry delay
+)
+def process_delivery_status_task(self, payload_data):
+    """
+    Celery task to process delivery status updates in the background.
+    This contains the original synchronous logic from handle_package_delivery_update.
+    """
+    try:
+        tracking_data = payload_data["result"]
+        easy_post_event_id = payload_data["id"]
+        tracker_id = tracking_data.get("id")
 
         # Continue with processing for delivered packages
         delivery_information = parse_delivery_information(tracking_data)
@@ -637,19 +826,25 @@ def handle_package_delivery_update():
                     error_msg = f"Multiple valid leads found for tracking number {tracking_data['tracking_code']} and tracker ID {tracking_data['id']}"
                     logger.warning(error_msg)
 
-                    webhook_data["processed"] = True
-                    webhook_data["result"] = "Multiple valid leads found"
-                    _webhook_tracker.add(tracking_data.get("id"), webhook_data)
+                    webhook_data = {
+                        "processed": True,
+                        "result": "Multiple valid leads found",
+                        "timestamp": datetime.now().isoformat(),
+                    }
+                    _webhook_tracker.add(tracker_id, webhook_data)
 
-                    return jsonify({"status": "success", "message": error_msg}), 200
+                    return {"status": "success", "message": error_msg}
                 else:
                     # If no valid leads found, log this and return
                     error_msg = f"No valid leads found for tracking number {tracking_data['tracking_code']} and tracker ID {tracking_data['id']}"
                     logger.warning(error_msg)
-                    webhook_data["processed"] = True
-                    webhook_data["result"] = "No valid leads found"
-                    _webhook_tracker.add(tracking_data.get("id"), webhook_data)
-                    return jsonify({"status": "success", "message": error_msg}), 200
+                    webhook_data = {
+                        "processed": True,
+                        "result": "No valid leads found",
+                        "timestamp": datetime.now().isoformat(),
+                    }
+                    _webhook_tracker.add(tracker_id, webhook_data)
+                    return {"status": "success", "message": error_msg}
             else:
                 # If there's only one lead, validate it
                 valid_leads = []
@@ -663,29 +858,38 @@ def handle_package_delivery_update():
                         f"The only found lead ID: {lead_id} returned 404 or error"
                     )
                     logger.warning(error_msg)
-                    webhook_data["processed"] = True
-                    webhook_data["result"] = "Lead not found"
-                    _webhook_tracker.add(tracking_data.get("id"), webhook_data)
-                    return jsonify({"status": "success", "message": error_msg}), 200
+                    webhook_data = {
+                        "processed": True,
+                        "result": "Lead not found",
+                        "timestamp": datetime.now().isoformat(),
+                    }
+                    _webhook_tracker.add(tracker_id, webhook_data)
+                    return {"status": "success", "message": error_msg}
 
             if len(close_leads) == 0:
                 error_msg = f"No leads found with tracking number {tracking_data['tracking_code']}"
                 logger.warning(error_msg)
 
-                webhook_data["processed"] = True
-                webhook_data["result"] = "No leads found"
-                _webhook_tracker.add(tracking_data.get("id"), webhook_data)
+                webhook_data = {
+                    "processed": True,
+                    "result": "No leads found",
+                    "timestamp": datetime.now().isoformat(),
+                }
+                _webhook_tracker.add(tracker_id, webhook_data)
 
-                return jsonify({"status": "success", "message": error_msg}), 200
+                return {"status": "success", "message": error_msg}
 
             # Update lead with delivery information
             if not valid_leads:
                 error_msg = f"No valid leads available for tracking number {tracking_data['tracking_code']}"
                 logger.warning(error_msg)
-                webhook_data["processed"] = True
-                webhook_data["result"] = "No valid leads"
-                _webhook_tracker.add(tracking_data.get("id"), webhook_data)
-                return jsonify({"status": "success", "message": error_msg}), 200
+                webhook_data = {
+                    "processed": True,
+                    "result": "No valid leads",
+                    "timestamp": datetime.now().isoformat(),
+                }
+                _webhook_tracker.add(tracker_id, webhook_data)
+                return {"status": "success", "message": error_msg}
 
             update_delivery_information_for_lead(
                 valid_leads[0]["id"], delivery_information
@@ -697,59 +901,78 @@ def handle_package_delivery_update():
             )
 
             # Update webhook tracker
-            webhook_data["processed"] = True
-            webhook_data["result"] = "Success"
-            webhook_data["lead_id"] = valid_leads[0]["id"]
-            webhook_data["delivery_information"] = delivery_information
-            _webhook_tracker.add(tracking_data.get("id"), webhook_data)
+            webhook_data = {
+                "processed": True,
+                "result": "Success",
+                "lead_id": valid_leads[0]["id"],
+                "delivery_information": delivery_information,
+                "timestamp": datetime.now().isoformat(),
+            }
+            _webhook_tracker.add(tracker_id, webhook_data)
 
             logger.info(f"Close lead update: {delivery_information}")
 
-            return jsonify(
-                {"status": "success", "delivery_information": delivery_information}
-            ), 200
+            return {
+                "status": "success",
+                "delivery_information": delivery_information,
+                "lead_id": valid_leads[0]["id"],
+            }
         except Exception as e:
             error_message = f"Error updating Close lead: {e}"
             if close_leads and len(close_leads) > 0:
                 error_message += f", lead_id={close_leads[0]['id']}"
 
             logger.error(error_message)
+            logger.error(f"Traceback: {traceback.format_exc()}")
             send_email(subject="Delivery information update failed", body=error_message)
 
-            webhook_data["processed"] = True
-            webhook_data["result"] = "Error"
-            webhook_data["error"] = str(e)
+            webhook_data = {
+                "processed": True,
+                "result": "Error",
+                "error": str(e),
+                "timestamp": datetime.now().isoformat(),
+            }
             if close_leads and len(close_leads) > 0:
                 webhook_data["lead_id"] = close_leads[0]["id"]
-            _webhook_tracker.add(tracking_data.get("id"), webhook_data)
+            _webhook_tracker.add(tracker_id, webhook_data)
 
-            return jsonify({"status": "error", "message": str(e)}), 400
+            # Try to retry the task if possible
+            try:
+                raise self.retry(exc=e)
+            except Exception as retry_error:
+                logger.warning(f"Failed to retry task: {retry_error}")
+                return {"status": "error", "message": error_message}
+
     except Exception as e:
         error_message = f"Error processing webhook: {e}"
+        tracker_id = None
 
         try:
             # Add tracking code and carrier if available
             if "tracking_data" in locals() and tracking_data:
                 error_message += f", tracking_code={tracking_data.get('tracking_code')}, carrier={tracking_data.get('carrier')}"
+                tracker_id = tracking_data.get("id")
 
             # Add to webhook tracker if we have enough information
-            if (
-                "tracking_data" in locals()
-                and tracking_data
-                and tracking_data.get("id")
-            ):
+            if tracker_id:
                 webhook_data = {
-                    "event_id": request.json.get("id", "unknown"),
-                    "tracking_code": tracking_data.get("tracking_code"),
-                    "carrier": tracking_data.get("carrier"),
-                    "status": tracking_data.get("status"),
-                    "route": "delivery_status",
+                    "event_id": payload_data.get("id", "unknown"),
+                    "tracking_code": tracking_data.get("tracking_code")
+                    if "tracking_data" in locals()
+                    else None,
+                    "carrier": tracking_data.get("carrier")
+                    if "tracking_data" in locals()
+                    else None,
+                    "status": tracking_data.get("status")
+                    if "tracking_data" in locals()
+                    else None,
+                    "route": "delivery_status (async)",
                     "timestamp": datetime.now().isoformat(),
                     "processed": True,
                     "result": "Error",
                     "error": str(e),
                 }
-                _webhook_tracker.add(tracking_data.get("id"), webhook_data)
+                _webhook_tracker.add(tracker_id, webhook_data)
         except Exception as tracking_error:
             # Log the error but continue with the main error handling
             logger.warning(
@@ -757,19 +980,19 @@ def handle_package_delivery_update():
             )
 
         # Get request ID which serves as run ID
-        run_id = getattr(g, "request_id", str(uuid.uuid4()))
+        run_id = str(uuid.uuid4())
 
         # Extract calling function name
-        calling_function = "handle_package_delivery_update"
+        calling_function = "process_delivery_status_task"
 
         # Capture the traceback
         tb = traceback.format_exc()
 
         # Format the error message with detailed information
         detailed_error_message = f"""
-        <h2>Delivery Information Update Failed</h2>
+        <h2>Delivery Information Update Failed (Async)</h2>
         <p><strong>Error:</strong> {str(e)}</p>
-        <p><strong>Route:</strong> {request.path}</p>
+        <p><strong>Route:</strong> delivery_status (async)</p>
         <p><strong>Run ID:</strong> {run_id}</p>
         <p><strong>Origin:</strong> {calling_function}</p>
         <p><strong>Time:</strong> {datetime.now().isoformat()}</p>
@@ -789,14 +1012,21 @@ def handle_package_delivery_update():
             error=str(e),
             traceback=tb,
             run_id=run_id,
-            route=request.path,
+            route="delivery_status (async)",
             origin=calling_function,
         )
 
         send_email(
-            subject="Delivery Information Update Failed", body=detailed_error_message
+            subject="Delivery Information Update Failed (Async)",
+            body=detailed_error_message,
         )
-        return jsonify({"status": "error", "message": str(e)}), 400
+
+        # Try to retry the task if possible
+        try:
+            raise self.retry(exc=e)
+        except Exception as retry_error:
+            logger.warning(f"Failed to retry task: {retry_error}")
+            return {"status": "error", "message": error_message}
 
 
 @easypost_bp.route("/webhooks/status", methods=["GET"])
