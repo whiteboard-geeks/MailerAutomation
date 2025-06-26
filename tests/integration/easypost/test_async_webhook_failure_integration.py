@@ -18,6 +18,7 @@ Note: This requires a working email configuration in your environment.
 """
 
 import json
+import os
 import pytest
 import time
 import requests
@@ -56,7 +57,8 @@ class TestAsyncEasyPostWebhookFailures:
 
     def setup_method(self):
         """Setup before each test."""
-        self.base_url = "http://localhost:8080"  # Assuming local testing
+        # Use BASE_URL environment variable if set, otherwise default to localhost for dev
+        self.base_url = os.environ.get("BASE_URL", "http://localhost:8080")
         self.task_ids = []
         self.timestamp = datetime.now().strftime("%Y%m%d%H%M%S")
 
