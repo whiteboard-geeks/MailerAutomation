@@ -38,12 +38,12 @@ def close_webhook_payload():
 
 
 @patch("blueprints.easypost.send_email")
-def test_no_lead_id_returns_200(mock_send_email, client):
+def test_no_lead_id_returns_400(mock_send_email, client):
     """
     Test that when no lead ID is provided, the webhook handler:
-    1. Returns a 200 status code
-    2. Has a success status in the response
-    3. Sends an email notification
+    1. Returns a 400 status code (Bad Request)
+    2. Has an error status in the response
+    3. Does not send email notification (validation error handled immediately)
     """
     # Create payload with missing lead ID
     payload = {"event": {"data": {}}}
@@ -53,46 +53,34 @@ def test_no_lead_id_returns_200(mock_send_email, client):
         "/easypost/create_tracker", json=payload, content_type="application/json"
     )
 
-    # Check response status code is 200
-    assert response.status_code == 200
+    # Check response status code is 400 (Bad Request)
+    assert response.status_code == 400
 
-    # Check response contains success status
+    # Check response contains error status
     response_data = json.loads(response.data)
-    assert response_data["status"] == "success"
+    assert response_data["status"] == "error"
     assert "No lead_id provided" in response_data["message"]
 
-    # Verify email notification was sent
-    mock_send_email.assert_called_once()
-    email_subject = mock_send_email.call_args[1]["subject"]
-    assert "EasyPost Tracker Creation Error" in email_subject
+    # Verify no email notification was sent (immediate validation error)
+    mock_send_email.assert_not_called()
 
 
-@patch("blueprints.easypost.make_close_request")
+@patch("blueprints.easypost.create_tracker_task")
 @patch("blueprints.easypost.send_email")
-def test_lead_not_found_returns_200(
-    mock_send_email, mock_make_request, client, close_webhook_payload
+def test_lead_not_found_returns_202(
+    mock_send_email, mock_task, client, close_webhook_payload
 ):
     """
     Test that when a lead can't be fetched, the webhook handler:
-    1. Returns a 200 status code
-    2. Has a success status in the response
-    3. Sends an email notification
+    1. Returns a 202 status code (task queued successfully)
+    2. Has an accepted status in the response
+    3. Includes celery_task_id in response
+    4. Does not send immediate email notification (error handling happens in background task)
     """
-    # Mock the Close API response for a non-existent lead
-    # make_close_request calls response.raise_for_status() which raises HTTPError for 404
-    from requests.exceptions import HTTPError
-
-    mock_response = MagicMock()
-    mock_response.status_code = 404
-    mock_response.text = "Not Found"
-    mock_response.url = "https://api.close.com/api/v1/lead/lead_123456"
-
-    # Create HTTPError that would be raised by raise_for_status()
-    http_error = HTTPError(
-        "404 Client Error: Not Found for url: https://api.close.com/api/v1/lead/lead_123456"
-    )
-    http_error.response = mock_response
-    mock_make_request.side_effect = http_error
+    # Mock the Celery task to return a task ID
+    mock_task_result = MagicMock()
+    mock_task_result.id = "test-task-id-123"
+    mock_task.delay.return_value = mock_task_result
 
     # Send the webhook payload
     response = client.post(
@@ -101,42 +89,39 @@ def test_lead_not_found_returns_200(
         content_type="application/json",
     )
 
-    # Check response status code is 200
-    assert response.status_code == 200
+    # Check response status code is 202 (Accepted)
+    assert response.status_code == 202
 
-    # Check response contains success status
+    # Check response contains accepted status
     response_data = json.loads(response.data)
-    assert response_data["status"] == "success"
-    assert (
-        "Error creating EasyPost tracker: 404 Client Error" in response_data["message"]
-    )
+    assert response_data["status"] == "accepted"
+    assert "task queued for background processing" in response_data["message"]
+    assert response_data["celery_task_id"] == "test-task-id-123"
+    assert response_data["lead_id"] == "lead_123456"
 
-    # Verify email notification was sent
-    mock_send_email.assert_called_once()
-    email_subject = mock_send_email.call_args[1]["subject"]
-    assert "EasyPost Tracker Creation Error" in email_subject
+    # Verify task was queued
+    mock_task.delay.assert_called_once_with(close_webhook_payload)
+
+    # Verify no immediate email notification was sent (handled by background task)
+    mock_send_email.assert_not_called()
 
 
-@patch("blueprints.easypost.make_close_request")
+@patch("blueprints.easypost.create_tracker_task")
 @patch("blueprints.easypost.send_email")
-def test_missing_tracking_info_returns_200(
-    mock_send_email, mock_make_request, client, close_webhook_payload
+def test_missing_tracking_info_returns_202(
+    mock_send_email, mock_task, client, close_webhook_payload
 ):
     """
     Test that when tracking number or carrier is missing, the webhook handler:
-    1. Returns a 200 status code
-    2. Has a success status in the response
-    3. Sends an email notification
+    1. Returns a 202 status code (task queued successfully)
+    2. Has an accepted status in the response
+    3. Includes celery_task_id in response
+    4. Does not send immediate email notification (error handling happens in background task)
     """
-    # Mock the Close API response with missing tracking info
-    mock_response = MagicMock()
-    mock_response.status_code = 200
-    mock_response.json.return_value = {
-        "id": "lead_123456",
-        "name": "Test Lead",
-        # Missing tracking number and carrier
-    }
-    mock_make_request.return_value = mock_response
+    # Mock the Celery task to return a task ID
+    mock_task_result = MagicMock()
+    mock_task_result.id = "test-task-id-456"
+    mock_task.delay.return_value = mock_task_result
 
     # Send the webhook payload
     response = client.post(
@@ -145,47 +130,39 @@ def test_missing_tracking_info_returns_200(
         content_type="application/json",
     )
 
-    # Check response status code is 200
-    assert response.status_code == 200
+    # Check response status code is 202 (Accepted)
+    assert response.status_code == 202
 
-    # Check response contains success status
+    # Check response contains accepted status
     response_data = json.loads(response.data)
-    assert response_data["status"] == "success"
-    assert "Lead doesn't have tracking number or carrier" in response_data["message"]
+    assert response_data["status"] == "accepted"
+    assert "task queued for background processing" in response_data["message"]
+    assert response_data["celery_task_id"] == "test-task-id-456"
+    assert response_data["lead_id"] == "lead_123456"
 
-    # Verify email notification was sent
-    mock_send_email.assert_called_once()
-    email_subject = mock_send_email.call_args[1]["subject"]
-    assert "EasyPost Tracker Missing Data" in email_subject
+    # Verify task was queued
+    mock_task.delay.assert_called_once_with(close_webhook_payload)
+
+    # Verify no immediate email notification was sent (handled by background task)
+    mock_send_email.assert_not_called()
 
 
-@patch("blueprints.easypost.make_close_request")
-@patch("blueprints.easypost.get_easypost_client")
+@patch("blueprints.easypost.create_tracker_task")
 @patch("blueprints.easypost.send_email")
-def test_easypost_api_error_returns_200(
-    mock_send_email, mock_get_client, mock_make_request, client, close_webhook_payload
+def test_easypost_api_error_returns_202(
+    mock_send_email, mock_task, client, close_webhook_payload
 ):
     """
     Test that when the EasyPost API fails, the webhook handler:
-    1. Returns a 200 status code
-    2. Has a success status in the response
-    3. Sends an email notification
+    1. Returns a 202 status code (task queued successfully)
+    2. Has an accepted status in the response
+    3. Includes celery_task_id in response
+    4. Does not send immediate email notification (error handling happens in background task)
     """
-    # Mock the Close API response with valid tracking info
-    mock_response = MagicMock()
-    mock_response.status_code = 200
-    mock_response.json.return_value = {
-        "id": "lead_123456",
-        "name": "Test Lead",
-        "custom.cf_iSOPYKzS9IPK20gJ8eH9Q74NT7grCQW9psqo4lZR3Ii": "1Z999AA10123456789",
-        "custom.cf_2QQR5e6vJUyGzlYBtHddFpdqNp5393nEnUiZk1Ukl9l": "UPS",
-    }
-    mock_make_request.return_value = mock_response
-
-    # Mock EasyPost client to raise an exception
-    mock_client = MagicMock()
-    mock_client.tracker.create.side_effect = Exception("API rate limit exceeded")
-    mock_get_client.return_value = mock_client
+    # Mock the Celery task to return a task ID
+    mock_task_result = MagicMock()
+    mock_task_result.id = "test-task-id-789"
+    mock_task.delay.return_value = mock_task_result
 
     # Send the webhook payload
     response = client.post(
@@ -194,15 +171,18 @@ def test_easypost_api_error_returns_200(
         content_type="application/json",
     )
 
-    # Check response status code is 200
-    assert response.status_code == 200
+    # Check response status code is 202 (Accepted)
+    assert response.status_code == 202
 
-    # Check response contains success status
+    # Check response contains accepted status
     response_data = json.loads(response.data)
-    assert response_data["status"] == "success"
-    assert "Error creating EasyPost tracker" in response_data["message"]
+    assert response_data["status"] == "accepted"
+    assert "task queued for background processing" in response_data["message"]
+    assert response_data["celery_task_id"] == "test-task-id-789"
+    assert response_data["lead_id"] == "lead_123456"
 
-    # Verify email notification was sent
-    mock_send_email.assert_called_once()
-    email_subject = mock_send_email.call_args[1]["subject"]
-    assert "EasyPost Tracker Creation Error" in email_subject
+    # Verify task was queued
+    mock_task.delay.assert_called_once_with(close_webhook_payload)
+
+    # Verify no immediate email notification was sent (handled by background task)
+    mock_send_email.assert_not_called()
