@@ -923,7 +923,7 @@ def process_delivery_status_task(self, payload_data):
                 error_message += f", lead_id={close_leads[0]['id']}"
 
             logger.error(error_message, exc_info=True)
-            send_email(subject="Delivery information update failed", body=error_message)
+            send_email(subject="Delivery information update failed", body=error_message + "\n\n" + traceback.format_exc())
 
             webhook_data = {
                 "processed": True,
