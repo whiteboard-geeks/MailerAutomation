@@ -922,8 +922,7 @@ def process_delivery_status_task(self, payload_data):
             if close_leads and len(close_leads) > 0:
                 error_message += f", lead_id={close_leads[0]['id']}"
 
-            logger.error(error_message)
-            logger.error(f"Traceback: {traceback.format_exc()}")
+            logger.error(error_message, exc_info=True)
             send_email(subject="Delivery information update failed", body=error_message)
 
             webhook_data = {
@@ -1435,3 +1434,4 @@ def sync_delivery_status_task(self):
             # If we've exceeded retries or can't retry, return error
             logger.warning(f"Failed to retry task: {retry_error}")
             return {"status": "error", "message": error_msg}
+
