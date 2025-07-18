@@ -799,6 +799,19 @@ def process_delivery_status_task(self, payload_data):
         close_leads = search_close_leads(close_query_to_find_leads_with_tracking_number)
 
         try:
+            if len(close_leads) == 0:
+                error_msg = f"No leads found with tracking number {tracking_data['tracking_code']}"
+                logger.warning(error_msg)
+
+                webhook_data = {
+                    "processed": True,
+                    "result": "No leads found",
+                    "timestamp": datetime.now().isoformat(),
+                }
+                _webhook_tracker.add(tracker_id, webhook_data)
+
+                return {"status": "success", "message": error_msg}
+
             if len(close_leads) > 1:
                 logger.info(
                     f"Multiple leads ({len(close_leads)}) found with tracking number {tracking_data['tracking_code']} and tracker ID {tracking_data['id']}"
@@ -865,19 +878,6 @@ def process_delivery_status_task(self, payload_data):
                     }
                     _webhook_tracker.add(tracker_id, webhook_data)
                     return {"status": "success", "message": error_msg}
-
-            if len(close_leads) == 0:
-                error_msg = f"No leads found with tracking number {tracking_data['tracking_code']}"
-                logger.warning(error_msg)
-
-                webhook_data = {
-                    "processed": True,
-                    "result": "No leads found",
-                    "timestamp": datetime.now().isoformat(),
-                }
-                _webhook_tracker.add(tracker_id, webhook_data)
-
-                return {"status": "success", "message": error_msg}
 
             # Update lead with delivery information
             if not valid_leads:
