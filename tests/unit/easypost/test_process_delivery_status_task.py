@@ -190,9 +190,91 @@ def test_multiple_leads_found_but_none_valid(mock_search_close_leads, mock_get_l
     assert "No valid leads found" in result["message"]
 
 
-def test_multiple_leads_found_and_exactly_one_valid():
-    pass
-
+@patch("blueprints.easypost._webhook_tracker.add")
+@patch("blueprints.easypost.create_package_delivered_custom_activity_in_close")
+@patch("blueprints.easypost.update_delivery_information_for_lead")
+@patch("blueprints.easypost.get_lead_by_id")
+@patch("blueprints.easypost.search_close_leads")
+def test_multiple_leads_found_and_exactly_one_valid(
+    mock_search_close_leads,
+    mock_get_lead_by_id,
+    mock_update_delivery,
+    mock_create_activity,
+    mock_webhook_tracker_add
+):
+    """Test the behavior when multiple leads are found but only one is valid."""
+    # GIVEN
+    tracker_id = "trk_test123"
+    payload_data = create_payload_data(tracker_id=tracker_id)
+    
+    # Mock search_close_leads to return multiple leads
+    lead_id_1 = "lead_123456"
+    lead_id_2 = "lead_789012"
+    mock_search_close_leads.return_value = [
+        {
+            "id": lead_id_1,
+            "name": "Test Lead 1"
+        },
+        {
+            "id": lead_id_2,
+            "name": "Test Lead 2"
+        }
+    ]
+    
+    # Mock get_lead_by_id to return a valid lead for only one of the leads
+    # Using side_effect to return different values based on input
+    def get_lead_side_effect(lead_id):
+        if lead_id == lead_id_1:
+            return None  # First lead is not valid
+        elif lead_id == lead_id_2:
+            return {  # Second lead is valid
+                "id": lead_id_2,
+                "name": "Test Lead 2",
+                "custom": {
+                    "some_field": "some_value"
+                }
+            }
+        return None
+    
+    mock_get_lead_by_id.side_effect = get_lead_side_effect
+    
+    # WHEN
+    result = process_delivery_status_task(payload_data)
+    
+    # THEN
+    # Verify search_close_leads was called
+    mock_search_close_leads.assert_called_once()
+    
+    # Verify get_lead_by_id was called for each lead
+    assert mock_get_lead_by_id.call_count == 2
+    mock_get_lead_by_id.assert_any_call(lead_id_1)
+    mock_get_lead_by_id.assert_any_call(lead_id_2)
+    
+    # Verify update_delivery_information_for_lead was called with the correct parameters
+    mock_update_delivery.assert_called_once()
+    assert mock_update_delivery.call_args[0][0] == lead_id_2
+    
+    # Verify create_package_delivered_custom_activity_in_close was called with the correct parameters
+    mock_create_activity.assert_called_once()
+    assert mock_create_activity.call_args[0][0] == lead_id_2
+    
+    # Verify the webhook tracker was updated with "Success"
+    mock_webhook_tracker_add.assert_called_once()
+    args, _ = mock_webhook_tracker_add.call_args
+    assert args == (tracker_id, {
+        'processed': True,
+        'result': 'Success',
+        'lead_id': lead_id_2,
+        'delivery_information': ANY,
+        'timestamp': ANY
+    })
+    
+    # Verify the return value
+    assert result == {
+        "status": "success",
+        "lead_id": lead_id_2,
+        "delivery_information": ANY
+    }
 
 def test_multiple_leads_found_and_more_than_one_valid():
     pass
