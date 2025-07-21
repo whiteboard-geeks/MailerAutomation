@@ -145,8 +145,49 @@ def test_single_lead_found_and_valid(
     }
 
 
-def test_multiple_leads_found_but_none_valid():
-    pass
+@patch("blueprints.easypost._webhook_tracker.add")
+@patch("blueprints.easypost.get_lead_by_id", return_value=None)
+@patch("blueprints.easypost.search_close_leads")
+def test_multiple_leads_found_but_none_valid(mock_search_close_leads, mock_get_lead_by_id, mock_webhook_tracker_add):
+    """Test the behavior when multiple leads are found but none are valid."""
+    # GIVEN
+    tracker_id = "trk_test123"
+    payload_data = create_payload_data(tracker_id=tracker_id)
+    
+    # Mock search_close_leads to return multiple leads
+    lead_id_1 = "lead_123456"
+    lead_id_2 = "lead_789012"
+    mock_search_close_leads.return_value = [
+        {
+            "id": lead_id_1,
+            "name": "Test Lead 1"
+        },
+        {
+            "id": lead_id_2,
+            "name": "Test Lead 2"
+        }
+    ]
+    
+    # WHEN
+    result = process_delivery_status_task(payload_data)
+    
+    # THEN
+    # Verify search_close_leads was called
+    mock_search_close_leads.assert_called_once()
+    
+    # Verify get_lead_by_id was called for each lead
+    assert mock_get_lead_by_id.call_count == 2
+    mock_get_lead_by_id.assert_any_call(lead_id_1)
+    mock_get_lead_by_id.assert_any_call(lead_id_2)
+    
+    # Verify the webhook tracker was updated with "No valid leads found"
+    mock_webhook_tracker_add.assert_called_once()
+    args, _ = mock_webhook_tracker_add.call_args
+    assert args == (tracker_id, {'processed': True, 'result': 'No valid leads found', 'timestamp': ANY})
+    
+    # Verify the return value
+    assert result["status"] == "success"
+    assert "No valid leads found" in result["message"]
 
 
 def test_multiple_leads_found_and_exactly_one_valid():
