@@ -72,8 +72,77 @@ def test_single_lead_found_but_not_valid(mock_search_close_leads, mock_get_lead_
     assert result["status"] == "success"
     assert "returned 404 or error" in result["message"]
 
-def test_single_lead_found_and_valid():
-    pass
+@patch("blueprints.easypost._webhook_tracker.add")
+@patch("blueprints.easypost.create_package_delivered_custom_activity_in_close")
+@patch("blueprints.easypost.update_delivery_information_for_lead")
+@patch("blueprints.easypost.get_lead_by_id")
+@patch("blueprints.easypost.search_close_leads")
+def test_single_lead_found_and_valid(
+    mock_search_close_leads,
+    mock_get_lead_by_id,
+    mock_update_delivery,
+    mock_create_activity,
+    mock_webhook_tracker_add
+):
+    """Test the behavior when a single lead is found and it's valid."""
+    # GIVEN
+    tracking_code = "1Z999AA10123456789"
+    tracker_id = "trk_test123"
+    payload_data = create_payload_data(tracker_id=tracker_id, tracking_code=tracking_code)
+    
+    # Mock search_close_leads to return a single lead
+    lead_id = "lead_123456"
+    mock_search_close_leads.return_value = [
+        {
+            "id": lead_id,
+            "name": "Test Lead"
+        }
+    ]
+    
+    # Mock get_lead_by_id to return a valid lead
+    mock_get_lead_by_id.return_value = {
+        "id": lead_id,
+        "name": "Test Lead",
+        "custom": {
+            "some_field": "some_value"
+        }
+    }
+    
+    # WHEN
+    result = process_delivery_status_task(payload_data)
+    
+    # THEN
+    # Verify search_close_leads was called
+    mock_search_close_leads.assert_called_once()
+    
+    # Verify get_lead_by_id was called with the correct lead ID
+    mock_get_lead_by_id.assert_called_once_with(lead_id)
+    
+    # Verify update_delivery_information_for_lead was called with the correct parameters
+    mock_update_delivery.assert_called_once()
+    assert mock_update_delivery.call_args[0][0] == lead_id
+    
+    # Verify create_package_delivered_custom_activity_in_close was called with the correct parameters
+    mock_create_activity.assert_called_once()
+    assert mock_create_activity.call_args[0][0] == lead_id
+    
+    # Verify the webhook tracker was updated with "Success"
+    mock_webhook_tracker_add.assert_called_once()
+    args, _ = mock_webhook_tracker_add.call_args
+    assert args == (tracker_id, {
+        'processed': True,
+        'result': 'Success',
+        'lead_id': lead_id,
+        'delivery_information': ANY,
+        'timestamp': ANY
+    })
+    
+    # Verify the return value
+    assert result == {
+        "status": "success",
+        "lead_id": lead_id,
+        "delivery_information": ANY
+    }
 
 
 def test_multiple_leads_found_but_none_valid():
