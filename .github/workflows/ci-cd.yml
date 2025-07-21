@@ -32,7 +32,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        blueprint: [instantly, gmail]  # Added gmail blueprint to the test matrix
+        blueprint: [instantly, gmail, easypost]  # Added gmail blueprint to the test matrix
     steps:
       - uses: actions/checkout@v3
       
