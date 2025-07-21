@@ -1,7 +1,5 @@
-from datetime import datetime
 from unittest.mock import ANY, patch
 
-import pytest
 from blueprints.easypost import process_delivery_status_task
 
 
