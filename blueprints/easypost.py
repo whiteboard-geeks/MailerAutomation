@@ -799,6 +799,19 @@ def process_delivery_status_task(self, payload_data):
         close_leads = search_close_leads(close_query_to_find_leads_with_tracking_number)
 
         try:
+            if len(close_leads) == 0:
+                error_msg = f"No leads found with tracking number {tracking_data['tracking_code']}"
+                logger.warning(error_msg)
+
+                webhook_data = {
+                    "processed": True,
+                    "result": "No leads found",
+                    "timestamp": datetime.now().isoformat(),
+                }
+                _webhook_tracker.add(tracker_id, webhook_data)
+
+                return {"status": "success", "message": error_msg}
+
             if len(close_leads) > 1:
                 logger.info(
                     f"Multiple leads ({len(close_leads)}) found with tracking number {tracking_data['tracking_code']} and tracker ID {tracking_data['id']}"
@@ -866,19 +879,6 @@ def process_delivery_status_task(self, payload_data):
                     _webhook_tracker.add(tracker_id, webhook_data)
                     return {"status": "success", "message": error_msg}
 
-            if len(close_leads) == 0:
-                error_msg = f"No leads found with tracking number {tracking_data['tracking_code']}"
-                logger.warning(error_msg)
-
-                webhook_data = {
-                    "processed": True,
-                    "result": "No leads found",
-                    "timestamp": datetime.now().isoformat(),
-                }
-                _webhook_tracker.add(tracker_id, webhook_data)
-
-                return {"status": "success", "message": error_msg}
-
             # Update lead with delivery information
             if not valid_leads:
                 error_msg = f"No valid leads available for tracking number {tracking_data['tracking_code']}"
@@ -922,9 +922,8 @@ def process_delivery_status_task(self, payload_data):
             if close_leads and len(close_leads) > 0:
                 error_message += f", lead_id={close_leads[0]['id']}"
 
-            logger.error(error_message)
-            logger.error(f"Traceback: {traceback.format_exc()}")
-            send_email(subject="Delivery information update failed", body=error_message)
+            logger.error(error_message, exc_info=True)
+            send_email(subject="Delivery information update failed", body=error_message + "\n\n" + traceback.format_exc())
 
             webhook_data = {
                 "processed": True,
@@ -1435,3 +1434,4 @@ def sync_delivery_status_task(self):
             # If we've exceeded retries or can't retry, return error
             logger.warning(f"Failed to retry task: {retry_error}")
             return {"status": "error", "message": error_msg}
+
