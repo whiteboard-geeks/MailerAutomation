@@ -1,9 +1,10 @@
 import os
 import json
 import requests
+from tenacity import retry, stop_after_attempt, wait_fixed
+from close_utils import create_email_search_query, search_close_leads
 from tests.utils.close_api import CloseAPI
 from datetime import datetime
-from time import sleep
 
 
 class TestInstantlyEmailSentIntegration:
@@ -59,8 +60,8 @@ class TestInstantlyEmailSentIntegration:
         self.test_data["task_id"] = task_data["id"]
         print(f"Task created with ID: {task_data['id']}")
 
-        print("Waiting for Close to populate lead and task data for search...")
-        sleep(10)
+        print("Waiting for Close to populate lead data for search...")
+        wait_for_lead_in_close_by_email(self.mock_payload["lead_email"])
 
         # Send the mock webhook to our endpoint
         print("Sending mock webhook to endpoint...")
@@ -100,3 +101,19 @@ class TestInstantlyEmailSentIntegration:
         ), "Email body doesn't match"
 
         print("All assertions passed!")
+
+
+@retry(stop=stop_after_attempt(6), wait=wait_fixed(5))
+def wait_for_lead_in_close_by_email(email: str) -> None:
+    """Wait until a lead can be found in Close CRM by email.
+
+    Args:
+        email (str): The email address to search for.
+
+    Returns:
+        None
+    """
+    query = create_email_search_query(email)
+    leads = search_close_leads(query)
+    if len(leads) == 0:
+        raise Exception(f"Failed to find lead with email: {email}")
