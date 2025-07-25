@@ -19,12 +19,10 @@ Key Goals:
 
 import os
 import time
-import json
 import requests
 import redis
 import pytest
 from datetime import datetime
-from concurrent.futures import ThreadPoolExecutor, as_completed
 from tests.utils.close_api import CloseAPI
 from utils.rate_limiter import RedisRateLimiter, APIRateConfig
 from utils.async_queue import InstantlyRequestQueue
@@ -276,7 +274,7 @@ class TestInstantlyAsyncProcessing:
         # This test should FAIL because we haven't implemented the async task yet
         try:
             # Try to import the async processing task that doesn't exist yet
-            from blueprints.instantly import process_lead_batch_task
+            from blueprints.instantly import process_lead_batch_task  # noqa: F401 - Intentional import check
 
             # If we get here, the task exists (which means Step 5.2 is done)
             print("✅ process_lead_batch_task found - async implementation exists")
@@ -665,7 +663,7 @@ class TestInstantlyAsyncProcessing:
 
         # This test requires all components to be working together
         try:
-            from blueprints.instantly import process_lead_batch_task
+            from blueprints.instantly import process_lead_batch_task  # noqa: F401 - Intentional import check
         except ImportError:
             pytest.skip(
                 "Async processing not implemented yet. "
@@ -691,10 +689,8 @@ class TestInstantlyAsyncProcessing:
         if self.circuit_breaker.can_execute():
             # Simulate a successful operation
             self.circuit_breaker.record_success()
-            cb_result = {"status": "success", "test": True}
             print(f"   Circuit breaker test call: ✅ Success")
         else:
-            cb_result = {"status": "blocked"}
             print(f"   Circuit breaker test call: ❌ Blocked (circuit open)")
 
         # Get circuit breaker metrics
