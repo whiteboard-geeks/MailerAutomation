@@ -951,9 +951,20 @@ def list_instantly_campaigns():
 @instantly_bp.route("/email_sent", methods=["POST"])
 def handle_instantly_email_sent():
     """Handle webhooks from Instantly when an email is sent."""
+    g_run_id = getattr(g, "request_id", str(uuid.uuid4()))
+
+    instantly_email_sent_task.delay(data=request.json, 
+                                    run_id=g_run_id,
+                                    request_path=request.path, 
+                                    request_get_json=request.get_json()
+                                   )
+
+    return jsonify({"status": "success", "message": "Webhook received"}), 200
+
+@celery.task(name="blueprints.instantly.instantly_email_sent_task")
+def instantly_email_sent_task(data, run_id, request_path, request_get_json):
     try:
         # Parse the webhook payload
-        data = request.json
         logger.info(
             "email_sent_webhook_received",
             event_type=data.get("event_type"),
@@ -964,8 +975,13 @@ def handle_instantly_email_sent():
         # Verify this is an email sent event
         if data.get("event_type") != "email_sent":
             logger.warning("non_email_sent_event", event_type=data.get("event_type"))
-            response_data = {"status": "success", "message": "Not an email sent event"}
-            return log_webhook_response(200, response_data, data)
+            return dict(
+                status="success",
+                message="Not an email sent event",
+                lead_email=data.get("lead_email"),
+                campaign_name=data.get("campaign_name"),
+                event_type=data.get("event_type"),
+            )
 
         # Extract relevant data from the webhook
         lead_email = data.get("lead_email")
@@ -982,8 +998,14 @@ def handle_instantly_email_sent():
                 email_subject=bool(email_subject),
                 email_html=bool(email_html),
             )
-            response_data = {"status": "error", "message": error_msg}
-            return log_webhook_response(400, response_data, data)
+            return dict(
+                status="error",
+                message=error_msg,
+                lead_email=lead_email,
+                campaign_name=campaign_name,
+                email_subject=bool(email_subject),
+                email_html=bool(email_html),
+            )
 
         # Search for leads with this email
         query = create_email_search_query(lead_email)
@@ -991,16 +1013,28 @@ def handle_instantly_email_sent():
         if not leads:
             error_msg = f"No lead found with email: {lead_email}"
             logger.error("lead_not_found", lead_email=lead_email)
-            response_data = {"status": "error", "message": error_msg}
-            return log_webhook_response(404, response_data, data)
+            return dict(
+                status="error",
+                message=error_msg,
+                lead_email=lead_email,
+                campaign_name=campaign_name,
+                email_subject=email_subject,
+                email_html=email_html,
+            )
 
         if len(leads) > 1:
             error_msg = f"Multiple leads found with email: {lead_email}"
             logger.error(
                 "multiple_leads_found", lead_email=lead_email, lead_count=len(leads)
             )
-            response_data = {"status": "error", "message": error_msg}
-            return log_webhook_response(400, response_data, data)
+            return dict(
+                status="error",
+                message=error_msg,
+                lead_email=lead_email,
+                campaign_name=campaign_name,
+                email_subject=email_subject,
+                email_html=email_html,
+            )
 
         lead = leads[0]
         lead_id = lead["id"]
@@ -1026,8 +1060,14 @@ def handle_instantly_email_sent():
                 f"No matching non-completed task found for campaign: {campaign_name}"
             )
             logger.error("task_not_found", campaign_name=campaign_name)
-            response_data = {"status": "error", "message": error_msg}
-            return log_webhook_response(401, response_data, data)
+            return dict(
+                status="error",
+                message=error_msg,
+                lead_email=lead_email,
+                campaign_name=campaign_name,
+                email_subject=email_subject,
+                email_html=email_html,
+            )
 
         # Mark the task as complete
         close_task_id = matching_task["id"]
@@ -1040,8 +1080,14 @@ def handle_instantly_email_sent():
         if not lead_details:
             error_msg = f"Could not retrieve lead details for lead ID: {lead_id}"
             logger.error("lead_details_not_found", lead_id=lead_id)
-            response_data = {"status": "error", "message": error_msg}
-            return log_webhook_response(404, response_data, data)
+            return dict(
+                status="error",
+                message=error_msg,
+                lead_email=lead_email,
+                campaign_name=campaign_name,
+                email_subject=email_subject,
+                email_html=email_html,
+            )
 
         contact = None
         for c in lead_details.get("contacts", []):
@@ -1055,8 +1101,14 @@ def handle_instantly_email_sent():
         if not contact:
             error_msg = f"No contact found with email: {lead_email}"
             logger.error("contact_not_found", lead_id=lead_id, lead_email=lead_email)
-            response_data = {"status": "error", "message": error_msg}
-            return log_webhook_response(404, response_data, data)
+            return dict(
+                status="error",
+                message=error_msg,
+                lead_email=lead_email,
+                campaign_name=campaign_name,
+                email_subject=email_subject,
+                email_html=email_html,
+            )
 
         # Create email activity in Close
         email_data = {
@@ -1112,14 +1164,17 @@ def handle_instantly_email_sent():
             "close_task_id": close_task_id,
             "email_id": email_response.json()["id"],
         }
-        return log_webhook_response(200, response_data, webhook_data)
+        return dict(
+            status="success",
+            message="Email sent webhook processed successfully",
+            lead_id=lead_id,
+            close_task_id=close_task_id,
+            email_id=email_response.json()["id"],
+        )
 
     except Exception as e:
         # Capture the traceback
         tb = traceback.format_exc()
-
-        # Get request ID which serves as run ID
-        run_id = getattr(g, "request_id", str(uuid.uuid4()))
 
         # Extract calling function name
         calling_function = "handle_instantly_email_sent"
@@ -1127,13 +1182,13 @@ def handle_instantly_email_sent():
         error_message = f"""
         <h2>Instantly Email Sent Webhook Error</h2>
         <p><strong>Error:</strong> {str(e)}</p>
-        <p><strong>Route:</strong> {request.path}</p>
+        <p><strong>Route:</strong> {request_path}</p>
         <p><strong>Run ID:</strong> {run_id}</p>
         <p><strong>Origin:</strong> {calling_function}</p>
         <p><strong>Time:</strong> {datetime.now().isoformat()}</p>
         
         <h3>Webhook Data:</h3>
-        <pre>{json.dumps({k: v for k, v in request.get_json().items() if k not in ["auth_token", "email_html", "password"]}, indent=2, default=str)}</pre>
+        <pre>{json.dumps({k: v for k, v in request_get_json.items() if k not in ["auth_token", "email_html", "password"]}, indent=2, default=str)}</pre>
         
         <h3>Traceback:</h3>
         <pre>{tb}</pre>
@@ -1155,12 +1210,11 @@ def handle_instantly_email_sent():
             body=error_message,
         )
 
-        response_data = {
-            "status": "error",
-            "message": "An error occurred processing the Instantly email sent webhook",
-            "error": str(e),
-        }
-        return log_webhook_response(500, response_data, None, error=str(e))
+        return dict(
+            status="error",
+            message="An error occurred processing the Instantly email sent webhook",
+            error=str(e),
+        )
 
 
 @instantly_bp.route("/reply_received", methods=["POST"])
