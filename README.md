@@ -57,7 +57,7 @@ GMAIL_WEBHOOK_PASSWORD=user_generated_for_sending_emails_with_endpoint
 2. Install dependencies:
 
    ```bash
-   pip install -r requirements.txt
+   pip install -r requirements-dev.txt
    ```
 
 3. Start the Redis server (if not already running)
@@ -70,6 +70,12 @@ GMAIL_WEBHOOK_PASSWORD=user_generated_for_sending_emails_with_endpoint
    # Start the Celery worker
    celery -A celery_worker.celery worker --loglevel=info
    ```
+
+### Linting
+
+```bash
+flake8 .
+```
 
 ## Usage
 

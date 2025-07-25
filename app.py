@@ -14,7 +14,6 @@ import time
 
 import requests
 from flask import Flask, request, jsonify, g
-from celery import Celery
 import pytz
 import pytest
 import structlog

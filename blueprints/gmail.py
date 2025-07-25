@@ -8,7 +8,6 @@ import os
 import json
 import traceback
 import base64
-import pickle
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 import structlog

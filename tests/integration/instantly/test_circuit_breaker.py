@@ -11,7 +11,7 @@ import redis
 import pytest
 import requests
 from datetime import datetime
-from unittest.mock import Mock, patch, MagicMock
+from unittest.mock import Mock
 from tests.utils.close_api import CloseAPI
 
 
@@ -350,7 +350,7 @@ class TestInstantlyCircuitBreaker:
         # First 3 calls should fail and trigger circuit breaker
         for i in range(3):
             try:
-                result = mock_instantly_api_call()
+                mock_instantly_api_call()
                 pytest.fail(f"Call {i+1} should have failed")
             except requests.exceptions.HTTPError:
                 print(f"Call {i+1}: Expected API failure")
@@ -362,7 +362,7 @@ class TestInstantlyCircuitBreaker:
 
         # Next call should be blocked by circuit breaker
         try:
-            result = mock_instantly_api_call()
+            mock_instantly_api_call()
             pytest.fail("Call should have been blocked by circuit breaker")
         except Exception as e:
             assert "Circuit breaker is OPEN" in str(
@@ -396,8 +396,6 @@ class TestInstantlyCircuitBreaker:
         backoff_delays = []
 
         for i in range(5):
-            start_time = time.time()
-
             # Record failure and get backoff delay
             circuit_breaker.record_failure()
             delay = circuit_breaker.get_backoff_delay()
