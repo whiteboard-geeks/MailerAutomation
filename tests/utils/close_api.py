@@ -5,6 +5,9 @@ from base64 import b64encode
 from datetime import datetime, timedelta
 import json
 
+from tenacity import retry, stop_after_attempt, wait_fixed
+from close_utils import create_email_search_query, search_close_leads
+
 
 class CloseAPI:
     def __init__(self, api_key=None):
@@ -609,3 +612,18 @@ class CloseAPI:
             raise Exception(f"Failed to get custom activities: {response.text}")
 
         return response.json().get("data", [])
+
+    @retry(stop=stop_after_attempt(6), wait=wait_fixed(5))
+    def wait_for_lead_by_email(self, email: str) -> None:
+        """Wait until a lead can be found in Close CRM by email.
+
+        Args:
+            email (str): The email address to search for.
+
+        Returns:
+            None
+        """
+        query = create_email_search_query(email)
+        leads = search_close_leads(query)
+        if len(leads) == 0:
+            raise Exception(f"Failed to find lead with email: {email}")

@@ -1,6 +1,7 @@
 import os
 import json
 import requests
+from tenacity import Retrying, retry, retry_if_not_result, stop_after_attempt, wait_fixed
 from tests.utils.close_api import CloseAPI
 from datetime import datetime
 from time import sleep
@@ -113,8 +114,8 @@ class TestInstantlyReplyReceivedIntegration:
         self.test_data["task_id"] = task_data["id"]
         print(f"Task created with ID: {task_data['id']}")
 
-        print("Waiting 10 seconds for Close to populate lead data for search...")
-        sleep(10)
+        print("Waiting for Close to populate lead data for search...")
+        self.close_api.wait_for_lead_by_email(self.mock_payload["lead_email"])
 
         # Send the mock webhook to our endpoint
         print("Sending mock webhook to endpoint...")
@@ -269,8 +270,8 @@ class TestInstantlyReplyReceivedIntegration:
         self.test_data["task_id"] = task_data["id"]
         print(f"Task created with ID: {task_data['id']}")
 
-        print("Waiting 10 seconds for Close to populate lead data for search...")
-        sleep(10)
+        print("Waiting for Close to populate lead data for search...")
+        self.close_api.wait_for_lead_by_email(self.mock_payload["lead_email"])
 
         # Send webhook
         print("Sending mock webhook to endpoint...")
@@ -351,8 +352,8 @@ class TestInstantlyReplyReceivedIntegration:
         self.test_data["task_id"] = task_data["id"]
         print(f"Task created with ID: {task_data['id']}")
 
-        print("Waiting 10 seconds for Close to populate lead data for search...")
-        sleep(10)
+        print("Waiting for Close to populate lead data for search...")
+        self.close_api.wait_for_lead_by_email(self.mock_payload["lead_email"])
 
         # Send webhook
         print("Sending mock webhook to endpoint...")
