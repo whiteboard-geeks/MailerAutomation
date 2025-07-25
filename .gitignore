@@ -1,5 +1,4 @@
 cache.sqlite
-.flake8
 env/
 *.pyc
 .env
