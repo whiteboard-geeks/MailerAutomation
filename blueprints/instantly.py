@@ -1192,7 +1192,7 @@ def instantly_email_sent_task(data, run_id, request_path, request_get_json):
             error=str(e),
             traceback=tb,
             run_id=run_id,
-            route=request.path,
+            route=request_path,
             origin=calling_function,
         )
 
