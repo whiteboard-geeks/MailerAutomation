@@ -1,7 +1,6 @@
 import os
 import json
 import requests
-from tenacity import Retrying, retry, retry_if_not_result, stop_after_attempt, wait_fixed
 from tests.utils.close_api import CloseAPI
 from datetime import datetime
 from time import sleep

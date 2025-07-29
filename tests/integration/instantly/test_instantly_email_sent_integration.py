@@ -1,5 +1,6 @@
 import os
 import json
+from time import sleep
 import requests
 from tests.utils.close_api import CloseAPI
 from datetime import datetime
@@ -69,9 +70,9 @@ class TestInstantlyEmailSentIntegration:
         )
         print(f"Webhook response status: {response.status_code}")
         print(f"Webhook response: {response.json()}")
-
-        sleep(10)
         
+        sleep(5)
+
         # Define verification functions with retries
         print("Checking if task is complete...")
         task = self.close_api.get_task(self.test_data["task_id"])
