@@ -71,7 +71,7 @@ class TestInstantlyEmailSentIntegration:
         print(f"Webhook response status: {response.status_code}")
         print(f"Webhook response: {response.json()}")
         
-        sleep(4)
+        sleep(5)
 
         # Define verification functions with retries
         print("Checking if task is complete...")
