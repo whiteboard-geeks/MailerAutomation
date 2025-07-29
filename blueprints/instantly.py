@@ -1157,13 +1157,6 @@ def instantly_email_sent_task(data, run_id, request_path, request_get_json):
         _webhook_tracker.add(close_task_id, webhook_data)
         logger.info(f"Recorded email sent webhook for task {close_task_id}")
 
-        response_data = {
-            "status": "success",
-            "message": "Email sent webhook processed successfully",
-            "lead_id": lead_id,
-            "close_task_id": close_task_id,
-            "email_id": email_response.json()["id"],
-        }
         return dict(
             status="success",
             message="Email sent webhook processed successfully",
