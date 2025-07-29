@@ -1172,9 +1172,14 @@ def instantly_email_sent_task(data, run_id, request_path, request_get_json):
         # Extract calling function name
         calling_function = "handle_instantly_email_sent"
 
+        http_error_response = None
+        if isinstance(e, requests.exceptions.HTTPError):
+            http_error_response = e.response.text
+
         error_message = f"""
         <h2>Instantly Email Sent Webhook Error</h2>
         <p><strong>Error:</strong> {str(e)}</p>
+        <p><strong>HTTP Error Response:</strong> {http_error_response}</p>
         <p><strong>Route:</strong> {request_path}</p>
         <p><strong>Run ID:</strong> {run_id}</p>
         <p><strong>Origin:</strong> {calling_function}</p>
@@ -1186,14 +1191,21 @@ def instantly_email_sent_task(data, run_id, request_path, request_get_json):
         <h3>Traceback:</h3>
         <pre>{tb}</pre>
         """
+        
+        logger_error_kwargs = {
+            "error": str(e),
+            "traceback": tb,
+            "run_id": run_id,
+            "route": request_path,
+            "origin": calling_function,
+        }
+
+        if http_error_response:
+            logger_error_kwargs["http_error_response"] = http_error_response
 
         logger.error(
             "email_sent_webhook_error",
-            error=str(e),
-            traceback=tb,
-            run_id=run_id,
-            route=request_path,
-            origin=calling_function,
+            **logger_error_kwargs,
         )
 
         # Removed recipient determination code since it's now handled in app.py
