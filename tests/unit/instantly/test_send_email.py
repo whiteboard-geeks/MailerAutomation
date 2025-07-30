@@ -87,8 +87,10 @@ def test_send_email_mocked():
     Test send_email functionality with mocked Gmail API.
     This is the preferred approach for unit tests.
     """
-    # Mock the Gmail API function
-    with patch("blueprints.gmail.send_gmail") as mock_send_gmail:
+    # Mock the Gmail API function and set env_type to production
+    with patch("blueprints.gmail.send_gmail") as mock_send_gmail, \
+         patch("app.env_type", "production"):
+        
         mock_send_gmail.return_value = {
             "status": "success",
             "message_id": "mock_message_123",
