@@ -347,7 +347,7 @@ def send_email(subject, body, **kwargs):
     - Kori Watkins
     - Noura Mahmoud
 
-    In development/staging, emails are only sent to Lance by default.
+    In development/staging, no emails are sent.
 
     Args:
         subject (str): The email subject
@@ -359,6 +359,9 @@ def send_email(subject, body, **kwargs):
     Returns:
         dict: Response from Gmail API
     """
+    if env_type.lower() != "production":
+        return {"status": "success", "message": "Email not sent in non-production env"}
+    
     central_time_zone = pytz.timezone("America/Chicago")
     central_time_now = datetime.now(central_time_zone)
     time_now_formatted = central_time_now.strftime("%Y-%m-%d %H:%M:%S%z")
@@ -366,11 +369,7 @@ def send_email(subject, body, **kwargs):
     # Import the send_gmail function from our Gmail blueprint
     from blueprints.gmail import send_gmail
 
-    # Set default recipients based on environment
-    if env_type.lower() == "production":
-        recipients = "Lance Johnson <lance@whiteboardgeeks.com>, Barbara Pigg <barbara.pigg@whiteboardgeeks.com>, Kori Watkins <kori.watkins@whiteboardgeeks.com>, Noura Mahmoud <noura.mahmoud@whiteboardgeeks.com>"
-    else:
-        recipients = "Lance Johnson <lance@whiteboardgeeks.com>"
+    recipients = "Lance Johnson <lance@whiteboardgeeks.com>, Barbara Pigg <barbara.pigg@whiteboardgeeks.com>, Kori Watkins <kori.watkins@whiteboardgeeks.com>, Noura Mahmoud <noura.mahmoud@whiteboardgeeks.com>"
 
     # Override with any explicitly provided recipients
     recipients = kwargs.get("recipients", recipients)
