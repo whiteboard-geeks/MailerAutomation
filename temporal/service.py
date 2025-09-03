@@ -1,11 +1,9 @@
 # temporal_service.py
 import asyncio
-import os
 import threading
 from typing import Optional, Awaitable
 
 from temporalio.client import Client
-from temporalio.contrib.pydantic import pydantic_data_converter
 
 from temporal.client_provider import get_temporal_client
 

@@ -1,6 +1,5 @@
 import logging
 import os
-from typing import Optional
 import structlog
 from temporalio.client import Client, TLSConfig
 from temporalio.contrib.pydantic import pydantic_data_converter
