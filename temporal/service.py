@@ -7,6 +7,8 @@ from typing import Optional, Awaitable
 from temporalio.client import Client
 from temporalio.contrib.pydantic import pydantic_data_converter
 
+from temporal.client_provider import get_temporal_client
+
 try:
     # Present in Temporal Python SDK; only used if you enable TLS/mTLS via env
     from temporalio.service import TLSConfig  # type: ignore
@@ -26,11 +28,6 @@ class TemporalService:
         self._lock = threading.Lock()
         self.client: Optional[Client] = None
 
-        # Env configuration (override in Heroku config vars)
-        self._target = os.getenv("TEMPORAL_TARGET", "localhost:7233")
-        self._namespace = os.getenv("TEMPORAL_NAMESPACE", "default")
-        self._tls_enabled = os.getenv("TEMPORAL_TLS", "false").lower() == "true"
-
     # ----- lifecycle ---------------------------------------------------------
 
     def start(self) -> None:
@@ -43,12 +40,7 @@ class TemporalService:
             if not self._thread.is_alive():
                 self._thread.start()
             fut = asyncio.run_coroutine_threadsafe(
-                Client.connect(
-                    self._target,
-                    namespace=self._namespace,
-                    data_converter=pydantic_data_converter,
-                    tls=self._build_tls() if self._tls_enabled else None,
-                ),
+                get_temporal_client(),
                 self._loop,
             )
             self.client = fut.result()  # raise if connection fails
@@ -88,20 +80,6 @@ class TemporalService:
         return asyncio.run_coroutine_threadsafe(coro, self._loop).result()
 
     # ----- helpers -----------------------------------------------------------
-
-    def _build_tls(self):
-        if TLSConfig is None:
-            return None
-        server_name = os.getenv("TEMPORAL_TLS_SERVER_NAME")  # e.g. <ns>.<acct>.tmprl.cloud
-        root_ca_pem = os.getenv("TEMPORAL_TLS_ROOT_CA_PEM")
-        client_cert_pem = os.getenv("TEMPORAL_MTLS_CERT_PEM")
-        client_key_pem = os.getenv("TEMPORAL_MTLS_KEY_PEM")
-        return TLSConfig(
-            domain=server_name,
-            server_root_ca_cert=root_ca_pem.encode() if root_ca_pem else None,
-            client_cert=client_cert_pem.encode() if client_cert_pem else None,
-            client_private_key=client_key_pem.encode() if client_key_pem else None,
-        )
 
 
 # Module-level singleton (one per *process*)

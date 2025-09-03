@@ -5,10 +5,10 @@ from concurrent.futures import ThreadPoolExecutor
 import logging
 from datetime import timedelta
 
-from temporalio.client import Client
-from temporalio.contrib.pydantic import pydantic_data_converter
+import structlog
 from temporalio.worker import Worker
 
+from temporal.client_provider import get_temporal_client
 from temporal.shared import TASK_QUEUE_NAME
 
 from .workflows.instantly import WebhookEmailSentWorkflow
@@ -19,13 +19,13 @@ async def run_worker() -> None:
 
     # Configure logging
     logging.basicConfig(level=logging.INFO)
-    logger = logging.getLogger(__name__)
+    logger = structlog.get_logger(__name__)
 
     try:
         # Connect to Temporal server
-        client = await Client.connect("localhost:7233", data_converter=pydantic_data_converter)
+        client = await get_temporal_client()
 
-        logger.info("Connected to Temporal server")
+        logger.info("connected_to_temporal_server", config=client.config())
     except Exception as e:
         logger.error(f"Failed to connect to Temporal server: {e}")
         logger.info("Worker will run without Temporal connection (for testing)")
