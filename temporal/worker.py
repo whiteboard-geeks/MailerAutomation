@@ -25,7 +25,7 @@ async def run_worker() -> None:
         # Connect to Temporal server
         client = await get_temporal_client()
 
-        logger.info("connected_to_temporal_server", config=client.config())
+        logger.info("connected_to_temporal_server")
     except Exception as e:
         logger.error(f"Failed to connect to Temporal server: {e}")
         logger.info("Worker will run without Temporal connection (for testing)")
