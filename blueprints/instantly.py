@@ -12,6 +12,7 @@ import time
 import json
 from redis import Redis
 import structlog
+from temporal.service import temporal
 import uuid
 
 from flask import Blueprint, request, jsonify, g
@@ -30,6 +31,9 @@ from utils.rate_limiter import RedisRateLimiter, APIRateConfig
 
 # Import the Celery instance
 from celery_worker import celery
+
+from temporal.workflows.instantly import WebhookEmailSentWorkflow, WebhookEmailSentPaylod
+from temporal.shared import TASK_QUEUE_NAME
 
 # Set up blueprint
 instantly_bp = Blueprint("instantly", __name__)
@@ -949,6 +953,25 @@ def list_instantly_campaigns():
 
 
 @instantly_bp.route("/email_sent", methods=["POST"])
+def handle_instantly_email_sent_temporal():
+    """Handle webhooks from Instantly when an email is sent."""
+    g_run_id = getattr(g, "request_id", str(uuid.uuid4()))
+
+    input = WebhookEmailSentPaylod(
+        json_payload=request.get_json(),
+    )
+
+    _ = temporal.run(temporal.client.start_workflow(
+        WebhookEmailSentWorkflow.run,
+        input,
+        id=g_run_id,
+        task_queue=TASK_QUEUE_NAME
+    ))
+
+    return jsonify({"status": "success", "message": "Webhook received"}), 200
+
+
+@instantly_bp.route("/email_sent_orig", methods=["POST"])
 def handle_instantly_email_sent():
     """Handle webhooks from Instantly when an email is sent."""
     g_run_id = getattr(g, "request_id", str(uuid.uuid4()))
