@@ -971,8 +971,8 @@ def handle_instantly_email_sent_temporal():
     return jsonify({"status": "success", "message": "Webhook received"}), 200
 
 
-@instantly_bp.route("/email_sent_orig", methods=["POST"])
-def handle_instantly_email_sent():
+@instantly_bp.route("/email_sent_celery", methods=["POST"])
+def handle_instantly_email_sent_celery():
     """Handle webhooks from Instantly when an email is sent."""
     g_run_id = getattr(g, "request_id", str(uuid.uuid4()))
 
