@@ -91,15 +91,13 @@ logger.info(
 # Setup Flask app
 flask_app = Flask(__name__)
 
-ENABLE_TEMPORAL = os.getenv("ENABLE_TEMPORAL", "false").lower() == "true"
+try:
+    from temporal.service import temporal
+    temporal.start()
+    logger.info("temporal_client_started", ok=True)
+except Exception as e:
+    logger.exception("temporal_client_start_failed", error=str(e))
 
-if ENABLE_TEMPORAL:
-    try:
-        from temporal.service import temporal
-        temporal.start()
-        logger.info("temporal_client_started", ok=True)
-    except Exception as e:
-        logger.exception("temporal_client_start_failed", error=str(e))
 
 # Configure Redis and Celery
 REDISCLOUD_URL = os.environ.get("REDISCLOUD_URL")
