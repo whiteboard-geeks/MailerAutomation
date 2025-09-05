@@ -12,6 +12,7 @@ import time
 import json
 from redis import Redis
 import structlog
+from temporal.service import temporal
 import uuid
 
 from flask import Blueprint, request, jsonify, g
@@ -30,6 +31,9 @@ from utils.rate_limiter import RedisRateLimiter, APIRateConfig
 
 # Import the Celery instance
 from celery_worker import celery
+
+from temporal.workflows.instantly import WebhookEmailSentWorkflow, WebhookEmailSentPaylod
+from temporal.shared import TASK_QUEUE_NAME
 
 # Set up blueprint
 instantly_bp = Blueprint("instantly", __name__)
@@ -309,6 +313,13 @@ WEBHOOK_API_KEY = os.environ.get("WEBHOOK_API_KEY")
 INSTANTLY_API_KEY = os.environ.get("INSTANTLY_API_KEY")
 ENV_TYPE = os.environ.get("ENV_TYPE", "development")
 BARBARA_USER_ID = "user_8HHUh3SH67YzD8IMakjKoJ9SWputzlUdaihCG95g7as"
+
+USE_TEMPORAL_FOR_EMAIL_SENT_WEBHOOK = (
+    os.environ.get("USE_TEMPORAL_FOR_EMAIL_SENT_WEBHOOK", "false").lower() == "true"
+)
+logger.info(
+    f"USE_TEMPORAL_FOR_EMAIL_SENT_WEBHOOK: {USE_TEMPORAL_FOR_EMAIL_SENT_WEBHOOK}"
+)
 
 
 # --- Redis cache helpers ---
@@ -950,6 +961,31 @@ def list_instantly_campaigns():
 
 @instantly_bp.route("/email_sent", methods=["POST"])
 def handle_instantly_email_sent():
+    if USE_TEMPORAL_FOR_EMAIL_SENT_WEBHOOK:
+        return handle_instantly_email_sent_temporal()
+    else:
+        return handle_instantly_email_sent_celery()
+
+
+def handle_instantly_email_sent_temporal():
+    """Handle webhooks from Instantly when an email is sent."""
+    g_run_id = getattr(g, "request_id", str(uuid.uuid4()))
+
+    input = WebhookEmailSentPaylod(
+        json_payload=request.get_json(),
+    )
+
+    _ = temporal.run(temporal.client.start_workflow(
+        WebhookEmailSentWorkflow.run,
+        input,
+        id=g_run_id,
+        task_queue=TASK_QUEUE_NAME
+    ))
+
+    return jsonify({"status": "success", "message": "Webhook received"}), 200
+
+
+def handle_instantly_email_sent_celery():
     """Handle webhooks from Instantly when an email is sent."""
     g_run_id = getattr(g, "request_id", str(uuid.uuid4()))
 
