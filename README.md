@@ -18,8 +18,9 @@ MailerAutomation is a Flask-based application that helps track package shipments
 ## System Architecture
 
 - **Flask Web Application**: Handles HTTP requests and webhook integrations
-- **Celery Workers**: Process background and scheduled tasks
+- **Celery Workers** (deprecated): Process background and scheduled tasks
 - **Redis**: Used for Celery task queue and data caching
+- **Temporal**: Process background and scheduled tasks (replaces Celery)
 - **Blueprints**:
   - `easypost.py`: Handles package tracking and delivery status updates
   - `gmail.py`: Manages email notification processing
@@ -35,6 +36,7 @@ MailerAutomation is a Flask-based application that helps track package shipments
 - EasyPost account
 - Gmail API credentials (for email integration)
 - Instantly account (for email campaigns)
+- Temporal Cloud account (for background processing)
 
 ### Environment Variables
 
@@ -49,27 +51,19 @@ ENV_TYPE=development  # or production, staging
 INSTANTLY_API_KEY=your_instantly_api_key
 GMAIL_SERVICE_ACCOUNT_INFO=service_account_in_json_string
 GMAIL_WEBHOOK_PASSWORD=user_generated_for_sending_emails_with_endpoint
+TEMPORAL_API_KEY=your_temporal_api_key
+TEMPORAL_NAMESPACE=your_temporal_namespace
+TEMPORAL_ADDRESS=your_temporal_address
 ```
+
+Note: Only set `TEMPORAL_*` variables when you want Flask to connect to Temporal Cloud. Otherwise leave them unset so that Flask connects to the local Temporal Cluster.
 
 ### Installation
 
-1. Clone the repository
-2. Install dependencies:
-
-   ```bash
-   pip install -r requirements-dev.txt
-   ```
-
-3. Start the Redis server (if not already running)
-4. Run the application locally:
-
-   ```bash
-   # Start the web server
-   gunicorn app:flask_app
-   
-   # Start the Celery worker
-   celery -A celery_worker.celery worker --loglevel=info
-   ```
+    python3 -m venv env
+    source env/bin/activate
+    pip install -r requirements-dev.txt
+    # in VSCode: set Python interpreter path to env/bin/python
 
 ### Linting
 
@@ -100,6 +94,36 @@ flake8 .
 - Endpoints for email campaign tracking and management
 
 ## Development
+
+### Running the Application Locally
+
+Temporal:
+
+    make temporal-start
+
+Temporal Worker:
+
+    source env/bin/activate
+    set -a; source .env; set +a
+    make temporal-add-search-attributes
+    python -m temporal.worker
+
+Redis:
+
+    docker pull redis
+    docker run -p 6379:6379 redis
+
+Celery:
+
+    source env/bin/activate
+    set -a; source .env; set +a
+    celery -A celery_worker.celery worker --loglevel=info
+
+Flask:
+
+    source env/bin/activate
+    set -a; source .env; set +a
+    FLASK_APP=app.py FLASK_ENV=development flask run --port=8080
 
 ### Project Structure
 
