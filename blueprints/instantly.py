@@ -314,6 +314,13 @@ INSTANTLY_API_KEY = os.environ.get("INSTANTLY_API_KEY")
 ENV_TYPE = os.environ.get("ENV_TYPE", "development")
 BARBARA_USER_ID = "user_8HHUh3SH67YzD8IMakjKoJ9SWputzlUdaihCG95g7as"
 
+USE_TEMPORAL_FOR_EMAIL_SENT_WEBHOOK = (
+    os.environ.get("USE_TEMPORAL_FOR_EMAIL_SENT_WEBHOOK", "false").lower() == "true"
+)
+logger.info(
+    f"USE_TEMPORAL_FOR_EMAIL_SENT_WEBHOOK: {USE_TEMPORAL_FOR_EMAIL_SENT_WEBHOOK}"
+)
+
 
 # --- Redis cache helpers ---
 def get_redis_client():
@@ -953,6 +960,13 @@ def list_instantly_campaigns():
 
 
 @instantly_bp.route("/email_sent", methods=["POST"])
+def handle_instantly_email_sent():
+    if USE_TEMPORAL_FOR_EMAIL_SENT_WEBHOOK:
+        return handle_instantly_email_sent_temporal()
+    else:
+        return handle_instantly_email_sent_celery()
+
+
 def handle_instantly_email_sent_temporal():
     """Handle webhooks from Instantly when an email is sent."""
     g_run_id = getattr(g, "request_id", str(uuid.uuid4()))
@@ -971,7 +985,6 @@ def handle_instantly_email_sent_temporal():
     return jsonify({"status": "success", "message": "Webhook received"}), 200
 
 
-@instantly_bp.route("/email_sent_celery", methods=["POST"])
 def handle_instantly_email_sent_celery():
     """Handle webhooks from Instantly when an email is sent."""
     g_run_id = getattr(g, "request_id", str(uuid.uuid4()))
