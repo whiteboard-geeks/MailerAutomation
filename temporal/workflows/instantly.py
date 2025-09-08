@@ -29,7 +29,8 @@ class WebhookEmailSentWorkflow:
     def __init__(self) -> None:
         self._data_issue_fixed: bool = True
         self._activity_retry_policy = RetryPolicy(
-            maximum_attempts=1,
+            initial_interval=timedelta(seconds=5),
+            maximum_attempts=2,
         )
 
     @workflow.signal
