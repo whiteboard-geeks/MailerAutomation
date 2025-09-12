@@ -2,6 +2,7 @@
 
 A comprehensive system that integrates with Close CRM, EasyPost, Gmail, and Instantly to automate package tracking and delivery notification workflows.
 
+
 ## Overview
 
 MailerAutomation is a Flask-based application that helps track package shipments and delivery status for leads in Close CRM. The system monitors shipments, updates delivery statuses, and automates follow-up communications based on package delivery events.
