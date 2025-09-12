@@ -352,7 +352,7 @@ def send_email(subject, body, **kwargs):
     In production, emails are sent to the entire team by default:
     - Lance Johnson
     - Barbara Pigg
-    - Kori Watkins
+    - Lauren Poche
     - Noura Mahmoud
 
     In development/staging, no emails are sent.
@@ -377,7 +377,13 @@ def send_email(subject, body, **kwargs):
     # Import the send_gmail function from our Gmail blueprint
     from blueprints.gmail import send_gmail
 
-    recipients = "Lance Johnson <lance@whiteboardgeeks.com>, Barbara Pigg <barbara.pigg@whiteboardgeeks.com>, Kori Watkins <kori.watkins@whiteboardgeeks.com>, Noura Mahmoud <noura.mahmoud@whiteboardgeeks.com>"
+    recipients_list = [
+        "Lance Johnson <lance@whiteboardgeeks.com>",
+        "Barbara Pigg <barbara.pigg@whiteboardgeeks.com>",
+        "Lauren Poche <lauren.poche@whiteboardgeeks.com>",
+        "Noura Mahmoud <noura.mahmoud@whiteboardgeeks.com>",
+    ]
+    recipients = ", ".join(recipients_list)
 
     # Override with any explicitly provided recipients
     recipients = kwargs.get("recipients", recipients)

@@ -106,7 +106,12 @@ def determine_notification_recipients(lead_details, env_type):
             return recipients, None
         else:
             # Production: April's team
-            recipients = "april.lowrie@whiteboardgeeks.com,noura.mahmoud@whiteboardgeeks.com,kori.watkins@whiteboardgeeks.com"
+            recipients_list = [
+                "april.lowrie@whiteboardgeeks.com",
+                "noura.mahmoud@whiteboardgeeks.com",
+                "lauren.poche@whiteboardgeeks.com",
+            ]
+            recipients = ", ".join(recipients_list)
             logger.info(
                 "consultant_determined",
                 lead_id=lead_id,
