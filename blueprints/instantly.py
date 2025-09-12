@@ -111,7 +111,7 @@ def determine_notification_recipients(lead_details, env_type):
                 "noura.mahmoud@whiteboardgeeks.com",
                 "lauren.poche@whiteboardgeeks.com",
             ]
-            recipients = ", ".join(recipients_list)
+            recipients = ",".join(recipients_list)
             logger.info(
                 "consultant_determined",
                 lead_id=lead_id,
