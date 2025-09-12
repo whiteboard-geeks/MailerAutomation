@@ -147,7 +147,7 @@ class TestConsultantNotification:
         )
 
         # April should get custom recipients in production
-        expected_recipients = "april.lowrie@whiteboardgeeks.com,noura.mahmoud@whiteboardgeeks.com,kori.watkins@whiteboardgeeks.com"
+        expected_recipients = "april.lowrie@whiteboardgeeks.com,noura.mahmoud@whiteboardgeeks.com,lauren.poche@whiteboardgeeks.com"
         assert (
             recipients == expected_recipients
         ), f"Expected April's team recipients, got {recipients}"
@@ -258,7 +258,7 @@ class TestConsultantNotification:
         )
 
         # Verify the exact format and order of April's team
-        expected_recipients = "april.lowrie@whiteboardgeeks.com,noura.mahmoud@whiteboardgeeks.com,kori.watkins@whiteboardgeeks.com"
+        expected_recipients = "april.lowrie@whiteboardgeeks.com,noura.mahmoud@whiteboardgeeks.com,lauren.poche@whiteboardgeeks.com"
         assert (
             recipients == expected_recipients
         ), f"April's team recipients format incorrect: {recipients}"
@@ -270,7 +270,7 @@ class TestConsultantNotification:
         ), f"Expected 3 recipients for April's team, got {len(recipient_list)}"
         assert "april.lowrie@whiteboardgeeks.com" in recipient_list
         assert "noura.mahmoud@whiteboardgeeks.com" in recipient_list
-        assert "kori.watkins@whiteboardgeeks.com" in recipient_list
+        assert "lauren.poche@whiteboardgeeks.com" in recipient_list
 
     def test_development_environment_override(self):
         """Test that development environment always uses Lance only."""
@@ -303,7 +303,7 @@ class TestConsultantNotification:
         recipients, error = determine_notification_recipients(
             self.april_lead_details, "production"
         )
-        expected_april_team = "april.lowrie@whiteboardgeeks.com,noura.mahmoud@whiteboardgeeks.com,kori.watkins@whiteboardgeeks.com"
+        expected_april_team = "april.lowrie@whiteboardgeeks.com,noura.mahmoud@whiteboardgeeks.com,lauren.poche@whiteboardgeeks.com"
         assert (
             recipients == expected_april_team
         ), "April should use her team in production"
