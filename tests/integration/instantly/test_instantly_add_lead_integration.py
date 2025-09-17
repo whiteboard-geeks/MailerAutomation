@@ -128,7 +128,7 @@ class TestInstantlyAddLeadIntegration:
         ), "Campaign name should be in task text"
         print("✅ Stage 2: Payload preparation verified")
 
-        time.sleep(1)
+        time.sleep(2)
 
         # Stage 2: Assert that the lead is not in any campaign in Instantly
         campaigns_before_add_lead = search_campaigns_by_lead_email(lead.contacts[0].emails[0].email)
