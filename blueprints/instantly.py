@@ -8,7 +8,6 @@ import traceback
 from base64 import b64encode
 import json
 from redis import Redis
-import structlog
 from temporal.service import temporal
 import uuid
 
