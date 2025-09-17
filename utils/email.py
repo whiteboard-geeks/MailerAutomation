@@ -1,9 +1,5 @@
 from config import env_type
-from blueprints.gmail import send_gmail as bp_send_gmail
-
 import pytz
-
-
 from datetime import datetime
 
 
@@ -56,6 +52,9 @@ def send_email(subject, body, **kwargs):
     text_environment_info = f"Environment: {env_type}\n\n"
     text_content = text_environment_info + text_content
 
+    # Import here to avoid circular import
+    from blueprints.gmail import send_gmail as bp_send_gmail
+    
     # Send email using Gmail API
     gmail_response = bp_send_gmail(
         sender="lance@whiteboardgeeks.com",

@@ -88,7 +88,7 @@ def test_send_email_mocked():
     This is the preferred approach for unit tests.
     """
     # Mock the Gmail API function and set env_type to production
-    with patch("utils.email.bp_send_gmail") as mock_send_gmail, \
+    with patch("blueprints.gmail.send_gmail") as mock_send_gmail, \
          patch("utils.email.env_type", "production"):
         
         mock_send_gmail.return_value = {
