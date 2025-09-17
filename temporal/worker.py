@@ -11,8 +11,8 @@ from temporalio.worker import Worker
 from temporal.client_provider import get_temporal_client
 from temporal.shared import TASK_QUEUE_NAME
 
-from .workflows.instantly import WebhookEmailSentWorkflow
-from .activities.instantly import complete_lead_task_by_email, add_email_activity_to_lead
+from .workflows.instantly import WebhookEmailSentWorkflow, WebhookAddLeadWorkflow
+from .activities.instantly import complete_lead_task_by_email, add_email_activity_to_lead, add_lead_to_instantly_campaign
 
 async def run_worker() -> None:
     """Run the Temporal worker with proper configuration."""
@@ -36,8 +36,8 @@ async def run_worker() -> None:
         worker = Worker(
             client,
             task_queue=TASK_QUEUE_NAME,
-            workflows=[WebhookEmailSentWorkflow],
-            activities=[complete_lead_task_by_email, add_email_activity_to_lead],
+            workflows=[WebhookEmailSentWorkflow, WebhookAddLeadWorkflow],
+            activities=[complete_lead_task_by_email, add_email_activity_to_lead, add_lead_to_instantly_campaign],
             # Graceful shutdown timeout
             graceful_shutdown_timeout=timedelta(minutes=1),
             # Activity task configuration

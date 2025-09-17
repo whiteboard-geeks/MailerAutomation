@@ -1,3 +1,4 @@
+from pydantic import BaseModel
 import requests
 import os
 import time
@@ -7,6 +8,22 @@ import json
 
 from tenacity import retry, stop_after_attempt, wait_fixed
 from close_utils import create_email_search_query, search_close_leads
+
+
+class Email(BaseModel):
+    email: str
+    is_unsubscribed: bool
+    type: str
+
+
+class Contact(BaseModel):
+    id: str
+    emails: list[Email]
+
+
+class Lead(BaseModel):
+    id: str
+    contacts: list[Contact]
 
 
 class CloseAPI:
