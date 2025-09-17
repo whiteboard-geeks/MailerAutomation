@@ -1,5 +1,5 @@
 from config import env_type
-
+from blueprints.gmail import send_gmail as bp_send_gmail
 
 import pytz
 
@@ -36,9 +36,6 @@ def send_email(subject, body, **kwargs):
     central_time_now = datetime.now(central_time_zone)
     time_now_formatted = central_time_now.strftime("%Y-%m-%d %H:%M:%S%z")
 
-    # Import the send_gmail function from our Gmail blueprint
-    from blueprints.gmail import send_gmail
-
     recipients_list = [
         "Lance Johnson <lance@whiteboardgeeks.com>",
         "Barbara Pigg <barbara.pigg@whiteboardgeeks.com>",
@@ -60,7 +57,7 @@ def send_email(subject, body, **kwargs):
     text_content = text_environment_info + text_content
 
     # Send email using Gmail API
-    gmail_response = send_gmail(
+    gmail_response = bp_send_gmail(
         sender="lance@whiteboardgeeks.com",
         to=recipients,
         subject=f"[MailerAutomation] [{env_type}] {subject} {time_now_formatted}",
