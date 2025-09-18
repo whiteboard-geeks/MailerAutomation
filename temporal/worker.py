@@ -8,11 +8,15 @@ from datetime import timedelta
 import structlog
 from temporalio.worker import Worker
 
+from .activities.instantly.webhook_email_sent import complete_lead_task_by_email
+
+from .activities.instantly.webhook_email_sent import add_email_activity_to_lead
 from temporal.client_provider import get_temporal_client
 from temporal.shared import TASK_QUEUE_NAME
 
-from .workflows.instantly import WebhookEmailSentWorkflow, WebhookAddLeadWorkflow
-from .activities.instantly import complete_lead_task_by_email, add_email_activity_to_lead, add_lead_to_instantly_campaign
+from .workflows.instantly.webhook_add_lead_workflow import WebhookAddLeadWorkflow
+from .workflows.instantly.webhook_email_sent_workflow import WebhookEmailSentWorkflow
+from .activities.instantly.webhook_add_lead import add_lead_to_instantly_campaign
 
 async def run_worker() -> None:
     """Run the Temporal worker with proper configuration."""

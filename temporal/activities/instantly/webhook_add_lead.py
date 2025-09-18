@@ -1,36 +1,35 @@
-from pydantic import BaseModel
 from temporalio import activity
 
-from close_utils import create_email_search_query, get_lead_by_id, make_close_request, search_close_leads
+from pydantic import BaseModel, Field
+from close_utils import get_lead_by_id
 from utils.email import send_email
 from utils.instantly import add_to_instantly_campaign, campaign_exists, split_name
 
+
 # Ugly: copied from blueprints.instantly
 BARBARA_USER_ID = "user_8HHUh3SH67YzD8IMakjKoJ9SWputzlUdaihCG95g7as"
-
-
-class CompleteLeadTaskByEmailArgs(BaseModel):
-    lead_email: str
-    campaign_name: str
-
-
-class CompleteLeadTaskByEmailResult(BaseModel):
-    lead_id: str
-
-
-class AddEmailActivityToLeadArgs(BaseModel):
-    lead_id: str
-    lead_email: str
-    timestamp: str
-    email_subject: str
-    email_account: str
-    email_html: str
 
 
 class AddLeadToInstantlyCampaignArgs(BaseModel):
     lead_id: str
     campaign_name: str
     task_text: str
+
+
+class AddLeadPayloadData(BaseModel):
+    id: str = Field(..., description="ID of the lead")
+    text: str = Field(..., description="Task name")
+    lead_id: str = Field(..., description="ID of the lead")
+
+
+class WebhookAddLeadPayloadEvent(BaseModel):
+    action: str = Field(..., description="Action performed")
+    object_type: str = Field(..., description="Type of object")
+    data: AddLeadPayloadData = Field(..., description="Data of the object")
+
+
+class WebhookAddLeadPayloadValidated(BaseModel):
+    event: WebhookAddLeadPayloadEvent = Field(..., description="Event data")
 
 
 class LeadDetails(BaseModel):
@@ -46,97 +45,6 @@ class EmailNotFoundError(Exception):
 
 
 @activity.defn
-def complete_lead_task_by_email(args: CompleteLeadTaskByEmailArgs) -> CompleteLeadTaskByEmailResult:
-    """Mark task as complete in Close CRM.
-    
-    Args:
-        args (CompleteLeadTaskByEmailArgs): Email address of lead
-
-    Returns:
-        CompleteLeadTaskByEmailResult: Lead ID
-    """
-    query = create_email_search_query(args.lead_email)
-    leads = search_close_leads(query)
-
-    if len(leads) != 1:
-        raise ValueError(f"Expected 1 lead, got {len(leads)}")
-
-    lead_id = leads[0]["id"]
-    activity.logger.info("lead_id = %s", lead_id)
-
-    # Get all tasks for the lead
-    tasks_url = f"https://api.close.com/api/v1/task/?lead_id={lead_id}"
-    tasks_response = make_close_request("get", tasks_url)
-    tasks = tasks_response.json().get("data", [])
-
-    activity.logger.info("close_crm_task_count = %d", len(tasks))
-
-    # Find the matching task
-    matching_task = None
-    for task in tasks:
-        if args.campaign_name in task.get("text", "") and not task.get("is_complete"):
-            matching_task = task
-            break
-    
-    if not matching_task:
-        raise ValueError(f"Could not find task for campaign {args.campaign_name}")
-
-    # Mark the task as complete
-    close_task_id = matching_task["id"]
-    activity.logger.info("close_crm_task_id = %s", close_task_id)
-    complete_url = f"https://api.close.com/api/v1/task/{close_task_id}/"
-    complete_data = {"is_complete": True}
-    make_close_request("put", complete_url, json=complete_data)
-
-    return CompleteLeadTaskByEmailResult(lead_id=lead_id)
-
-
-@activity.defn
-def add_email_activity_to_lead(args: AddEmailActivityToLeadArgs):
-    lead_details = get_lead_by_id(args.lead_id)
-    if not lead_details:
-        raise ValueError(f"Could not retrieve lead details for lead ID: {args.lead_id}")
-
-    contact = None
-    for c in lead_details.get("contacts", []):
-        for email in c.get("emails", []):
-            if email.get("email") == args.lead_email:
-                contact = c
-                break
-        if contact:
-            break
-    
-    if not contact:
-        raise ValueError(f"No contact found with email: {args.lead_email}")
-
-    # Create email activity in Close
-    email_data = {
-        "contact_id": contact["id"],
-        "user_id": BARBARA_USER_ID,
-        "lead_id": args.lead_id,
-        "direction": "outgoing",
-        "created_by": BARBARA_USER_ID,
-        "created_by_name": "Barbara Pigg",  # Hardcoded since we know it's Barbara
-        "date_created": args.timestamp
-        .replace("Z", "+00:00")
-        .replace("T", "T"),
-        "subject": args.email_subject,
-        "sender": args.email_account,
-        "to": [args.lead_email],
-        "bcc": [],
-        "cc": [],
-        "status": "sent",
-        "body_text": "",  # We don't have plain text version
-        "body_html": args.email_html,
-        "attachments": [],
-        "template_id": None,
-    }
-
-    email_url = "https://api.close.com/api/v1/activity/email/"
-    make_close_request("post", email_url, json=email_data)
-
-
-@activity.defn
 def add_lead_to_instantly_campaign(args: AddLeadToInstantlyCampaignArgs):
     campaign_check = campaign_exists(args.campaign_name)
 
@@ -146,7 +54,7 @@ def add_lead_to_instantly_campaign(args: AddLeadToInstantlyCampaignArgs):
                                              task_text=args.task_text,
                                              workflow_id=activity.info().workflow_id)
         raise ValueError(f"Campaign '{args.campaign_name}' does not exist in Instantly")
-    
+
     campaign_id = campaign_check.get("campaign_id")
     try:
         lead_details = _get_lead_details_from_close(lead_id=args.lead_id)
@@ -211,7 +119,7 @@ def _get_lead_details_from_close(lead_id: str) -> LeadDetails | None:
     lead_details = get_lead_by_id(lead_id)
     if not lead_details:
         return None
-    
+
     full_name = lead_details.get("contacts", [{}])[0].get("name", "")
     first_name, last_name = split_name(full_name)
 
@@ -223,13 +131,13 @@ def _get_lead_details_from_close(lead_id: str) -> LeadDetails | None:
         if emails:
             email = emails[0].get("email")
             break
-    
+
     if not email:
         raise EmailNotFoundError(f"No email found for lead ID: {lead_id}")
-    
+
     company_name = lead_details.get("custom.lcf_tRacWU9nMn0l2i0xhizYpewewmw995aWYaJKgDgDb9o", "")
     date_location = lead_details.get("custom.cf_DTgmXXPozUH3707H1MYu2PhhDznJjWbtmDcb7zme5a9", "")
-    
+
     return LeadDetails(
         email=email,
         first_name=first_name,

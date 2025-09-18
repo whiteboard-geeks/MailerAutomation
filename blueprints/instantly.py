@@ -33,7 +33,8 @@ from utils.instantly import logger
 # Import the Celery instance
 from celery_worker import celery
 
-from temporal.workflows.instantly import WebhookAddLeadPayload, WebhookAddLeadWorkflow, WebhookEmailSentWorkflow, WebhookEmailSentPayload
+from temporal.workflows.instantly.webhook_add_lead_workflow import WebhookAddLeadWorkflow, WebhookAddLeadPayload
+from temporal.workflows.instantly.webhook_email_sent_workflow import WebhookEmailSentWorkflow, WebhookEmailSentPayload
 from temporal.shared import TASK_QUEUE_NAME
 
 # Set up blueprint
