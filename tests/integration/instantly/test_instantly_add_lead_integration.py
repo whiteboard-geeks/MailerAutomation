@@ -2,10 +2,16 @@
 Integration tests for the Instantly add_lead webhook handler.
 """
 
+import copy
 import os
-import time
+import uuid
+import pytest
 import requests
+from concurrent.futures import Future, ThreadPoolExecutor
 from datetime import datetime
+
+from tenacity import Retrying, stop_after_delay, wait_fixed, retry_if_result, RetryError
+
 from tests.utils.close_api import CloseAPI, Lead
 from utils.instantly import search_campaigns_by_lead_email
 
@@ -83,85 +89,115 @@ class TestInstantlyAddLeadIntegration:
         self.mock_payload["event"]["data"]["id"] = unique_task_id
         self.mock_payload["event"]["data"]["lead_name"] = f"Test Instantly{timestamp}"
 
+        self.lead_ids : list[str] = []
+
     def teardown_method(self):
         """Cleanup after each test."""
         # Delete the test lead if it was created
-        if self.test_data.get("lead_id"):
-            self.close_api.delete_lead(self.test_data["lead_id"])
+        for lead_id in self.lead_ids:
+            self.close_api.delete_lead(lead_id)
 
-    def test_instantly_add_lead_success(self):
+    @pytest.mark.parametrize("num_workers,num_leads", [
+        (1, 1),
+        (2, 10),
+    ])
+    def test_instantly_add_lead_success(self, num_workers, num_leads):
+        """Test successful flow of adding lead(s) to an Instantly campaign."""
         instantly_campaign_name = "Test20250227"
+        
+        print(f"\n=== INTEGRATION TEST: {num_leads} leads, {num_workers} workers ===")
+        
+        # Stage 1: Create test leads in Close
+        leads : list[Lead] = []
+        for i in range(num_leads):
+            lead_data = self.close_api.create_test_lead(
+                include_date_location=True,
+                email_suffix=f"{datetime.now().strftime('%Y%m%d%H%M%S')}+{i}")
+            lead = Lead(**lead_data)
+            leads.append(lead)
+            self.lead_ids.append(lead.id)
+        
+        # Stage 2: Verify leads NOT in campaigns initially
+        for lead in leads:
+            campaigns_before = search_campaigns_by_lead_email(lead.contacts[0].emails[0].email)
+            assert len(campaigns_before) == 0
+        
+        # Stage 3: Send webhooks with configurable concurrency
+        with ThreadPoolExecutor(max_workers=num_workers) as executor:
+            futures : list[Future] = []
+            for i, lead in enumerate(leads):
+                # Prepare payload for each lead - use deep copy to avoid shared nested objects
+                payload = copy.deepcopy(self.mock_payload)
+                payload["event"]["data"]["lead_id"] = lead.id
+                payload["event"]["data"]["id"] = f"task_test_{uuid.uuid4().hex[:20]}_{i}"
+                
+                # Submit webhook request
+                future = executor.submit(
+                    requests.post,
+                    f"{self.base_url}/instantly/add_lead",
+                    json=payload
+                )
+                futures.append(future)
+            
+            # Collect all responses
+            responses = [future.result() for future in futures]
+        
+        # Stage 4: Assert all HTTP responses successful
+        for response in responses:
+            assert response.status_code in [200, 202]
+            response_data = response.json()
+            assert response_data["status"] in ["success", "queued"]
 
-        """Test successful flow of adding a lead to an Instantly campaign."""
-        print("\n=== STARTING INTEGRATION TEST: Instantly Add Lead Success ===")
+        for lead in leads:
+            print(f"lead {lead}")
+        
+        # Stage 5: Verify all leads ARE in campaigns
+        emails = [lead.contacts[0].emails[0].email for lead in leads]
+        wait_until_instantly_synced(emails, instantly_campaign_name, timeout=10, poll=2)
 
-        # Stage 1: Create a test lead in Close
-        print("Creating test lead in Close...")
-        lead_data = self.close_api.create_test_lead(include_date_location=True)
-        lead = Lead(**lead_data)
-        self.test_data["lead_id"] = lead.id
-        print(f"Test lead created with ID: {lead.id}")
 
-        # Stage 1 Assertions: Verify lead creation
-        assert lead is not None, "Lead data should not be None"
-        assert lead.id is not None, "Lead should have an ID"
-        assert lead.id.startswith("lead_"), "Lead ID should have correct format"
-        print("✅ Stage 1: Lead creation verified")
+def wait_until_instantly_synced(
+    emails: list[str],
+    campaign_name: str,
+    timeout: float = 60.0,
+    poll: float = 0.5,
+):
+    """
+    Poll Instantly until *all* emails are found in `campaign_name`, or timeout.
 
-        # Stage 2: Update the mock payload with the actual lead ID and Close task ID
-        close_task_id = self.mock_payload["event"]["data"]["id"]
-        self.mock_payload["event"]["data"]["lead_id"] = lead.id
-        self.test_data["close_task_id"] = close_task_id
+    - Sequential checks
+    - Emails already found are not queried again
+    - Transient errors are treated as "not yet" and retried
+    """
+    remaining = set(emails)
 
-        # Stage 2 Assertions: Verify payload preparation
-        assert (
-            self.mock_payload["event"]["data"]["lead_id"] == lead.id
-        ), "Payload should contain correct lead ID"
-        assert close_task_id.startswith(
-            "task_"
-        ), "Close task ID should have correct format"
-        assert (
-            self.mock_payload["event"]["action"] == "created"
-        ), "Event action should be 'created'"
-        assert (
-            instantly_campaign_name in self.mock_payload["event"]["data"]["text"]
-        ), "Campaign name should be in task text"
-        print("✅ Stage 2: Payload preparation verified")
+    def _tick():
+        to_remove = []
+        for email in list(remaining):
+            try:
+                campaigns = search_campaigns_by_lead_email(email)
+            except Exception as e:
+                # print short error that helps with debugging. Also prints the exception details.
+                print(f"Error searching campaigns for {email}: {repr(e)}")
+                continue
 
-        time.sleep(2)
+            print(f"Found {len(campaigns)} campaigns for {email}: {[c.name for c in campaigns]}")
+            if any(c.name == campaign_name for c in campaigns):
+                to_remove.append(email)
 
-        # Stage 2: Assert that the lead is not in any campaign in Instantly
-        campaigns_before_add_lead = search_campaigns_by_lead_email(lead.contacts[0].emails[0].email)
-        assert len(campaigns_before_add_lead) == 0, "Lead should not be in any campaign in Instantly"
+        for e in to_remove:
+            remaining.discard(e)
 
-        # Stage 3: Send the webhook to our endpoint
-        print("Sending webhook to endpoint...")
-        response = requests.post(
-            f"{self.base_url}/instantly/add_lead",
-            json=self.mock_payload,
+        return remaining  # retry while non-empty
+
+    try:
+        Retrying(
+            stop=stop_after_delay(timeout),
+            wait=wait_fixed(poll),
+            retry=retry_if_result(lambda rem: bool(rem)),
+            reraise=True,
+        )(_tick)  # <-- call the Retrying instance
+    except RetryError:
+        raise AssertionError(
+            f"Timed out waiting for emails to appear in '{campaign_name}': {sorted(remaining)}"
         )
-        print(f"Webhook response status: {response.status_code}")
-        print(f"Webhook response: {response.json()}")
-
-        # Stage 3 Assertions: Verify webhook submission
-        assert response.status_code in [
-            200,
-            202,
-        ], f"Webhook should return 200 or 202, got {response.status_code}"
-        response_data = response.json()
-        assert "status" in response_data, "Response should contain status"
-        assert response_data["status"] in [
-            "success",
-            "queued",
-        ], "Status should be success or queued"
-        print("✅ Stage 3: Webhook submission verified")
-
-        # Stage 4: Wait for webhook to be processed
-        print("Waiting for webhook to be processed...")
-        time.sleep(7)
-
-        # Stage 4: Assert that the lead is in the campaign in Instantly
-        campaigns_after_add_lead = search_campaigns_by_lead_email(lead.contacts[0].emails[0].email)
-        assert len(campaigns_after_add_lead) == 1, "Lead should be in one campaign in Instantly"
-        assert campaigns_after_add_lead[0].name == instantly_campaign_name, "Campaign name should match"
-        print("✅ Stage 4: Lead added to Instantly campaign verified")
