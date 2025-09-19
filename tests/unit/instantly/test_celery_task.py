@@ -275,7 +275,7 @@ class TestProcessLeadBatchTask:
 
     def test_name_splitting_functionality(self):
         """Test that names are properly split into first and last names."""
-        from blueprints.instantly import split_name
+        from utils.instantly import split_name
 
         test_cases = [
             ("John Doe", ("John", "Doe")),

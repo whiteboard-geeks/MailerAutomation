@@ -1,10 +1,7 @@
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from temporalio import activity
-
 from close_utils import create_email_search_query, get_lead_by_id, make_close_request, search_close_leads
-
-# Ugly: copied from blueprints.instantly
-BARBARA_USER_ID = "user_8HHUh3SH67YzD8IMakjKoJ9SWputzlUdaihCG95g7as"
+from temporal.activities.instantly.webhook_add_lead import BARBARA_USER_ID
 
 
 class CompleteLeadTaskByEmailArgs(BaseModel):
@@ -16,19 +13,12 @@ class CompleteLeadTaskByEmailResult(BaseModel):
     lead_id: str
 
 
-class AddEmailActivityToLeadArgs(BaseModel):
-    lead_id: str
-    lead_email: str
-    timestamp: str
-    email_subject: str
-    email_account: str
-    email_html: str
 
 
 @activity.defn
 def complete_lead_task_by_email(args: CompleteLeadTaskByEmailArgs) -> CompleteLeadTaskByEmailResult:
     """Mark task as complete in Close CRM.
-    
+
     Args:
         args (CompleteLeadTaskByEmailArgs): Email address of lead
 
@@ -57,7 +47,7 @@ def complete_lead_task_by_email(args: CompleteLeadTaskByEmailArgs) -> CompleteLe
         if args.campaign_name in task.get("text", "") and not task.get("is_complete"):
             matching_task = task
             break
-    
+
     if not matching_task:
         raise ValueError(f"Could not find task for campaign {args.campaign_name}")
 
@@ -69,6 +59,15 @@ def complete_lead_task_by_email(args: CompleteLeadTaskByEmailArgs) -> CompleteLe
     make_close_request("put", complete_url, json=complete_data)
 
     return CompleteLeadTaskByEmailResult(lead_id=lead_id)
+
+
+class AddEmailActivityToLeadArgs(BaseModel):
+    lead_id: str
+    lead_email: str
+    timestamp: str
+    email_subject: str
+    email_account: str
+    email_html: str
 
 
 @activity.defn
@@ -85,7 +84,7 @@ def add_email_activity_to_lead(args: AddEmailActivityToLeadArgs):
                 break
         if contact:
             break
-    
+
     if not contact:
         raise ValueError(f"No contact found with email: {args.lead_email}")
 
@@ -114,3 +113,15 @@ def add_email_activity_to_lead(args: AddEmailActivityToLeadArgs):
 
     email_url = "https://api.close.com/api/v1/activity/email/"
     make_close_request("post", email_url, json=email_data)
+
+
+class WebhookEmailSentPaylodValidated(BaseModel):
+    event_type: str = Field(..., description="Type of event")
+    campaign_name: str = Field(..., description="Name of the campaign")
+    lead_email: str = Field(..., description="Email of the lead")
+    email_subject: str = Field(..., description="Subject of the email")
+    email_html: str = Field(..., description="HTML content of the email")
+    timestamp: str = Field(..., description="Timestamp of the event")
+    email_account: str = Field(..., description="Email account used to send the email")
+
+

@@ -164,7 +164,7 @@ def get_close_encoded_key():
 
 def send_email(subject, body, **kwargs):
     """Send email notification."""
-    from app import send_email as app_send_email
+    from utils.email import send_email as app_send_email
 
     return app_send_email(subject, body, **kwargs)
 

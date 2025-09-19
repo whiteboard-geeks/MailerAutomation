@@ -6,12 +6,8 @@ import os
 from datetime import datetime
 import traceback
 from base64 import b64encode
-import re
-import requests
-import time
 import json
 from redis import Redis
-import structlog
 from temporal.service import temporal
 import uuid
 
@@ -26,23 +22,23 @@ from close_utils import (
     make_close_request,
 )
 
-# Import rate limiter
-from utils.rate_limiter import RedisRateLimiter, APIRateConfig
+# Import rate limiter and utilities
+from utils.instantly import get_instantly_campaign_name
+from utils.instantly import get_instantly_campaigns
+from utils.instantly import campaign_exists
+from utils.instantly import add_to_instantly_campaign
+from utils.instantly import split_name
+from utils.instantly import logger
 
 # Import the Celery instance
 from celery_worker import celery
 
-from temporal.workflows.instantly import WebhookEmailSentWorkflow, WebhookEmailSentPaylod
+from temporal.workflows.instantly.webhook_add_lead_workflow import WebhookAddLeadWorkflow, WebhookAddLeadPayload
+from temporal.workflows.instantly.webhook_email_sent_workflow import WebhookEmailSentWorkflow, WebhookEmailSentPayload
 from temporal.shared import TASK_QUEUE_NAME
 
 # Set up blueprint
 instantly_bp = Blueprint("instantly", __name__)
-
-# Configure logging using structlog
-logger = structlog.get_logger("instantly")
-
-# Global rate limiter instance
-_rate_limiter = None
 
 
 def determine_notification_recipients(lead_details, env_type):
@@ -130,32 +126,6 @@ def determine_notification_recipients(lead_details, env_type):
             message=f"Unknown consultant '{consultant}' for lead {lead_id}. Using default recipients.",
         )
         return None, None  # Use default recipients instead of returning error
-
-
-def get_rate_limiter():
-    """Get or create the global rate limiter instance."""
-    global _rate_limiter
-    if _rate_limiter is None:
-        try:
-            # Get Redis URL from environment
-            redis_url = os.environ.get("REDISCLOUD_URL")
-
-            if redis_url and redis_url.lower() != "null":
-                _rate_limiter = RedisRateLimiter(
-                    redis_url=redis_url,
-                    api_config=APIRateConfig.instantly(),  # 600 req/min = 10 req/sec
-                    safety_factor=0.8,  # 80% of limit = 8 req/sec effective
-                    fallback_on_redis_error=True,  # Allow requests if Redis fails
-                )
-                logger.info(f"Rate limiter initialized: {_rate_limiter}")
-            else:
-                logger.warning("Redis not configured, rate limiter disabled")
-                _rate_limiter = None
-        except Exception as e:
-            logger.warning(f"Failed to initialize rate limiter: {e}")
-            _rate_limiter = None
-
-    return _rate_limiter
 
 
 def log_webhook_response(status_code, response_data, webhook_data=None, error=None):
@@ -315,36 +285,14 @@ _webhook_tracker = WebhookTracker()
 CLOSE_API_KEY = os.environ.get("CLOSE_API_KEY")
 CLOSE_ENCODED_KEY = None  # This will be initialized when it's needed
 WEBHOOK_API_KEY = os.environ.get("WEBHOOK_API_KEY")
-INSTANTLY_API_KEY = os.environ.get("INSTANTLY_API_KEY")
 ENV_TYPE = os.environ.get("ENV_TYPE", "development")
 BARBARA_USER_ID = "user_8HHUh3SH67YzD8IMakjKoJ9SWputzlUdaihCG95g7as"
-
-
-# --- Redis cache helpers ---
-def get_redis_client():
-    redis_url = os.environ.get("REDISCLOUD_URL")
-    return Redis.from_url(redis_url) if redis_url else None
-
-
-def get_from_cache(key):
-    client = get_redis_client()
-    if client:
-        cached = client.get(key)
-        if cached:
-            try:
-                return json.loads(cached)
-            except Exception as e:
-                logger.warning(f"Failed to decode cache for {key}: {e}")
-    return None
-
-
-def set_to_cache(key, value, expiration_seconds=600):
-    client = get_redis_client()
-    if client:
-        try:
-            client.setex(key, expiration_seconds, json.dumps(value))
-        except Exception as e:
-            logger.warning(f"Failed to set cache for {key}: {e}")
+USE_TEMPORAL_FOR_INSTANTLY_ADD_LEAD = (
+    os.environ.get("USE_TEMPORAL_FOR_INSTANTLY_ADD_LEAD", "false").lower() == "true"
+)
+logger.info(
+    f"USE_TEMPORAL_FOR_INSTANTLY_ADD_LEAD: {USE_TEMPORAL_FOR_INSTANTLY_ADD_LEAD}"
+)
 
 
 # --- End Redis cache helpers ---
@@ -358,220 +306,37 @@ def get_close_encoded_key():
 def send_email(subject, body, **kwargs):
     """Send email notification through Gmail."""
     # Import directly to avoid Flask application context issues in Celery tasks
-    from app import send_email as app_send_email
+    from utils.email import send_email as app_send_email
 
     return app_send_email(subject, body, **kwargs)
 
 
-def get_instantly_campaign_name(task_text):
-    """
-    Extract the campaign name from a Close task text.
-
-    This function removes "Instantly" and any trailing non-space characters
-    (like ":", "!", "--") and returns the rest of the text as the campaign name.
-    It also removes any text enclosed in square brackets [].
-
-    Args:
-        task_text (str): The text of the task from Close
-
-    Returns:
-        str: The extracted campaign name
-    """
-    if not task_text:
-        return ""
-
-    # First check if task starts with "Instantly"
-    if not task_text.lower().startswith("instantly"):
-        return task_text
-
-    # Try to match pattern with a separator (Instantly: Test or Instantly:Test)
-    match = re.search(r"^Instantly[:!,\-\s]+(.*)$", task_text)
-    if match:
-        # Remove any text in square brackets and then strip
-        text = match.group(1)
-        text = re.sub(r"\s*\[.*?\]\s*", " ", text).strip()
-        return text
-
-    # Handle case where there is no separator (InstantlyTest)
-    # For this case, we want to return empty string
-    if re.match(r"^Instantly[a-zA-Z0-9]", task_text):
-        return ""
-
-    # Fallback - just remove "Instantly" prefix and any text in square brackets
-    remaining = task_text[len("Instantly") :].strip()
-    remaining = re.sub(r"\s*\[.*?\]\s*", " ", remaining).strip()
-    return remaining
-
-
-def get_instantly_campaigns(
-    limit=100, starting_after=None, fetch_all=False, search=None
-):
-    """
-    Get campaigns from Instantly with cursor-based pagination support.
-
-    Args:
-        limit (int): Maximum number of items to return
-        starting_after (str): Cursor for fetching the next page (campaign ID)
-        fetch_all (bool): Whether to fetch all pages
-
-    Returns:
-        dict: A dictionary containing all campaigns with their details
-              or an error message if the request failed
-    """
-    # Correct endpoint URL based on the API documentation
-    url = "https://api.instantly.ai/api/v2/campaigns"
-
-    if not INSTANTLY_API_KEY:
-        error_msg = "Instantly API key is not configured"
-        logger.error(error_msg)
-        return {"status": "error", "message": error_msg}
-
-    headers = {
-        "accept": "application/json",
-        "Authorization": f"Bearer {INSTANTLY_API_KEY}",
-    }
-
-    # Parameters for cursor-based pagination
-    params = {"limit": limit}
-
-    # Add starting_after parameter if provided
-    if starting_after:
-        params["starting_after"] = starting_after
-
-    if search:
-        params["search"] = search
-
-    cache_key = None
-    CACHE_EXPIRATION_SECONDS = 3600  # 1 hour
-    if search:
-        cache_key = f"instantly:campaign_search:{search.lower().strip()}"
-        cached = get_from_cache(cache_key)
-        if cached:
-            logger.info(f"Returning cached Instantly campaign search for '{search}'")
-            return cached
-
-    try:
-        if fetch_all:
-            # Fetch all pages using cursor-based pagination
-            all_campaigns = []
-            current_cursor = starting_after
-            has_more = True
-
-            while has_more:
-                # Update cursor for next page
-                if current_cursor:
-                    params["starting_after"] = current_cursor
-                elif "starting_after" in params and not current_cursor:
-                    # Remove starting_after for first page if cursor is None
-                    del params["starting_after"]
-
-                # Make request
-                response = requests.get(url, headers=headers, params=params)
-                response.raise_for_status()
-                data = response.json()
-
-                # Extract campaigns from this page
-                page_campaigns = data.get("items", [])
-                all_campaigns.extend(page_campaigns)
-
-                # Get cursor for next page
-                current_cursor = data.get("next_starting_after")
-
-                # If no next cursor, we've reached the end
-                if not current_cursor:
-                    has_more = False
-                else:
-                    # Add a small delay to avoid rate limiting
-                    time.sleep(0.5)
-
-            # Return combined results
-            result = {
-                "status": "success",
-                "campaigns": all_campaigns,
-                "count": len(all_campaigns),
-            }
-            # Cache if search is present
-            if search and cache_key:
-                set_to_cache(cache_key, result, CACHE_EXPIRATION_SECONDS)
-            return result
-        else:
-            # Fetch single page
-            response = requests.get(url, headers=headers, params=params)
-            response.raise_for_status()
-            data = response.json()
-
-            # Extract campaigns from the response
-            campaigns = data.get("items", [])
-            next_cursor = data.get("next_starting_after")
-
-            result = {
-                "status": "success",
-                "campaigns": campaigns,
-                "count": len(campaigns),
-                "pagination": {
-                    "limit": limit,
-                    "next_starting_after": next_cursor,
-                    "has_more": bool(next_cursor),
-                },
-            }
-            # Cache if search is present
-            if search and cache_key:
-                set_to_cache(cache_key, result, CACHE_EXPIRATION_SECONDS)
-            return result
-    except requests.exceptions.RequestException as e:
-        error_msg = f"Error fetching campaigns from Instantly: {str(e)}"
-        logger.error(error_msg)
-        return {"status": "error", "message": error_msg}
-
-
-def campaign_exists(campaign_name):
-    """
-    Check if a campaign with the given name exists in Instantly.
-
-    Args:
-        campaign_name (str): The name of the campaign to check
-
-    Returns:
-        dict: A dictionary containing:
-            - exists (bool): Whether the campaign exists
-            - campaign_id (str, optional): The ID of the campaign if it exists
-            - error (str, optional): Error message if an error occurred
-    """
-    if not campaign_name:
-        return {"exists": False, "error": "No campaign name provided"}
-
-    # Retrieve campaigns using the Instantly API's built-in "search" parameter so we
-    # only make a single request instead of walking every page.  This keeps the
-    # request well under Heroku's 30-second router timeout even when the
-    # Instantly account has thousands of campaigns.
-    campaigns_response = get_instantly_campaigns(search=campaign_name)
-
-    # Check if there was an error getting campaigns
-    if campaigns_response.get("status") == "error":
-        return {
-            "exists": False,
-            "error": campaigns_response.get("message", "Unknown error occurred"),
-        }
-
-    # Extract campaigns from response
-    campaigns = campaigns_response.get("campaigns", [])
-
-    # Look for a campaign with matching name
-    # Case-insensitive comparison and trim whitespace for more flexibility
-    for campaign in campaigns:
-        if campaign.get("name", "").strip().lower() == campaign_name.strip().lower():
-            return {
-                "exists": True,
-                "campaign_id": campaign.get("id"),
-                "campaign_data": campaign,
-            }
-
-    # If we get here, no campaign with that name was found
-    return {"exists": False}
-
-
 @instantly_bp.route("/add_lead", methods=["POST"])
 def add_lead_to_instantly():
+    if USE_TEMPORAL_FOR_INSTANTLY_ADD_LEAD:
+        return add_lead_to_instantly_temporal()
+    else:
+        return add_lead_to_instantly_celery()
+
+
+def add_lead_to_instantly_temporal():
+    g_run_id = getattr(g, "request_id", str(uuid.uuid4()))
+
+    input = WebhookAddLeadPayload(
+        json_payload=request.get_json(),
+    )
+
+    _ = temporal.run(temporal.client.start_workflow(
+        WebhookAddLeadWorkflow.run,
+        input,
+        id=g_run_id,
+        task_queue=TASK_QUEUE_NAME
+    ))
+
+    return jsonify({"status": "success", "message": "Webhook received"}), 200
+
+
+def add_lead_to_instantly_celery():
     """Handle webhooks from Close when a task is created with 'Instantly:' prefix - now with async processing."""
     try:
         # Parse the webhook payload
@@ -678,129 +443,6 @@ def add_lead_to_instantly():
                 "error": str(e),
             }
         ), 200
-
-
-def split_name(full_name):
-    """
-    Split a full name into first name and last name.
-
-    Args:
-        full_name (str): The full name to split
-
-    Returns:
-        tuple: (first_name, last_name)
-    """
-    if not full_name:
-        return "", ""
-
-    # Split the name by spaces
-    parts = full_name.strip().split()
-
-    if len(parts) == 0:
-        # Empty string after stripping
-        return "", ""
-    elif len(parts) == 1:
-        # Only one word, assume it's the first name
-        return parts[0], ""
-    else:
-        # Assume last word is last name, everything else is first name
-        return " ".join(parts[:-1]), parts[-1]
-
-
-def add_to_instantly_campaign(
-    campaign_id, email, first_name="", last_name="", company_name="", date_location=""
-):
-    """
-    Add a lead to an Instantly campaign.
-
-    Args:
-        campaign_id (str): Instantly campaign ID
-        email (str): Email address of the lead
-        first_name (str): First name of the lead
-        last_name (str): Last name of the lead
-        company_name (str): Company name of the lead
-        date_location (str): Date & Location Mailer Delivered value
-
-    Returns:
-        dict: API response from Instantly
-    """
-    if not INSTANTLY_API_KEY:
-        error_msg = "Instantly API key is not configured"
-        logger.error(error_msg)
-        return {"status": "error", "message": error_msg}
-
-    url = "https://api.instantly.ai/api/v2/leads"
-
-    headers = {
-        "accept": "application/json",
-        "Content-Type": "application/json",
-        "Authorization": f"Bearer {INSTANTLY_API_KEY}",
-    }
-
-    # Prepare payload
-    payload = {
-        "campaign": campaign_id,
-        "email": email,
-        "first_name": first_name,
-        "last_name": last_name,
-        "company_name": company_name,
-        "custom_variables": {"date_and_location_delivered": date_location},
-    }
-
-    # Remove empty fields
-    for key, value in list(payload.items()):
-        if value == "" and key not in [
-            "first_name",
-            "last_name",
-        ]:  # Allow empty first/last names
-            del payload[key]
-
-    # Remove empty custom variables
-    if not date_location:
-        del payload["custom_variables"]
-
-    try:
-        # Apply rate limiting before making the API request
-        rate_limiter = get_rate_limiter()
-        if rate_limiter:
-            rate_limiter_key = "instantly_api"
-            start_time = time.time()
-
-            # Wait for rate limiter to allow the request
-            while not rate_limiter.acquire_token(rate_limiter_key):
-                time.sleep(0.1)  # Wait 100ms before retrying
-
-                # Safety check to prevent infinite waiting
-                if time.time() - start_time > 30:
-                    logger.warning("Rate limiter timeout after 30 seconds")
-                    break
-
-            logger.debug(
-                f"Rate limiter allowed request after {time.time() - start_time:.2f}s wait"
-            )
-
-        response = requests.post(url, headers=headers, json=payload)
-        response.raise_for_status()
-
-        # Parse response
-        data = response.json()
-        return {
-            "status": "success",
-            "lead_id": data.get("id"),
-            "message": "Lead added to Instantly campaign",
-            "response": data,
-        }
-    except requests.exceptions.RequestException as e:
-        error_msg = f"Error adding lead to Instantly: {str(e)}"
-        if hasattr(e, "response") and e.response is not None:
-            try:
-                error_data = e.response.json()
-                error_msg = f"{error_msg} - {error_data}"
-            except (ValueError, json.JSONDecodeError, AttributeError):
-                error_msg = f"{error_msg} - Status code: {e.response.status_code}"
-
-        logger.error(error_msg)
-        return {"status": "error", "message": error_msg}
 
 
 # Webhook tracking endpoints - available in all environments
@@ -962,7 +604,7 @@ def handle_instantly_email_sent():
     """Handle webhooks from Instantly when an email is sent."""
     g_run_id = getattr(g, "request_id", str(uuid.uuid4()))
 
-    input = WebhookEmailSentPaylod(
+    input = WebhookEmailSentPayload(
         json_payload=request.get_json(),
     )
 

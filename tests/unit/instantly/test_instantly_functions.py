@@ -2,7 +2,7 @@
 Unit tests for the Instantly blueprint helper functions.
 """
 
-from blueprints.instantly import get_instantly_campaign_name
+from utils.instantly import get_instantly_campaign_name
 
 
 def test_get_instantly_campaign_name():

@@ -123,7 +123,7 @@ Flask:
 
     source env/bin/activate
     set -a; source .env; set +a
-    FLASK_APP=app.py FLASK_ENV=development flask run --port=8080
+    USE_TEMPORAL_FOR_INSTANTLY_ADD_LEAD=true FLASK_APP=app.py FLASK_ENV=development flask run --port=8080
 
 ### Project Structure
 

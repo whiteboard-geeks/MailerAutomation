@@ -1,26 +1,23 @@
 from datetime import timedelta
+
 from pydantic import BaseModel, Field
 from temporalio import workflow
 from temporalio.common import RetryPolicy
 from temporalio.exceptions import ApplicationError
 
-with workflow.unsafe.imports_passed_through():
-    from temporal.activities.instantly import AddEmailActivityToLeadArgs, CompleteLeadTaskByEmailArgs, CompleteLeadTaskByEmailResult, add_email_activity_to_lead, complete_lead_task_by_email
-
 from temporal.shared import WAITING_FOR_RESUME_KEY_STR
 
+with workflow.unsafe.imports_passed_through():
+    from temporal.activities.instantly.webhook_email_sent import (
+        AddEmailActivityToLeadArgs,
+        CompleteLeadTaskByEmailArgs,
+        CompleteLeadTaskByEmailResult,
+        WebhookEmailSentPaylodValidated,
+        add_email_activity_to_lead, 
+        complete_lead_task_by_email)
 
-class WebhookEmailSentPaylodValidated(BaseModel):
-    event_type: str = Field(..., description="Type of event")
-    campaign_name: str = Field(..., description="Name of the campaign")
-    lead_email: str = Field(..., description="Email of the lead")
-    email_subject: str = Field(..., description="Subject of the email")
-    email_html: str = Field(..., description="HTML content of the email")
-    timestamp: str = Field(..., description="Timestamp of the event")
-    email_account: str = Field(..., description="Email account used to send the email")
 
-
-class WebhookEmailSentPaylod(BaseModel):
+class WebhookEmailSentPayload(BaseModel):
     json_payload: dict = Field(..., description="JSON payload of the request")
 
 
@@ -39,8 +36,8 @@ class WebhookEmailSentWorkflow:
         self._data_issue_fixed = True
 
     @workflow.run
-    async def run(self, input: WebhookEmailSentPaylod) -> None:
-        input_validated = validate_input(input)
+    async def run(self, input: WebhookEmailSentPayload) -> None:
+        input_validated = self._validate_input(input)
 
         complete_lead_task_result = await self._complete_lead_task_by_email(input_validated)
 
@@ -86,24 +83,24 @@ class WebhookEmailSentWorkflow:
         await workflow.wait_condition(lambda: self._data_issue_fixed)
         workflow.upsert_search_attributes({WAITING_FOR_RESUME_KEY_STR: [False]})
 
+    @staticmethod
+    def _validate_input(input: WebhookEmailSentPayload) -> WebhookEmailSentPaylodValidated:
+        try:
+            input_validated = WebhookEmailSentPaylodValidated(
+                event_type=input.json_payload["event_type"],
+                campaign_name=input.json_payload["campaign_name"],
+                lead_email=input.json_payload["lead_email"],
+                email_subject=input.json_payload["email_subject"],
+                email_html=input.json_payload["email_html"],
+                timestamp=input.json_payload["timestamp"],
+                email_account=input.json_payload["email_account"],
+            )
 
-def validate_input(input: WebhookEmailSentPaylod) -> WebhookEmailSentPaylodValidated:
-    try:
-        input_validated = WebhookEmailSentPaylodValidated(
-            event_type=input.json_payload["event_type"],
-            campaign_name=input.json_payload["campaign_name"],
-            lead_email=input.json_payload["lead_email"],
-            email_subject=input.json_payload["email_subject"],
-            email_html=input.json_payload["email_html"],
-            timestamp=input.json_payload["timestamp"],
-            email_account=input.json_payload["email_account"],
-        )
+        except Exception as e:
+            raise ApplicationError(f"Invalid payload for email sent webhook: {e}") from e
 
-    except Exception as e:
-        raise ApplicationError(f"Invalid payload for email sent webhook: {e}") from e
-    
-    if input_validated.event_type != "email_sent":
-        raise ApplicationError(f"Expected email_sent event, got {input_validated.event_type}")
+        if input_validated.event_type != "email_sent":
+            raise ApplicationError(f"Expected email_sent event, got {input_validated.event_type}")
 
-    return input_validated
+        return input_validated
 

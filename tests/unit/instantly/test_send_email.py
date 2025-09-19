@@ -65,7 +65,7 @@ def test_send_email_with_real_gmail_api():
     if not os.environ.get("GMAIL_SERVICE_ACCOUNT_INFO"):
         pytest.skip("Gmail credentials not available for integration test")
 
-    from app import send_email
+    from utils.email import send_email
 
     # Send a real test email
     result = send_email(
@@ -89,7 +89,7 @@ def test_send_email_mocked():
     """
     # Mock the Gmail API function and set env_type to production
     with patch("blueprints.gmail.send_gmail") as mock_send_gmail, \
-         patch("app.env_type", "production"):
+         patch("utils.email.env_type", "production"):
         
         mock_send_gmail.return_value = {
             "status": "success",
@@ -97,7 +97,7 @@ def test_send_email_mocked():
             "thread_id": "mock_thread_456",
         }
 
-        from app import send_email
+        from utils.email import send_email
 
         # Test the send_email function
         result = send_email(

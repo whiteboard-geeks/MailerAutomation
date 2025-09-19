@@ -1,6 +1,6 @@
 import os
 from redis import Redis
-from blueprints.instantly import get_instantly_campaigns
+from utils.instantly import get_instantly_campaigns
 
 
 def test_get_campaigns_single_page():
