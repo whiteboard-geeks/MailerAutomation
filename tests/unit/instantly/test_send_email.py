@@ -1,177 +1,54 @@
-"""
-Demonstration test for send_email functionality.
+"""Unit tests for `utils.email.send_email`."""
 
-This shows how to test the send_email function in different contexts:
-1. In regular Flask routes (using current_app)
-2. In Celery tasks (using direct import)
-3. Mock vs real email testing
-"""
-
-import pytest
 from unittest.mock import patch
 
+import pytest
 
-def test_send_email_in_celery_task():
-    """
-    Test that send_email works correctly in Celery task context.
-    This tests the fix we just implemented.
-    """
-    from blueprints.instantly import process_lead_batch_task
-
-    # Sample payload that would trigger email sending (campaign not found)
-    payload_with_invalid_campaign = {
-        "event": {
-            "data": {
-                "id": "task_test123",
-                "text": "Instantly: NonExistentCampaign",
-                "lead_id": "lead_test456",
-            }
-        }
-    }
-
-    # Mock the campaign_exists to return False (campaign not found)
-    with patch("blueprints.instantly.campaign_exists") as mock_campaign_exists:
-        # Mock the send_email function to verify it gets called
-        with patch("blueprints.instantly.send_email") as mock_send_email:
-            mock_campaign_exists.return_value = {"exists": False}
-            mock_send_email.return_value = {
-                "status": "success",
-                "message_id": "test123",
-            }
-
-            # Execute the task
-            result = process_lead_batch_task(payload_with_invalid_campaign)
-
-            # Verify the task handled the error correctly
-            assert result["status"] == "error"
-            assert "does not exist in Instantly" in result["message"]
-
-            # Verify send_email was called (this proves the context issue is fixed)
-            mock_send_email.assert_called_once()
-            call_args = mock_send_email.call_args
-            assert "Campaign Not Found" in call_args[1]["subject"]
-
-            print("✅ send_email works correctly in Celery task context!")
+from utils import email as email_module
 
 
-def test_send_email_with_real_gmail_api():
-    """
-    Test that demonstrates how to test with real Gmail API.
-    This test is skipped by default but shows the pattern.
-    """
-    import os
-
-    # Skip if no Gmail credentials (to avoid failing in CI/CD)
-    if not os.environ.get("GMAIL_SERVICE_ACCOUNT_INFO"):
-        pytest.skip("Gmail credentials not available for integration test")
-
-    from utils.email import send_email
-
-    # Send a real test email
-    result = send_email(
-        subject="Test Email from Pytest",
-        body="<h1>This is a test email</h1><p>Sent from the test suite to verify send_email works.</p>",
-        text_content="This is a test email. Sent from the test suite to verify send_email works.",
-        recipients="lance@whiteboardgeeks.com",  # Override default recipients
-    )
-
-    # Verify the email was sent successfully
-    assert result["status"] == "success"
-    assert "message_id" in result
-
-    print(f"✅ Real email sent successfully! Message ID: {result['message_id']}")
+@pytest.fixture
+def subject():
+    return "Test Subject"
 
 
-def test_send_email_mocked():
-    """
-    Test send_email functionality with mocked Gmail API.
-    This is the preferred approach for unit tests.
-    """
-    # Mock the Gmail API function and set env_type to production
-    with patch("blueprints.gmail.send_gmail") as mock_send_gmail, \
-         patch("utils.email.env_type", "production"):
-        
-        mock_send_gmail.return_value = {
-            "status": "success",
-            "message_id": "mock_message_123",
-            "thread_id": "mock_thread_456",
-        }
+@pytest.fixture
+def html_body():
+    return "<h1>Example</h1>"
 
-        from utils.email import send_email
 
-        # Test the send_email function
-        result = send_email(
-            subject="Test Subject",
-            body="<h1>Test HTML</h1>",
-            text_content="Test text content",
+def test_send_email_non_production(monkeypatch, subject, html_body):
+    """In non-production environments the helper should no-op."""
+    monkeypatch.setattr(email_module, "env_type", "development")
+
+    with patch("blueprints.gmail.send_gmail") as mock_send_gmail:
+        result = email_module.send_email(subject, html_body)
+
+    assert result == {"status": "success", "message": "Email not sent in non-production env"}
+    mock_send_gmail.assert_not_called()
+
+
+def test_send_email_production_invokes_gmail(monkeypatch, subject, html_body):
+    """In production the helper should enrich email content and call Gmail."""
+    monkeypatch.setattr(email_module, "env_type", "production")
+
+    with patch("blueprints.gmail.send_gmail") as mock_send_gmail:
+        mock_send_gmail.return_value = {"status": "success", "message_id": "mock_id"}
+
+        result = email_module.send_email(
+            subject,
+            html_body,
+            text_content="Plain text",
+            recipients="custom@example.com",
         )
 
-        # Verify the result
-        assert result["status"] == "success"
-        assert result["message_id"] == "mock_message_123"
+    assert result == {"status": "success", "message_id": "mock_id"}
 
-        # Verify the Gmail API was called with correct parameters
-        mock_send_gmail.assert_called_once()
-        call_args = mock_send_gmail.call_args[1]
+    mock_send_gmail.assert_called_once()
+    call_kwargs = mock_send_gmail.call_args.kwargs
 
-        # Check that environment info was added to the email
-        assert "Environment:" in call_args["html_content"]
-        assert "[MailerAutomation]" in call_args["subject"]
-
-        print("✅ send_email works correctly with mocked Gmail API!")
-
-
-def test_error_handling_in_celery_task():
-    """
-    Test that exceptions in Celery tasks are handled properly and emails are sent.
-    """
-    from blueprints.instantly import process_lead_batch_task
-
-    # Malformed payload that should trigger general exception handling
-    malformed_payload = {"invalid": "data"}
-
-    # Mock send_email to verify it gets called for errors
-    with patch("blueprints.instantly.send_email") as mock_send_email:
-        mock_send_email.return_value = {"status": "success"}
-
-        # Execute the task with bad data
-        result = process_lead_batch_task(malformed_payload)
-
-        # Verify error was handled
-        assert result["status"] == "error"
-        assert "celery_task_id" in result
-
-        # Verify error email was sent
-        mock_send_email.assert_called_once()
-        call_args = mock_send_email.call_args
-        assert "Campaign Name Extraction Error" in call_args[1]["subject"]
-
-        print("✅ Error handling in Celery task works correctly!")
-
-
-if __name__ == "__main__":
-    """Run the tests directly."""
-    print("Running send_email demonstration tests...\n")
-
-    try:
-        test_send_email_in_celery_task()
-        test_send_email_mocked()
-        test_error_handling_in_celery_task()
-
-        # Only run real Gmail test if explicitly requested
-        import sys
-
-        if "--real-email" in sys.argv:
-            test_send_email_with_real_gmail_api()
-        else:
-            print("⏭️  Skipping real Gmail test (use --real-email to enable)")
-
-        print(
-            "\n🎉 All tests passed! The send_email function works correctly in Celery tasks."
-        )
-
-    except Exception as e:
-        print(f"\n❌ Test failed: {e}")
-        import traceback
-
-        traceback.print_exc()
+    assert call_kwargs["sender"] == "lance@whiteboardgeeks.com"
+    assert call_kwargs["to"] == "custom@example.com"
+    assert call_kwargs["html_content"].startswith("<p><strong>Environment:</strong> production</p>" + html_body)
+    assert call_kwargs["text_content"].startswith("Environment: production\n\nPlain text")
+    assert call_kwargs["subject"].startswith(f"[MailerAutomation] [production] {subject}")
