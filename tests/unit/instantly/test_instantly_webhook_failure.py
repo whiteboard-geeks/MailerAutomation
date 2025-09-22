@@ -61,7 +61,7 @@ def test_valid_webhook_starts_temporal_workflow(mock_temporal, client, close_tas
         content_type="application/json",
     )
 
-    assert response.status_code == 200
+    assert response.status_code == 202
     response_data = response.get_json()
     assert response_data["status"] == "success"
     assert response_data["message"] == "Webhook received"
@@ -80,13 +80,13 @@ def test_valid_webhook_starts_temporal_workflow(mock_temporal, client, close_tas
 
 @patch("blueprints.instantly.send_email")
 @patch("blueprints.instantly.temporal")
-def test_temporal_failure_sends_email_and_returns_200(
+def test_temporal_failure_sends_email_and_returns_202(
     mock_temporal,
     mock_send_email,
     client,
     close_task_created_payload,
 ):
-    """Verify Temporal failures are reported via email and return a 200 response."""
+    """Verify Temporal failures are reported via email and return a 202 response."""
     mock_temporal.client = MagicMock()
     workflow_handle = MagicMock()
     mock_temporal.client.start_workflow.return_value = workflow_handle
@@ -98,7 +98,7 @@ def test_temporal_failure_sends_email_and_returns_200(
         content_type="application/json",
     )
 
-    assert response.status_code == 200
+    assert response.status_code == 202
     response_data = response.get_json()
     assert response_data["status"] == "success"
     assert "Temporal failure" in response_data["error"]
