@@ -23,11 +23,8 @@ from close_utils import (
 )
 
 # Import rate limiter and utilities
-from utils.instantly import get_instantly_campaign_name
 from utils.instantly import get_instantly_campaigns
 from utils.instantly import campaign_exists
-from utils.instantly import add_to_instantly_campaign
-from utils.instantly import split_name
 from utils.instantly import logger
 
 from temporal.workflows.instantly.webhook_add_lead_workflow import WebhookAddLeadWorkflow, WebhookAddLeadPayload
