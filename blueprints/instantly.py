@@ -98,7 +98,6 @@ def determine_notification_recipients(lead_details, env_type):
             # Production: April's team
             recipients_list = [
                 "april.lowrie@whiteboardgeeks.com",
-                "noura.mahmoud@whiteboardgeeks.com",
                 "lauren.poche@whiteboardgeeks.com",
             ]
             recipients = ",".join(recipients_list)
