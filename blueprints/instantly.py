@@ -328,7 +328,10 @@ def add_lead_to_instantly():
             request_has_payload=bool(json_payload),
         )
 
-        return jsonify({"status": "success", "message": "Webhook received"}), 200
+        return jsonify(
+            {"status": "success", "message": 
+             "Webhook received", 
+             "processing_type": "async"}), 202
     except Exception as exc:
         tb = traceback.format_exc()
         safe_payload = json_payload
@@ -363,7 +366,7 @@ def add_lead_to_instantly():
             "message": "An error occurred starting the Instantly workflow",
             "error": str(exc),
         }
-        return jsonify(response), 200
+        return jsonify(response), 202
 
 
 # Webhook tracking endpoints - available in all environments
