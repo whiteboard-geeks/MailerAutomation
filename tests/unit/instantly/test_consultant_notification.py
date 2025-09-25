@@ -12,7 +12,7 @@ import sys
 # Add the project root to the path so we can import blueprints
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "../../.."))
 
-from blueprints.instantly import determine_notification_recipients
+from utils.instantly_reply_received import determine_notification_recipients
 
 
 class TestConsultantNotification:

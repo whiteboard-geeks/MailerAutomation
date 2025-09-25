@@ -166,7 +166,19 @@ jobs:
           
           # Run the integration tests for this blueprint (excluding stress tests)
           echo "Running integration tests for ${{ matrix.blueprint }} (excluding stress tests)..."
-          pytest tests/integration/${{ matrix.blueprint }} -v -m "not stress"
+
+          if [ "${{ matrix.blueprint }}" = "instantly" ]; then
+            for flag in false true; do
+              echo "Setting USE_TEMPORAL_FOR_REPLY_RECEIVED=$flag on staging app"
+              heroku config:set USE_TEMPORAL_FOR_REPLY_RECEIVED=$flag --app mailer-automation-staging
+              echo "Waiting for dynos to restart after config change..."
+              sleep 45
+              echo "Running Instantly integration tests with USE_TEMPORAL_FOR_REPLY_RECEIVED=$flag"
+              pytest tests/integration/instantly -v -rs -m "not stress"
+            done
+          else
+            pytest tests/integration/${{ matrix.blueprint }} -v -rs -m "not stress"
+          fi
           
   deploy-to-production:
     needs: blueprint-integration-tests

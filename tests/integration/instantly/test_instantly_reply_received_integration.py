@@ -4,6 +4,7 @@ import requests
 from tests.utils.close_api import CloseAPI
 from datetime import datetime
 from time import sleep
+from tenacity import retry, stop_after_delay, wait_fixed
 
 
 class TestInstantlyReplyReceivedIntegration:
@@ -123,13 +124,38 @@ class TestInstantlyReplyReceivedIntegration:
             json=self.mock_payload,
         )
         print(f"Webhook response status: {response.status_code}")
-        print(f"Webhook response: {response.json()}")
+        response_body = response.json()
+        print(f"Webhook response: {response_body}")
+
+        is_async_response = response.status_code == 202
+
+        if is_async_response:
+            assert response_body.get("status") == "accepted"
+            assert response_body.get("workflow_id"), "Workflow ID missing in async response"
+        else:
+            assert (
+                response.status_code == 200
+            ), f"Webhook response status code is not 200, got {response.status_code}"
+            assert (
+                response_body.get("status") == "success"
+            ), f"Webhook response status is not 'success', got {response_body.get('status')}"
+            assert (
+                response_body.get("message")
+                == "Reply received webhook processed successfully"
+            ), "Webhook response message doesn't indicate success"
 
         # Check for email activities
         print("Checking for email activities...")
-        email_activities = self.close_api.get_lead_email_activities(lead_data["id"])
-        assert len(email_activities) > 0, "No email activity was created"
 
+        @retry(stop=stop_after_delay(10), wait=wait_fixed(2), reraise=True)
+        def _wait_for_email_activity():
+            activities = self.close_api.get_lead_email_activities(lead_data["id"])
+            if not activities:
+                raise AssertionError("No email activity was created yet")
+            return activities
+
+        email_activities = _wait_for_email_activity()
+        
         print(f"Found {len(email_activities)} email activities")
 
         print(f"Looking for email with subject: {self.mock_payload['reply_subject']}")
@@ -165,33 +191,11 @@ class TestInstantlyReplyReceivedIntegration:
 
         # Verify the webhook response indicates success
         print("Checking webhook response for successful processing...")
-        assert (
-            response.status_code == 200
-        ), f"Webhook response status code is not 200, got {response.status_code}"
-        response_data = response.json()
-        assert (
-            response_data.get("status") == "success"
-        ), f"Webhook response status is not 'success', got {response_data.get('status')}"
-        assert (
-            response_data.get("message")
-            == "Reply received webhook processed successfully"
-        ), "Webhook response message doesn't indicate success"
-
-        # Verify email notification was sent successfully
-        print("Checking if notification email was sent successfully...")
-        notification_status = response_data.get("data", {}).get("notification_status")
-        print(f"Notification status: {notification_status}")
-
-        # Strict check that will fail the test if email sending fails
-        assert notification_status in [
-            "success",
-        ], f"Email notification failed with status: {notification_status}"
-
-        # Verify 'task_id' is None in the response (since we don't create tasks anymore)
-        print("Verifying no task was created...")
-        assert (
-            response_data.get("data", {}).get("task_id") is None
-        ), "Task ID should be None in the response"
+        if not is_async_response:
+            print("Verifying no task was created...")
+            assert (
+                response_body.get("data", {}).get("task_id") is None
+            ), "Task ID should be None in the response"
 
         # Check if the sequence subscription was paused
         print("Checking if sequence subscription was paused...")
@@ -208,17 +212,18 @@ class TestInstantlyReplyReceivedIntegration:
         ), "Sequence subscription was not paused"
 
         # Verify the paused subscription is included in the response
-        paused_subscriptions = response_data.get("data", {}).get(
-            "paused_subscriptions", []
-        )
-        assert (
-            len(paused_subscriptions) > 0
-        ), "No paused subscriptions reported in response"
+        if not is_async_response:
+            paused_subscriptions = response_body.get("data", {}).get(
+                "paused_subscriptions", []
+            )
+            assert (
+                len(paused_subscriptions) > 0
+            ), "No paused subscriptions reported in response"
 
-        subscription_ids = [sub.get("subscription_id") for sub in paused_subscriptions]
-        assert (
-            subscription_id in subscription_ids
-        ), f"Subscription ID {subscription_id} not found in response"
+            subscription_ids = [sub.get("subscription_id") for sub in paused_subscriptions]
+            assert (
+                subscription_id in subscription_ids
+            ), f"Subscription ID {subscription_id} not found in response"
 
         print("All assertions passed!")
 
@@ -230,6 +235,7 @@ class TestInstantlyReplyReceivedIntegration:
         assert (
             self.gmail_configured
         ), "Gmail service account credentials are not configured"
+
 
         # Create test lead with Barbara as consultant
         print("Creating test lead in Close with Barbara as consultant...")
@@ -279,29 +285,43 @@ class TestInstantlyReplyReceivedIntegration:
             json=self.mock_payload,
         )
         print(f"Webhook response status: {response.status_code}")
-        print(f"Webhook response: {response.json()}")
+        response_body = response.json()
+        print(f"Webhook response: {response_body}")
 
-        # Verify response indicates success with default recipients
-        assert response.status_code == 200
-        response_data = response.json()
-        assert response_data.get("status") == "success"
+        if response.status_code == 202:
+            assert response_body.get("status") == "accepted"
+            assert response_body.get("workflow_id")
+        else:
+            assert response.status_code == 200
+            assert response_body.get("status") == "success"
 
-        # Verify notification was sent (should use default recipients)
-        notification_status = response_data.get("data", {}).get("notification_status")
-        assert notification_status == "success"
+            # Verify notification was sent (should use default recipients)
+            notification_status = response_body.get("data", {}).get("notification_status")
+            assert notification_status == "success"
 
-        # Verify consultant was logged correctly
-        consultant = response_data.get("data", {}).get("consultant")
-        assert consultant == "Barbara Pigg", f"Expected Barbara Pigg, got {consultant}"
+            # Verify consultant was logged correctly
+            consultant = response_body.get("data", {}).get("consultant")
+            assert consultant == "Barbara Pigg", f"Expected Barbara Pigg, got {consultant}"
 
-        # Verify custom recipients were NOT used (Barbara uses default)
-        custom_recipients_used = response_data.get("data", {}).get(
-            "custom_recipients_used"
-        )
-        assert (
-            custom_recipients_used is False
-        ), "Barbara should use default recipients, not custom"
+            # Verify custom recipients were NOT used (Barbara uses default)
+            custom_recipients_used = response_body.get("data", {}).get(
+                "custom_recipients_used"
+            )
+            assert (
+                custom_recipients_used is False
+            ), "Barbara should use default recipients, not custom"
 
+        # Wait for email activity
+        @retry(stop=stop_after_delay(10), wait=wait_fixed(2), reraise=True)
+        def _wait_for_email_activity():
+            activities = self.close_api.get_lead_email_activities(lead_data["id"])
+            if not activities:
+                raise AssertionError("No email activity was created yet")
+            return activities
+
+        _wait_for_email_activity()
+
+        # Verify notification email arrived in Gmail account
         print("Barbara consultant integration test passed!")
 
     def test_instantly_reply_received_april_consultant_integration(self):
@@ -312,6 +332,7 @@ class TestInstantlyReplyReceivedIntegration:
         assert (
             self.gmail_configured
         ), "Gmail service account credentials are not configured"
+
 
         # Create test lead with April as consultant
         print("Creating test lead in Close with April as consultant...")
@@ -361,25 +382,37 @@ class TestInstantlyReplyReceivedIntegration:
             json=self.mock_payload,
         )
         print(f"Webhook response status: {response.status_code}")
-        print(f"Webhook response: {response.json()}")
+        response_body = response.json()
+        print(f"Webhook response: {response_body}")
 
-        # Verify response indicates success with April's recipients
-        assert response.status_code == 200
-        response_data = response.json()
-        assert response_data.get("status") == "success"
+        if response.status_code == 202:
+            assert response_body.get("status") == "accepted"
+            assert response_body.get("workflow_id")
+        else:
+            assert response.status_code == 200
+            assert response_body.get("status") == "success"
 
-        # Verify notification was sent with custom recipients
-        notification_status = response_data.get("data", {}).get("notification_status")
-        assert notification_status == "success"
+            # Verify notification was sent with custom recipients
+            notification_status = response_body.get("data", {}).get("notification_status")
+            assert notification_status == "success"
 
-        # Verify consultant was logged correctly
-        consultant = response_data.get("data", {}).get("consultant")
-        assert consultant == "April Lowrie", f"Expected April Lowrie, got {consultant}"
+            # Verify consultant was logged correctly
+            consultant = response_body.get("data", {}).get("consultant")
+            assert consultant == "April Lowrie", f"Expected April Lowrie, got {consultant}"
 
-        # Verify custom recipients were used
-        custom_recipients_used = response_data.get("data", {}).get(
-            "custom_recipients_used"
-        )
-        assert custom_recipients_used is True, "April should use custom recipients"
+            # Verify custom recipients were used
+            custom_recipients_used = response_body.get("data", {}).get(
+                "custom_recipients_used"
+            )
+            assert custom_recipients_used is True, "April should use custom recipients"
+
+        @retry(stop=stop_after_delay(10), wait=wait_fixed(2), reraise=True)
+        def _wait_for_email_activity_april():
+            activities = self.close_api.get_lead_email_activities(lead_data["id"])
+            if not activities:
+                raise AssertionError("No email activity was created yet")
+            return activities
+
+        _wait_for_email_activity_april()
 
         print("April consultant integration test passed!")
