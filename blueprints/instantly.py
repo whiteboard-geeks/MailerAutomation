@@ -26,99 +26,22 @@ from close_utils import (
 from utils.instantly import get_instantly_campaigns
 from utils.instantly import campaign_exists
 from utils.instantly import logger
+from utils.instantly_reply_received import (
+    CONSULTANT_FIELD_KEY,
+    determine_notification_recipients,
+)
 
 from temporal.workflows.instantly.webhook_add_lead_workflow import WebhookAddLeadWorkflow, WebhookAddLeadPayload
 from temporal.workflows.instantly.webhook_email_sent_workflow import WebhookEmailSentWorkflow, WebhookEmailSentPayload
+from temporal.workflows.instantly.webhook_reply_received_workflow import (
+    WebhookReplyReceivedPayload,
+    WebhookReplyReceivedWorkflow,
+)
 from temporal.shared import TASK_QUEUE_NAME
+from config import use_temporal_for_reply_received
 
 # Set up blueprint
 instantly_bp = Blueprint("instantly", __name__)
-
-
-def determine_notification_recipients(lead_details, env_type):
-    """
-    Determine notification recipients based on consultant field.
-
-    Args:
-        lead_details (dict): Lead details from Close API
-        env_type (str): Environment type (production/development)
-
-    Returns:
-        tuple: (recipients_string, error_message)
-               recipients_string is None if error or should use default
-               error_message is None if success
-    """
-    # Get the consultant field value
-    consultant_field_key = "custom.lcf_TRIulkQaxJArdGl2k89qY6NKR0ZTYkzjRdeILo1h5fi"
-    consultant = lead_details.get(consultant_field_key)
-    lead_id = lead_details.get("id", "unknown")
-
-    # Handle missing, empty, or null consultant field gracefully
-    if consultant is None:
-        logger.warning(
-            "consultant_field_missing",
-            lead_id=lead_id,
-            message=f"Consultant field missing for lead {lead_id}. Using default recipients.",
-        )
-        return None, None  # Use default recipients
-
-    if consultant == "":
-        logger.warning(
-            "consultant_field_empty",
-            lead_id=lead_id,
-            message=f"Consultant field empty for lead {lead_id}. Using default recipients.",
-        )
-        return None, None  # Use default recipients
-
-    # Handle known consultants
-    if consultant == "Barbara Pigg":
-        # Barbara uses default notification behavior (existing team)
-        logger.info(
-            "consultant_determined",
-            lead_id=lead_id,
-            consultant="Barbara Pigg",
-            recipients="default",
-        )
-        return None, None  # None means use default recipients
-
-    elif consultant == "April Lowrie":
-        # April's behavior depends on environment
-        if env_type == "development":
-            # Development: Lance only
-            recipients = "lance@whiteboardgeeks.com"
-            logger.info(
-                "consultant_determined",
-                lead_id=lead_id,
-                consultant="April Lowrie",
-                environment="development",
-                recipients=recipients,
-            )
-            return recipients, None
-        else:
-            # Production: April's team
-            recipients_list = [
-                "april.lowrie@whiteboardgeeks.com",
-                "lauren.poche@whiteboardgeeks.com",
-            ]
-            recipients = ",".join(recipients_list)
-            logger.info(
-                "consultant_determined",
-                lead_id=lead_id,
-                consultant="April Lowrie",
-                environment="production",
-                recipients=recipients,
-            )
-            return recipients, None
-
-    else:
-        # Unknown consultant - log warning but use default recipients
-        logger.warning(
-            "consultant_unknown",
-            lead_id=lead_id,
-            consultant=consultant,
-            message=f"Unknown consultant '{consultant}' for lead {lead_id}. Using default recipients.",
-        )
-        return None, None  # Use default recipients instead of returning error
 
 
 def log_webhook_response(status_code, response_data, webhook_data=None, error=None):
@@ -543,7 +466,79 @@ def handle_instantly_email_sent():
 
 @instantly_bp.route("/reply_received", methods=["POST"])
 def handle_instantly_reply_received():
-    """Handle webhooks from Instantly when a reply is received."""
+    """Handle Instantly reply webhooks using the configured execution path."""
+    if use_temporal_for_reply_received:
+        return handle_instantly_reply_received_temporal()
+    return handle_instantly_reply_received_sync()
+
+
+def handle_instantly_reply_received_temporal():
+    """Enqueue Temporal workflow for reply received processing and return 202."""
+    json_payload = request.get_json(silent=True)
+    if json_payload is None:
+        response_data = {
+            "status": "error",
+            "message": "Invalid or missing JSON payload",
+        }
+        return log_webhook_response(400, response_data, None)
+
+    g_run_id = getattr(g, "request_id", str(uuid.uuid4()))
+
+    logger.info(
+        "reply_received_temporal_enqueue",
+        run_id=g_run_id,
+        event_type=json_payload.get("event_type"),
+        campaign_name=json_payload.get("campaign_name"),
+        lead_email=json_payload.get("lead_email"),
+    )
+
+    try:
+        workflow_input = WebhookReplyReceivedPayload(json_payload=json_payload)
+    except Exception as exc:
+        response_data = {
+            "status": "error",
+            "message": f"Invalid payload: {exc}",
+        }
+        return log_webhook_response(400, response_data, json_payload, error=str(exc))
+
+    try:
+        temporal.ensure_started()
+        start_coro = temporal.client.start_workflow(
+            WebhookReplyReceivedWorkflow.run,
+            workflow_input,
+            id=g_run_id,
+            task_queue=TASK_QUEUE_NAME,
+        )
+        temporal.run(start_coro)
+    except Exception as exc:
+        logger.exception(
+            "reply_received_temporal_enqueue_failed",
+            run_id=g_run_id,
+            error=str(exc),
+        )
+        response_data = {
+            "status": "error",
+            "message": "Failed to enqueue Temporal workflow",
+        }
+        return log_webhook_response(500, response_data, json_payload, error=str(exc))
+
+    response_data = {
+        "status": "accepted",
+        "message": "Reply received webhook accepted for asynchronous processing",
+        "workflow_id": g_run_id,
+    }
+    minimal_webhook_data = {
+        "event_type": json_payload.get("event_type"),
+        "campaign_name": json_payload.get("campaign_name"),
+        "lead_email": json_payload.get("lead_email"),
+        "reply_subject": json_payload.get("reply_subject"),
+        "timestamp": json_payload.get("timestamp"),
+    }
+    return log_webhook_response(202, response_data, minimal_webhook_data)
+
+
+def handle_instantly_reply_received_sync():
+    """Handle webhooks from Instantly when a reply is received synchronously."""
     try:
         # Parse the webhook payload
         data = request.json
@@ -713,7 +708,7 @@ def handle_instantly_reply_received():
                 "message": consultant_error,
                 "lead_id": lead_id,
                 "consultant": lead_details.get(
-                    "custom.lcf_TRIulkQaxJArdGl2k89qY6NKR0ZTYkzjRdeILo1h5fi"
+                    CONSULTANT_FIELD_KEY
                 ),
             }
             return log_webhook_response(400, response_data, data)
@@ -788,7 +783,7 @@ Time: {datetime.now().strftime("%Y-%m-%d %H:%M:%S")}"""
                     lead_id=lead_id,
                     recipients=custom_recipients,
                     consultant=lead_details.get(
-                        "custom.lcf_TRIulkQaxJArdGl2k89qY6NKR0ZTYkzjRdeILo1h5fi"
+                        CONSULTANT_FIELD_KEY
                     ),
                 )
 
@@ -837,7 +832,7 @@ Time: {datetime.now().strftime("%Y-%m-%d %H:%M:%S")}"""
                 "paused_subscriptions": paused_subscriptions,
                 "notification_status": notification_status,
                 "consultant": lead_details.get(
-                    "custom.lcf_TRIulkQaxJArdGl2k89qY6NKR0ZTYkzjRdeILo1h5fi"
+                    CONSULTANT_FIELD_KEY
                 ),
                 "custom_recipients_used": bool(custom_recipients),
             },
@@ -854,7 +849,7 @@ Time: {datetime.now().strftime("%Y-%m-%d %H:%M:%S")}"""
         run_id = getattr(g, "request_id", str(uuid.uuid4()))
 
         # Extract calling function name
-        calling_function = "handle_instantly_reply_received"
+        calling_function = "handle_instantly_reply_received_sync"
 
         error_message = f"""
         <h2>Instantly Reply Received Webhook Error</h2>

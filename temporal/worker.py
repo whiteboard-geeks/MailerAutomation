@@ -8,14 +8,16 @@ from datetime import timedelta
 import structlog
 from temporalio.worker import Worker
 
-from .activities.instantly.webhook_email_sent import complete_lead_task_by_email
-
-from .activities.instantly.webhook_email_sent import add_email_activity_to_lead
+from .activities.instantly import webhook_email_sent
+from .activities.instantly import webhook_reply_received as reply_received_activities
 from temporal.client_provider import get_temporal_client
 from temporal.shared import TASK_QUEUE_NAME
 
 from .workflows.instantly.webhook_add_lead_workflow import WebhookAddLeadWorkflow
 from .workflows.instantly.webhook_email_sent_workflow import WebhookEmailSentWorkflow
+from .workflows.instantly.webhook_reply_received_workflow import (
+    WebhookReplyReceivedWorkflow,
+)
 from .activities.instantly.webhook_add_lead import add_lead_to_instantly_campaign
 
 async def run_worker() -> None:
@@ -40,8 +42,19 @@ async def run_worker() -> None:
         worker = Worker(
             client,
             task_queue=TASK_QUEUE_NAME,
-            workflows=[WebhookEmailSentWorkflow, WebhookAddLeadWorkflow],
-            activities=[complete_lead_task_by_email, add_email_activity_to_lead, add_lead_to_instantly_campaign],
+            workflows=[
+                WebhookEmailSentWorkflow,
+                WebhookAddLeadWorkflow,
+                WebhookReplyReceivedWorkflow,
+            ],
+            activities=[
+                webhook_email_sent.complete_lead_task_by_email,
+                webhook_email_sent.add_email_activity_to_lead,
+                add_lead_to_instantly_campaign,
+                reply_received_activities.add_email_activity_to_lead,
+                reply_received_activities.pause_sequence_subscriptions,
+                reply_received_activities.send_notification_email,
+            ],
             # Graceful shutdown timeout
             graceful_shutdown_timeout=timedelta(minutes=1),
             # Activity task configuration
