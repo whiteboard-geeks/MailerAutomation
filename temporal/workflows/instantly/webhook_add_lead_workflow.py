@@ -73,7 +73,7 @@ class WebhookAddLeadWorkflow:
                 await workflow.execute_activity(
                     add_lead_to_instantly_campaign,
                     input,
-                    start_to_close_timeout=timedelta(seconds=10),
+                    start_to_close_timeout=timedelta(seconds=60),
                     retry_policy=self._activity_retry_policy,
                 )
                 return
