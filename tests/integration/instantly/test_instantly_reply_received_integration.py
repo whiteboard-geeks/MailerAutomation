@@ -127,22 +127,9 @@ class TestInstantlyReplyReceivedIntegration:
         response_body = response.json()
         print(f"Webhook response: {response_body}")
 
-        is_async_response = response.status_code == 202
-
-        if is_async_response:
-            assert response_body.get("status") == "accepted"
-            assert response_body.get("workflow_id"), "Workflow ID missing in async response"
-        else:
-            assert (
-                response.status_code == 200
-            ), f"Webhook response status code is not 200, got {response.status_code}"
-            assert (
-                response_body.get("status") == "success"
-            ), f"Webhook response status is not 'success', got {response_body.get('status')}"
-            assert (
-                response_body.get("message")
-                == "Reply received webhook processed successfully"
-            ), "Webhook response message doesn't indicate success"
+        assert response.status_code == 202, f"Unexpected status: {response.status_code}"
+        assert response_body.get("status") == "accepted"
+        assert response_body.get("workflow_id"), "Workflow ID missing in async response"
 
         # Check for email activities
         print("Checking for email activities...")
@@ -189,14 +176,6 @@ class TestInstantlyReplyReceivedIntegration:
                 matching_email["body_text"] == self.mock_payload["reply_text"]
             ), "Email text body doesn't match"
 
-        # Verify the webhook response indicates success
-        print("Checking webhook response for successful processing...")
-        if not is_async_response:
-            print("Verifying no task was created...")
-            assert (
-                response_body.get("data", {}).get("task_id") is None
-            ), "Task ID should be None in the response"
-
         # Check if the sequence subscription was paused
         print("Checking if sequence subscription was paused...")
 
@@ -210,20 +189,6 @@ class TestInstantlyReplyReceivedIntegration:
         assert (
             updated_subscription.get("status") == "paused"
         ), "Sequence subscription was not paused"
-
-        # Verify the paused subscription is included in the response
-        if not is_async_response:
-            paused_subscriptions = response_body.get("data", {}).get(
-                "paused_subscriptions", []
-            )
-            assert (
-                len(paused_subscriptions) > 0
-            ), "No paused subscriptions reported in response"
-
-            subscription_ids = [sub.get("subscription_id") for sub in paused_subscriptions]
-            assert (
-                subscription_id in subscription_ids
-            ), f"Subscription ID {subscription_id} not found in response"
 
         print("All assertions passed!")
 
@@ -288,28 +253,9 @@ class TestInstantlyReplyReceivedIntegration:
         response_body = response.json()
         print(f"Webhook response: {response_body}")
 
-        if response.status_code == 202:
-            assert response_body.get("status") == "accepted"
-            assert response_body.get("workflow_id")
-        else:
-            assert response.status_code == 200
-            assert response_body.get("status") == "success"
-
-            # Verify notification was sent (should use default recipients)
-            notification_status = response_body.get("data", {}).get("notification_status")
-            assert notification_status == "success"
-
-            # Verify consultant was logged correctly
-            consultant = response_body.get("data", {}).get("consultant")
-            assert consultant == "Barbara Pigg", f"Expected Barbara Pigg, got {consultant}"
-
-            # Verify custom recipients were NOT used (Barbara uses default)
-            custom_recipients_used = response_body.get("data", {}).get(
-                "custom_recipients_used"
-            )
-            assert (
-                custom_recipients_used is False
-            ), "Barbara should use default recipients, not custom"
+        assert response.status_code == 202, f"Unexpected status: {response.status_code}"
+        assert response_body.get("status") == "accepted"
+        assert response_body.get("workflow_id")
 
         # Wait for email activity
         @retry(stop=stop_after_delay(10), wait=wait_fixed(2), reraise=True)
@@ -385,26 +331,9 @@ class TestInstantlyReplyReceivedIntegration:
         response_body = response.json()
         print(f"Webhook response: {response_body}")
 
-        if response.status_code == 202:
-            assert response_body.get("status") == "accepted"
-            assert response_body.get("workflow_id")
-        else:
-            assert response.status_code == 200
-            assert response_body.get("status") == "success"
-
-            # Verify notification was sent with custom recipients
-            notification_status = response_body.get("data", {}).get("notification_status")
-            assert notification_status == "success"
-
-            # Verify consultant was logged correctly
-            consultant = response_body.get("data", {}).get("consultant")
-            assert consultant == "April Lowrie", f"Expected April Lowrie, got {consultant}"
-
-            # Verify custom recipients were used
-            custom_recipients_used = response_body.get("data", {}).get(
-                "custom_recipients_used"
-            )
-            assert custom_recipients_used is True, "April should use custom recipients"
+        assert response.status_code == 202, f"Unexpected status: {response.status_code}"
+        assert response_body.get("status") == "accepted"
+        assert response_body.get("workflow_id")
 
         @retry(stop=stop_after_delay(10), wait=wait_fixed(2), reraise=True)
         def _wait_for_email_activity_april():

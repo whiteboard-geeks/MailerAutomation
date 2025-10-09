@@ -23,44 +23,17 @@ def _make_request(client, json_payload: Dict[str, Any]):
     return client.post("/instantly/reply_received", json=json_payload)
 
 
-def test_reply_received_route_uses_temporal_when_flag_enabled(monkeypatch, flask_app):
-    monkeypatch.setattr(instantly, "use_temporal_for_reply_received", True, raising=False)
+def test_reply_received_route_invokes_temporal_handler(monkeypatch, flask_app):
     monkeypatch.setattr(
         instantly,
         "handle_instantly_reply_received_temporal",
         lambda: ("temporal", 202),
     )
-    monkeypatch.setattr(
-        instantly,
-        "handle_instantly_reply_received_sync",
-        lambda: ("sync", 200),
-    )
-
     with flask_app.test_client() as client:
         response = _make_request(client, {})
 
     assert response.status_code == 202
     assert response.get_data(as_text=True) == "temporal"
-
-
-def test_reply_received_route_uses_sync_when_flag_disabled(monkeypatch, flask_app):
-    monkeypatch.setattr(instantly, "use_temporal_for_reply_received", False, raising=False)
-    monkeypatch.setattr(
-        instantly,
-        "handle_instantly_reply_received_temporal",
-        lambda: ("temporal", 202),
-    )
-    monkeypatch.setattr(
-        instantly,
-        "handle_instantly_reply_received_sync",
-        lambda: ("sync", 200),
-    )
-
-    with flask_app.test_client() as client:
-        response = _make_request(client, {})
-
-    assert response.status_code == 200
-    assert response.get_data(as_text=True) == "sync"
 
 
 def test_handle_reply_received_temporal_enqueues_workflow(monkeypatch, flask_app):
@@ -76,7 +49,6 @@ def test_handle_reply_received_temporal_enqueues_workflow(monkeypatch, flask_app
         start_args["ran"] = coro
         return None
 
-    monkeypatch.setattr(instantly, "use_temporal_for_reply_received", True, raising=False)
     monkeypatch.setattr(instantly.temporal, "ensure_started", lambda: None)
     monkeypatch.setattr(instantly.temporal, "client", FakeClient(), raising=False)
     monkeypatch.setattr(instantly.temporal, "run", fake_run, raising=False)
@@ -103,9 +75,7 @@ def test_handle_reply_received_temporal_enqueues_workflow(monkeypatch, flask_app
     assert workflow_input.json_payload == payload
 
 
-def test_handle_reply_received_temporal_invalid_payload_returns_400(monkeypatch, flask_app):
-    monkeypatch.setattr(instantly, "use_temporal_for_reply_received", True, raising=False)
-
+def test_handle_reply_received_temporal_invalid_payload_returns_400(flask_app):
     with flask_app.test_client() as client:
         response = client.post("/instantly/reply_received", data="not-json")
 
