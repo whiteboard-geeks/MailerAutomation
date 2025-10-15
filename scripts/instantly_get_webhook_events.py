@@ -1,16 +1,16 @@
-"""Download webhook events from Instantly and save to JSONL file.
+"""Download Instantly webhook events and save them to a JSONL file.
 
 Usage:
 
-    set -a; source .env-instantly; set +a;python -m scripts.instantly_get_webhook_events
+    set -a; source .env-instantly; set +a; python -m scripts.instantly_get_webhook_events [--from YYYY-MM-DD] [--to YYYY-MM-DD]
 
 The environment variable `INSTANTLY_API_KEY` must be set.
 
-The script fetches the webhook events of the previous 7 days from the endpoint
-https://api.instantly.ai/api/v2/webhook-events for the webhook
-https://mailer-automation-c26722b7119c.herokuapp.com/instantly/email_sent and
-stores them in instantly_weebhook_events/<timestamp>.jsonl where <timestamp> is
-the current timestamp.
+By default the script fetches webhook events from the previous 7 days ending
+today from the endpoint https://api.instantly.ai/api/v2/webhook-events for the
+webhook https://mailer-automation-c26722b7119c.herokuapp.com/instantly/email_sent
+and stores them in instantly_weebhook_events/<timestamp>.jsonl where <timestamp>
+is the current timestamp.
 
 Documentation of Instantly webhook events API:
 https://developer.instantly.ai/api/v2/webhookevent/listwebhookevent
@@ -18,6 +18,7 @@ https://developer.instantly.ai/api/v2/webhookevent/listwebhookevent
 
 from __future__ import annotations
 
+import argparse
 import json
 import os
 import sys
@@ -31,6 +32,7 @@ import requests
 INSTANTLY_API_ENDPOINT = "https://api.instantly.ai/api/v2/webhook-events"
 OUTPUT_DIR = Path(__file__).resolve().parent.parent / "instantly_weebhook_events"
 REQUEST_TIMEOUT_SECONDS = 30
+DATE_FORMAT = "%Y-%m-%d"
 
 
 def fetch_webhook_events(
@@ -100,6 +102,16 @@ def write_events_to_jsonl(events: Iterable[dict], destination: Path) -> None:
             handle.write("\n")
 
 
+def _parse_date(value: str) -> date:
+    """Parse a YYYY-MM-DD date argument."""
+
+    try:
+        return datetime.strptime(value, DATE_FORMAT).date()
+    except ValueError as exc:
+        msg = f"Invalid date '{value}'. Expected format YYYY-MM-DD."
+        raise argparse.ArgumentTypeError(msg) from exc
+
+
 def main() -> None:
     """Entry point for downloading Instantly webhook events."""
 
@@ -110,7 +122,37 @@ def main() -> None:
 
     now = datetime.now(timezone.utc)
     end_date = now.date()
-    start_date = end_date - timedelta(days=7)
+
+    default_start_date = end_date - timedelta(days=7)
+
+    parser = argparse.ArgumentParser(
+        description="Download Instantly webhook events and store them as JSONL."
+    )
+    parser.add_argument(
+        "--from",
+        dest="from_date",
+        type=_parse_date,
+        default=default_start_date,
+        help=f"Start date inclusive (YYYY-MM-DD). Defaults to {default_start_date:%Y-%m-%d}.",
+        metavar="YYYY-MM-DD",
+    )
+    parser.add_argument(
+        "--to",
+        dest="to_date",
+        type=_parse_date,
+        default=end_date,
+        help=f"End date inclusive (YYYY-MM-DD). Defaults to {end_date:%Y-%m-%d}.",
+        metavar="YYYY-MM-DD",
+    )
+
+    args = parser.parse_args()
+
+    start_date = args.from_date
+    end_date = args.to_date
+
+    if start_date > end_date:
+        print("--from date must be on or before --to date.", file=sys.stderr)
+        sys.exit(1)
 
     try:
         events = fetch_webhook_events(api_key, start_date, end_date)
