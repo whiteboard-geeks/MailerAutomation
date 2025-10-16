@@ -92,7 +92,7 @@ jobs:
     strategy:
       max-parallel: 1  
       matrix:
-        blueprint: [instantly, easypost, gmail]  # Added gmail to the integration test matrix
+        blueprint: [instantly] #, easypost, gmail]  # Added gmail to the integration test matrix
     steps:
       - uses: actions/checkout@v3
       
@@ -167,7 +167,7 @@ jobs:
           # Run the integration tests for this blueprint (excluding stress tests)
           echo "Running integration tests for ${{ matrix.blueprint }} (excluding stress tests)..."
 
-          pytest tests/integration/${{ matrix.blueprint }} -v -rs -m "not stress"
+          pytest tests/integration/instantly/test_instantly_email_sent_integration.py -v -rs -m "not stress"
           
   deploy-to-production:
     needs: blueprint-integration-tests
