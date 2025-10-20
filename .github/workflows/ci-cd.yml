@@ -92,7 +92,7 @@ jobs:
     strategy:
       max-parallel: 1  
       matrix:
-        blueprint: [easypost] #,instantly,  gmail]  # Added gmail to the integration test matrix
+        blueprint: [instantly, easypost, gmail]  # Added gmail to the integration test matrix
     steps:
       - uses: actions/checkout@v3
       
