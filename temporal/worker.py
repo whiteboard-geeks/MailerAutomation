@@ -10,6 +10,7 @@ from temporalio.worker import Worker
 
 from .activities.instantly import webhook_email_sent
 from .activities.instantly import webhook_reply_received as reply_received_activities
+from .activities.easypost import webhook_create_tracker as easypost_activities
 from temporal.client_provider import get_temporal_client
 from temporal.shared import TASK_QUEUE_NAME
 
@@ -19,6 +20,9 @@ from .workflows.instantly.webhook_reply_received_workflow import (
     WebhookReplyReceivedWorkflow,
 )
 from .activities.instantly.webhook_add_lead import add_lead_to_instantly_campaign
+from .workflows.easypost.webhook_create_tracker_workflow import (
+    WebhookCreateTrackerWorkflow,
+)
 
 async def run_worker() -> None:
     """Run the Temporal worker with proper configuration."""
@@ -46,6 +50,7 @@ async def run_worker() -> None:
                 WebhookEmailSentWorkflow,
                 WebhookAddLeadWorkflow,
                 WebhookReplyReceivedWorkflow,
+                WebhookCreateTrackerWorkflow,
             ],
             activities=[
                 webhook_email_sent.complete_lead_task_by_email,
@@ -54,6 +59,8 @@ async def run_worker() -> None:
                 reply_received_activities.add_email_activity_to_lead,
                 reply_received_activities.pause_sequence_subscriptions,
                 reply_received_activities.send_notification_email,
+                easypost_activities.create_tracker_activity,
+                easypost_activities.update_close_lead_activity,
             ],
             # Graceful shutdown timeout
             graceful_shutdown_timeout=timedelta(minutes=1),

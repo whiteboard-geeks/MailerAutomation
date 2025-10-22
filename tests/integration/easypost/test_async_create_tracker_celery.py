@@ -22,6 +22,15 @@ from tests.utils.easypost_mock import EasyPostMock
 from celery_worker import celery
 
 
+TEMPORAL_FLAG = os.getenv("USE_TEMPORAL_FOR_EASYPOST_CREATE_TRACKER", "false")
+TEMPORAL_ENABLED = TEMPORAL_FLAG.strip().lower() in {"1", "true", "yes", "on"}
+
+pytestmark = pytest.mark.skipif(
+    TEMPORAL_ENABLED,
+    reason="Celery integration tests run only when USE_TEMPORAL_FOR_EASYPOST_CREATE_TRACKER is false.",
+)
+
+
 class TestAsyncEasyPostTrackerCreation:
     # Test configuration
     IMMEDIATE_RESPONSE_TIMEOUT = 5  # Seconds - async should respond immediately

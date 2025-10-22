@@ -7,7 +7,7 @@ import os
 import json
 from datetime import datetime, date
 import traceback
-from flask import Blueprint, request, jsonify
+from flask import Blueprint, request, jsonify, g
 import easypost
 from redis import Redis
 import structlog
@@ -19,6 +19,11 @@ from close_utils import (
 )
 from celery_worker import celery
 import uuid
+from config import USE_TEMPORAL_FOR_EASYPOST_CREATE_TRACKER
+from temporal.service import temporal
+from temporal.shared import TASK_QUEUE_NAME
+from temporal.workflows.easypost.webhook_create_tracker_workflow import WebhookCreateTrackerPayload, WebhookCreateTrackerWorkflow
+from utils.easypost import get_easypost_client
 
 
 # Initialize Blueprint
@@ -30,48 +35,10 @@ logger = structlog.get_logger()
 # API keys
 CLOSE_API_KEY = os.environ.get("CLOSE_API_KEY")
 CLOSE_ENCODED_KEY = None  # This will be initialized when needed
-EASYPOST_PROD_API_KEY = os.environ.get("EASYPOST_PROD_API_KEY")
-EASYPOST_TEST_API_KEY = os.environ.get("EASYPOST_TEST_API_KEY")
+
 ENV_TYPE = os.environ.get("ENV_TYPE", "development")
 
 
-# EasyPost client setup
-def get_easypost_client(tracking_number=None):
-    """
-    Get EasyPost client based on tracking number.
-
-    Args:
-        tracking_number: The tracking number to check. If it follows test format
-                         (e.g., starts with "EZ"), use test API key.
-
-    Returns:
-        EasyPost client instance with appropriate API key
-
-    Raises:
-        ValueError: If a test tracking number is used but EASYPOST_TEST_API_KEY is not set
-    """
-    # Default to production API key
-    api_key = EASYPOST_PROD_API_KEY
-
-    # If tracking number follows test format (e.g., starts with "EZ"), use test API key
-    if tracking_number and (
-        tracking_number.startswith("EZ") or tracking_number.startswith("ez")
-    ):
-        if EASYPOST_TEST_API_KEY:
-            api_key = EASYPOST_TEST_API_KEY
-            logger.info(
-                f"Using EasyPost test API key for tracking number: {tracking_number}"
-            )
-        else:
-            error_msg = f"EASYPOST_TEST_API_KEY is not set but required for test tracking number: {tracking_number}"
-            logger.error(error_msg)
-            raise ValueError(error_msg)
-    else:
-        logger.info(
-            f"Using EasyPost production API key for tracking number: {tracking_number}"
-        )
-
-    return easypost.EasyPostClient(api_key=api_key)
 
 
 # Initialize EasyPost Client (default with production API key)
@@ -169,37 +136,67 @@ def send_email(subject, body, **kwargs):
     return app_send_email(subject, body, **kwargs)
 
 
+class CreateTrackerRequestError(Exception):
+    """Raised when the create tracker request payload is invalid."""
+
+    def __init__(self, message: str, status_code: int = 400) -> None:
+        super().__init__(message)
+        self.message = message
+        self.status_code = status_code
+
+
+def _extract_create_tracker_request():
+    payload = request.get_json(silent=True)
+    if not payload or not payload.get("event"):
+        raise CreateTrackerRequestError("Invalid request format")
+
+    data = payload.get("event", {}).get("data", {})
+    lead_id = data.get("id")
+
+    if not lead_id:
+        raise CreateTrackerRequestError("No lead_id provided")
+
+    return payload, lead_id
+
+
+def _build_initial_webhook_data(lead_id: str):
+    timestamp = datetime.now().isoformat()
+    return {
+        "event_id": f"create_tracker_{lead_id}_{timestamp}",
+        "lead_id": lead_id,
+        "route": "create_tracker",
+        "timestamp": timestamp,
+        "processed": False,
+    }
+
+
+def _tracker_key(lead_id: str) -> str:
+    return f"create_tracker_{lead_id}"
+
+
 @easypost_bp.route("/create_tracker", methods=["POST"])
 def create_easypost_tracker():
-    """Create an EasyPost tracker for a lead in Close - Async Processing."""
+    if USE_TEMPORAL_FOR_EASYPOST_CREATE_TRACKER:
+        return create_easypost_tracker_temporal()
+    else:
+        return create_easypost_tracker_celery()
+
+
+def create_easypost_tracker_celery():
     try:
-        # Quick validation of request data
-        if not request.json or not request.json.get("event"):
-            return jsonify(
-                {"status": "error", "message": "Invalid request format"}
-            ), 400
+        payload, lead_id = _extract_create_tracker_request()
+        tracker_key = _tracker_key(lead_id)
+        base_webhook_data = _build_initial_webhook_data(lead_id)
 
-        data = request.json.get("event").get("data", {})
-        lead_id = data.get("id")
+        task = create_tracker_task.delay(payload)
 
-        if not lead_id:
-            return jsonify({"status": "error", "message": "No lead_id provided"}), 400
-
-        # Queue the task for background processing
-        task = create_tracker_task.delay(request.json)
-
-        # Store initial webhook data for tracking
         webhook_data = {
-            "event_id": f"create_tracker_{lead_id}_{datetime.now().isoformat()}",
-            "lead_id": lead_id,
-            "route": "create_tracker",
-            "timestamp": datetime.now().isoformat(),
-            "processed": False,
+            **base_webhook_data,
+            "processor": "celery",
             "task_id": task.id,
         }
 
-        # Use lead_id as tracker key for webhook tracking
-        _webhook_tracker.add(f"create_tracker_{lead_id}", webhook_data)
+        _webhook_tracker.add(tracker_key, webhook_data)
 
         logger.info(
             f"EasyPost tracker creation task queued: {task.id} for lead {lead_id}"
@@ -213,12 +210,69 @@ def create_easypost_tracker():
                 "lead_id": lead_id,
             }
         ), 202
-
-    except Exception as e:
-        error_msg = f"Error queuing EasyPost tracker creation task: {str(e)}"
+    except CreateTrackerRequestError as err:
+        return jsonify({"status": "error", "message": err.message}), err.status_code
+    except Exception as exc:
+        error_msg = f"Error queuing EasyPost tracker creation task: {exc}"
         logger.error(error_msg)
         return jsonify({"status": "error", "message": error_msg}), 500
 
+
+def create_easypost_tracker_temporal():
+    json_payload = request.get_json(silent=True)
+    if json_payload is None:
+        response_data = {
+            "status": "error",
+            "message": "Invalid request format",
+        }
+        return jsonify(response_data), 400
+
+    g_run_id = getattr(g, "request_id", str(uuid.uuid4()))
+    logger.info(
+        "create_tracker_temporal_enqueue",
+        run_id=g_run_id,
+    )
+
+    try:
+        workflow_input = WebhookCreateTrackerPayload(json_payload=json_payload)
+    except Exception as exc:
+        response_data = {
+            "status": "error",
+            "message": f"Invalid payload: {exc}",
+        }
+        return jsonify(response_data), 400
+    
+    try:
+        temporal.ensure_started()
+        start_coro = temporal.client.start_workflow(
+            WebhookCreateTrackerWorkflow.run,
+            workflow_input,
+            id=g_run_id,
+            task_queue=TASK_QUEUE_NAME,
+        )
+        temporal.run(start_coro)
+    except Exception as exc:
+        logger.exception(
+            "create_tracker_temporal_enqueue_failed",
+            run_id=g_run_id,
+            error=str(exc),
+        )
+        return (
+            jsonify(
+                {
+                    "status": "error",
+                    "message": "Error enqueuing Temporal tracker workflow",
+                }
+            ),
+            500,
+        )
+
+    response_data = {
+        "status": "accepted",
+        "message": "Tracker creation workflow queued for background processing",
+        "workflow_id": g_run_id,
+    }
+    return jsonify(response_data), 202
 
 @celery.task(
     name="easypost.create_tracker_task",
@@ -1434,4 +1488,3 @@ def sync_delivery_status_task(self):
             # If we've exceeded retries or can't retry, return error
             logger.warning(f"Failed to retry task: {retry_error}")
             return {"status": "error", "message": error_msg}
-
