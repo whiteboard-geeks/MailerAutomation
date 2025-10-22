@@ -1,5 +1,4 @@
 from datetime import timedelta
-from typing import cast
 
 from pydantic import BaseModel, ConfigDict, Field
 from temporalio import workflow

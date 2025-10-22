@@ -8,7 +8,6 @@ import json
 from datetime import datetime, date
 import traceback
 from flask import Blueprint, request, jsonify, g
-import easypost
 from redis import Redis
 import structlog
 from close_utils import (
