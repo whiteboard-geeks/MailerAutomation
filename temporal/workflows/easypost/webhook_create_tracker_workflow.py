@@ -34,7 +34,6 @@ class WebhookCreateTrackerPayloadData(BaseModel):
     id: str = Field(..., description="Close lead identifier.")
 
 
-
 class WebhookCreateTrackerPayloadEvent(BaseModel):
     model_config = ConfigDict(extra="allow")
 
@@ -87,7 +86,7 @@ class WebhookCreateTrackerWorkflow:
         self, input: WebhookCreateTrackerPayload
     ) -> WebhookCreateTrackerPayloadValidated:
         try:
-            input_validated = WebhookCreateTrackerPayloadValidated.model_validate(**input.json_payload)
+            input_validated = WebhookCreateTrackerPayloadValidated.model_validate(input.json_payload)
         except Exception as exc:
             
             raise ApplicationError(
