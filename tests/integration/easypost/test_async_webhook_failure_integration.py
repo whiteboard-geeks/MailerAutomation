@@ -26,6 +26,16 @@ from unittest.mock import patch, MagicMock
 from datetime import datetime
 from app import flask_app
 from celery_worker import celery
+from config import USE_TEMPORAL_FOR_EASYPOST_CREATE_TRACKER
+
+# Skip all tests in this module if USE_TEMPORAL_FOR_EASYPOST_CREATE_TRACKER is truthy
+if USE_TEMPORAL_FOR_EASYPOST_CREATE_TRACKER:
+    pytest.skip(
+        "Skipping async webhook failure integration tests because "
+        "USE_TEMPORAL_FOR_EASYPOST_CREATE_TRACKER is enabled. "
+        "These tests are specific to Celery-based async processing.",
+        allow_module_level=True
+    )
 
 
 # Sample Close webhook payload for EasyPost tracker creation

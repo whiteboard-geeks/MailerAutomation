@@ -3,10 +3,19 @@ Unit tests for the EasyPost webhook handler failure modes.
 """
 
 import json
+import os
 import pytest
 from unittest.mock import patch, MagicMock
+from blueprints import easypost as easypost_module
 from flask import Flask
 from blueprints.easypost import easypost_bp
+
+
+# Shared skip condition for tests that should be skipped when Temporal is enabled
+skip_when_temporal_enabled = pytest.mark.skipif(
+    os.getenv("USE_TEMPORAL_FOR_EASYPOST_CREATE_TRACKER", "").lower() in ("true", "1", "yes", "on"),
+    reason="Test skipped when USE_TEMPORAL_FOR_EASYPOST_CREATE_TRACKER is enabled"
+)
 
 
 @pytest.fixture
@@ -37,6 +46,16 @@ def close_webhook_payload():
     }
 
 
+@pytest.fixture(autouse=True)
+def disable_webhook_tracker_redis(monkeypatch):
+    """Prevent tests from attempting to write to an actual Redis instance."""
+    tracker = easypost_module._webhook_tracker
+    monkeypatch.setattr(tracker, "redis", None)
+    if not hasattr(tracker, "webhooks"):
+        tracker.webhooks = {}
+
+
+@skip_when_temporal_enabled
 @patch("blueprints.easypost.send_email")
 def test_no_lead_id_returns_400(mock_send_email, client):
     """
@@ -65,6 +84,7 @@ def test_no_lead_id_returns_400(mock_send_email, client):
     mock_send_email.assert_not_called()
 
 
+@skip_when_temporal_enabled
 @patch("blueprints.easypost.create_tracker_task")
 @patch("blueprints.easypost.send_email")
 def test_lead_not_found_returns_202(
@@ -106,6 +126,7 @@ def test_lead_not_found_returns_202(
     mock_send_email.assert_not_called()
 
 
+@skip_when_temporal_enabled
 @patch("blueprints.easypost.create_tracker_task")
 @patch("blueprints.easypost.send_email")
 def test_missing_tracking_info_returns_202(
@@ -147,6 +168,7 @@ def test_missing_tracking_info_returns_202(
     mock_send_email.assert_not_called()
 
 
+@skip_when_temporal_enabled
 @patch("blueprints.easypost.create_tracker_task")
 @patch("blueprints.easypost.send_email")
 def test_easypost_api_error_returns_202(
@@ -186,3 +208,59 @@ def test_easypost_api_error_returns_202(
 
     # Verify no immediate email notification was sent (handled by background task)
     mock_send_email.assert_not_called()
+
+
+def test_temporal_feature_flag_dispatches_workflow(
+    client, close_webhook_payload, monkeypatch
+):
+    temporal_mock = MagicMock()
+    temporal_mock.client.start_workflow.return_value = "mock-start-coro"
+    monkeypatch.setattr(
+        easypost_module, "USE_TEMPORAL_FOR_EASYPOST_CREATE_TRACKER", True
+    )
+    monkeypatch.setattr(easypost_module, "temporal", temporal_mock)
+
+    task_mock = MagicMock()
+    monkeypatch.setattr(easypost_module, "create_tracker_task", task_mock)
+
+    response = client.post(
+        "/easypost/create_tracker",
+        json=close_webhook_payload,
+        content_type="application/json",
+    )
+
+    assert response.status_code == 202
+    response_data = response.get_json()
+    assert response_data["status"] == "accepted"
+    assert "workflow_id" in response_data
+
+    temporal_mock.ensure_started.assert_called_once()
+    temporal_mock.client.start_workflow.assert_called_once()
+    temporal_mock.run.assert_called_once_with("mock-start-coro")
+    task_mock.delay.assert_not_called()
+
+
+def test_temporal_feature_flag_handles_start_failure(
+    client, close_webhook_payload, monkeypatch
+):
+    temporal_mock = MagicMock()
+    temporal_mock.client.start_workflow.side_effect = RuntimeError("temporal error")
+    monkeypatch.setattr(
+        easypost_module, "USE_TEMPORAL_FOR_EASYPOST_CREATE_TRACKER", True
+    )
+    monkeypatch.setattr(easypost_module, "temporal", temporal_mock)
+
+    response = client.post(
+        "/easypost/create_tracker",
+        json=close_webhook_payload,
+        content_type="application/json",
+    )
+
+    assert response.status_code == 500
+    response_data = response.get_json()
+    assert response_data["status"] == "error"
+    assert "Error enqueuing Temporal tracker workflow" in response_data["message"]
+
+    temporal_mock.ensure_started.assert_called_once()
+    temporal_mock.client.start_workflow.assert_called_once()
+    temporal_mock.run.assert_not_called()
