@@ -51,13 +51,7 @@ def test_temporal_feature_flag_dispatches_workflow(
 ):
     temporal_mock = MagicMock()
     temporal_mock.client.start_workflow.return_value = "mock-start-coro"
-    monkeypatch.setattr(
-        easypost_module, "USE_TEMPORAL_FOR_EASYPOST_CREATE_TRACKER", True
-    )
     monkeypatch.setattr(easypost_module, "temporal", temporal_mock)
-
-    task_mock = MagicMock()
-    monkeypatch.setattr(easypost_module, "create_tracker_task", task_mock)
 
     response = client.post(
         "/easypost/create_tracker",
@@ -73,7 +67,6 @@ def test_temporal_feature_flag_dispatches_workflow(
     temporal_mock.ensure_started.assert_called_once()
     temporal_mock.client.start_workflow.assert_called_once()
     temporal_mock.run.assert_called_once_with("mock-start-coro")
-    task_mock.delay.assert_not_called()
 
 
 def test_temporal_feature_flag_handles_start_failure(
@@ -81,9 +74,6 @@ def test_temporal_feature_flag_handles_start_failure(
 ):
     temporal_mock = MagicMock()
     temporal_mock.client.start_workflow.side_effect = RuntimeError("temporal error")
-    monkeypatch.setattr(
-        easypost_module, "USE_TEMPORAL_FOR_EASYPOST_CREATE_TRACKER", True
-    )
     monkeypatch.setattr(easypost_module, "temporal", temporal_mock)
 
     response = client.post(
