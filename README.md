@@ -21,6 +21,7 @@ MailerAutomation is a Flask-based application that helps track package shipments
 - **Celery Workers** (deprecated): Process background and scheduled tasks
 - **Redis**: Used for Celery task queue and data caching
 - **Temporal**: Process background and scheduled tasks (replaces Celery)
+  - `WebhookCreateTrackerWorkflow` orchestrates EasyPost tracker creation and Close lead updates
 - **Blueprints**:
   - `easypost.py`: Handles package tracking and delivery status updates
   - `gmail.py`: Manages email notification processing
