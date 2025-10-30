@@ -16,15 +16,6 @@ from tests.utils.close_api import CloseAPI
 from tests.utils.easypost_mock import EasyPostMock
 
 
-TEMPORAL_FLAG = os.getenv("USE_TEMPORAL_FOR_EASYPOST_CREATE_TRACKER", "false")
-TEMPORAL_ENABLED = TEMPORAL_FLAG.strip().lower() in {"1", "true", "yes", "on"}
-
-pytestmark = pytest.mark.skipif(
-    not TEMPORAL_ENABLED,
-    reason="Temporal integration tests require USE_TEMPORAL_FOR_EASYPOST_CREATE_TRACKER to be true.",
-)
-
-
 class TestAsyncEasyPostTrackerCreationTemporal:
     IMMEDIATE_RESPONSE_TIMEOUT = 5
     BACKGROUND_PROCESSING_TIMEOUT = 10
