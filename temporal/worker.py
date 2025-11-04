@@ -8,6 +8,8 @@ from datetime import timedelta
 import structlog
 from temporalio.worker import Worker
 
+from temporal.activities.easypost.webhook_delivery_status import create_package_delivered_custom_activity_in_close_activity, update_delivery_info_for_lead_activity
+
 from .activities.instantly import webhook_email_sent
 from .activities.instantly import webhook_reply_received as reply_received_activities
 from .activities.easypost import webhook_create_tracker as easypost_activities
@@ -18,6 +20,9 @@ from .workflows.instantly.webhook_add_lead_workflow import WebhookAddLeadWorkflo
 from .workflows.instantly.webhook_email_sent_workflow import WebhookEmailSentWorkflow
 from .workflows.instantly.webhook_reply_received_workflow import (
     WebhookReplyReceivedWorkflow,
+)
+from .workflows.easypost.webhook_delivery_status_workflow import (
+    WebhookDeliveryStatusWorkflow,
 )
 from .activities.instantly.webhook_add_lead import add_lead_to_instantly_campaign
 from .workflows.easypost.webhook_create_tracker_workflow import (
@@ -51,6 +56,7 @@ async def run_worker() -> None:
                 WebhookAddLeadWorkflow,
                 WebhookReplyReceivedWorkflow,
                 WebhookCreateTrackerWorkflow,
+                WebhookDeliveryStatusWorkflow,
             ],
             activities=[
                 webhook_email_sent.complete_lead_task_by_email,
@@ -61,6 +67,8 @@ async def run_worker() -> None:
                 reply_received_activities.send_notification_email,
                 easypost_activities.create_tracker_activity,
                 easypost_activities.update_close_lead_activity,
+                update_delivery_info_for_lead_activity,
+                create_package_delivered_custom_activity_in_close_activity,
             ],
             # Graceful shutdown timeout
             graceful_shutdown_timeout=timedelta(minutes=1),

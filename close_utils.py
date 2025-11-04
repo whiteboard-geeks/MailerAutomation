@@ -350,7 +350,7 @@ def search_close_leads(query):
         return []  # Return empty list instead of None
 
 
-def get_lead_by_id(lead_id):
+def get_lead_by_id(lead_id) -> dict | None:
     """
     Get a lead by its ID from Close.
 
@@ -529,3 +529,77 @@ def pause_sequence_subscription(subscription_id, status_reason="replied"):
         logger.error(f"Failed to pause sequence subscription {subscription_id}: {e}")
         logger.error(f"Traceback: {traceback.format_exc()}")
         return None
+
+
+def update_delivery_information_for_lead(lead_id, delivery_information) -> None:
+    """Update lead with delivery information."""
+
+    def verify_delivery_information_updated(response_data, lead_update_data):
+        for key, value in lead_update_data.items():
+            if key not in response_data or response_data[key] != value:
+                return False
+        return True
+
+    custom_field_ids = {
+        "date_and_location_of_mailer_delivered": {
+            "type": "text",
+            "value": "custom.cf_DTgmXXPozUH3707H1MYu2PhhDznJjWbtmDcb7zme5a9",
+        },
+        "package_delivered": {
+            "type": "dropdown_single",
+            "value": "custom.cf_wkZ5ptOR1Ro3YPxJPYipI35M7ticuYvJHFgp2y4fzdQ",
+        },
+        "state_delivered": {
+            "type": "text",
+            "value": "custom.cf_vxfsYfTrFk6oYrnSx0ViYrUMpE7y5sxi0NnRgTyOf30",
+        },
+        "city_delivered": {
+            "type": "text",
+            "value": "custom.cf_1hWUFxiA6QhUXrYT3lDh96JSWKxVBBAKCB3XO8EXGUW",
+        },
+        "date_delivered": {
+            "type": "date",
+            "value": "custom.cf_jVU4YFLX5bDq2dRjvBapPYAJxGP0iQWid9QC7cQjSCR",
+        },
+        "date_delivered_readable": {
+            "type": "text",
+            "value": "custom.cf_jGC3O9doWfvwFV49NBIRGwA0PFIcKMzE0h8Zf65XLCQ",
+        },
+        "location_delivered": {
+            "type": "text",
+            "value": "custom.cf_hPAtbaFuztYBQcYVqsk4pIFV0hKvnlb696TknlzEERS",
+        },
+    }
+    lead_update_data = {
+        custom_field_ids["date_and_location_of_mailer_delivered"][
+            "value"
+        ]: delivery_information["date_and_location_of_mailer_delivered"],
+        custom_field_ids["package_delivered"]["value"]: "Yes",
+        custom_field_ids["state_delivered"]["value"]: delivery_information[
+            "delivery_state"
+        ],
+        custom_field_ids["city_delivered"]["value"]: delivery_information[
+            "delivery_city"
+        ],
+        custom_field_ids["date_delivered"]["value"]: delivery_information[
+            "delivery_date"
+        ].isoformat(),
+        custom_field_ids["date_delivered_readable"]["value"]: delivery_information[
+            "delivery_date_readable"
+        ],
+        custom_field_ids["location_delivered"]["value"]: delivery_information[
+            "location_delivered"
+        ],
+    }
+
+    response = make_close_request(
+        "put",
+        f"https://api.close.com/api/v1/lead/{lead_id}",
+        json=lead_update_data,
+    )
+    if response.status_code != 200:
+        raise Exception("Close did not accept the lead update.")
+    response_data = response.json()
+    data_updated = verify_delivery_information_updated(response_data, lead_update_data)
+    if not data_updated:
+        raise Exception("Close accepted the lead, but the fields did not update.")

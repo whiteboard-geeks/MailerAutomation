@@ -18,10 +18,12 @@ from close_utils import (
 )
 from celery_worker import celery
 import uuid
+from config import USE_TEMPORAL_FOR_EASYPOST_DELIVERY_STATUS
 from temporal.service import temporal
 from temporal.shared import TASK_QUEUE_NAME
 from temporal.workflows.easypost.webhook_create_tracker_workflow import WebhookCreateTrackerPayload, WebhookCreateTrackerWorkflow
-from utils.easypost import get_easypost_client
+from temporal.workflows.easypost.webhook_delivery_status_workflow import WebhookDeliveryStatusPayload, WebhookDeliveryStatusWorkflow
+from utils.easypost import create_package_delivered_custom_activity_in_close, get_easypost_client
 
 
 # Initialize Blueprint
@@ -35,8 +37,6 @@ CLOSE_API_KEY = os.environ.get("CLOSE_API_KEY")
 CLOSE_ENCODED_KEY = None  # This will be initialized when needed
 
 ENV_TYPE = os.environ.get("ENV_TYPE", "development")
-
-
 
 
 # Initialize EasyPost Client (default with production API key)
@@ -353,131 +353,16 @@ def update_delivery_information_for_lead(lead_id, delivery_information):
     return response_data
 
 
-def check_existing_mailer_delivered_activities(lead_id):
-    """
-    Check if there are existing 'Mailer Delivered' custom activities for a lead.
-
-    Args:
-        lead_id (str): The ID of the lead to check
-
-    Returns:
-        bool: True if existing activities found, False otherwise
-    """
-    try:
-        params = {
-            "lead_id": lead_id,
-            "custom_activity_type_id": "custom.actitype_3KhBfWgjtVfiGYbczbgOWv",  # Mailer Delivered activity type
-        }
-
-        response = make_close_request(
-            "get",
-            "https://api.close.com/api/v1/activity/custom/",
-            params=params,
-        )
-
-        if response.status_code == 200:
-            response_data = response.json()
-            activities = response_data.get("data", [])
-
-            # Return True if any mailer delivered activities found, False otherwise
-            has_existing_delivered_activities = len(activities) > 0
-
-            if has_existing_delivered_activities:
-                logger.info(
-                    f"Found {len(activities)} existing mailer delivered activities for lead {lead_id}"
-                )
-            else:
-                logger.info(
-                    f"No existing mailer delivered activities found for lead {lead_id}"
-                )
-
-            return has_existing_delivered_activities
-        else:
-            logger.error(
-                f"Failed to check existing activities for lead {lead_id}: {response.status_code}, {response.text}"
-            )
-            # Fail-safe: return False to allow activity creation if check fails
-            return False
-
-    except Exception as e:
-        logger.error(
-            f"Error checking existing mailer delivered activities for lead {lead_id}: {str(e)}"
-        )
-        # Fail-safe: return False to allow activity creation if check fails
-        return False
-
-
-def create_package_delivered_custom_activity_in_close(lead_id, delivery_information):
-    """Create a custom activity in Close for delivered package."""
-    # Check if there are already existing mailer delivered activities for this lead
-    if check_existing_mailer_delivered_activities(lead_id):
-        logger.info(
-            f"Mailer delivered custom activity already exists for lead {lead_id}, skipping creation"
-        )
-        return {"status": "skipped", "reason": "duplicate_activity_exists"}
-
-    custom_activity_field_ids = {
-        "date_and_location_of_mailer_delivered": {
-            "type": "text",
-            "value": "custom.cf_f652JX1NlPz5P5h7Idqs0uOosb9nomncygP3pJ8GcOS",
-        },
-        "state_delivered": {
-            "type": "text",
-            "value": "custom.cf_7wWKPs9vnRZTpgJRdJ79S3NYeT9kq8dCSgRIrVvYe8S",
-        },
-        "city_delivered": {
-            "type": "text",
-            "value": "custom.cf_OJXwT7BAZi0qCfdFvzK0hTcPoUUGTxP6bWGIUpEGqOE",
-        },
-        "date_delivered": {
-            "type": "date",
-            "value": "custom.cf_wS7icPETKthDz764rkbuC1kQYzP0l88CzlMxoJAlOkO",
-        },
-        "date_delivered_readable": {
-            "type": "text",
-            "value": "custom.cf_gUsxB1J9TG1pWG8iC3XYZR9rRXBcHQ86aEJUIFme6LA",
-        },
-        "location_delivered": {
-            "type": "text",
-            "value": "custom.cf_Wzp0dZ2D8PQTCKUiKMGsYUVDnURtisF6g9Lwz72WM8m",
-        },
-    }
-    lead_activity_data = {
-        "lead_id": lead_id,
-        "custom_activity_type_id": "custom.actitype_3KhBfWgjtVfiGYbczbgOWv",  # Activity Type: Mailer Delivered
-        custom_activity_field_ids["date_and_location_of_mailer_delivered"][
-            "value"
-        ]: delivery_information["date_and_location_of_mailer_delivered"],
-        custom_activity_field_ids["state_delivered"]["value"]: delivery_information[
-            "delivery_state"
-        ],
-        custom_activity_field_ids["city_delivered"]["value"]: delivery_information[
-            "delivery_city"
-        ],
-        custom_activity_field_ids["date_delivered"]["value"]: delivery_information[
-            "delivery_date"
-        ].isoformat(),
-        custom_activity_field_ids["date_delivered_readable"][
-            "value"
-        ]: delivery_information["delivery_date_readable"],
-        custom_activity_field_ids["location_delivered"]["value"]: delivery_information[
-            "location_delivered"
-        ],
-    }
-
-    response = make_close_request(
-        "post",
-        "https://api.close.com/api/v1/activity/custom/",
-        json=lead_activity_data,
-    )
-    response_data = response.json()
-    logger.info(f"Delivery activity updated for lead {lead_id}: {response.json()}")
-    return response_data
-
-
 @easypost_bp.route("/delivery_status", methods=["POST"])
 def handle_package_delivery_update():
     """Handle package delivery status updates from EasyPost webhook - Async Processing."""
+    if USE_TEMPORAL_FOR_EASYPOST_DELIVERY_STATUS:
+        return handle_package_delivery_update_temporal()
+    else:
+        return handle_package_delivery_update_celery()
+
+
+def handle_package_delivery_update_celery():
     try:
         # Quick validation of request data
         if not request.json or "result" not in request.json:
@@ -576,6 +461,63 @@ def handle_package_delivery_update():
         error_msg = f"Error queuing EasyPost delivery status task: {str(e)}"
         logger.error(error_msg)
         return jsonify({"status": "error", "message": error_msg}), 500
+
+
+def handle_package_delivery_update_temporal():
+    json_payload = request.get_json(silent=True)
+    if json_payload is None:
+        response_data = {
+            "status": "error",
+            "message": "Invalid request format",
+        }
+        return jsonify(response_data), 400
+    
+    g_run_id = getattr(g, "request_id", str(uuid.uuid4()))
+    logger.info(
+        "create_tracker_temporal_enqueue",
+        run_id=g_run_id,
+    )
+
+    try:
+        workflow_input = WebhookDeliveryStatusPayload(json_payload=json_payload)
+    except Exception as exc:
+        response_data = {
+            "status": "error",
+            "message": f"Invalid payload: {exc}",
+        }
+        return jsonify(response_data), 400
+
+    try:
+        temporal.ensure_started()
+        start_coro = temporal.client.start_workflow(
+            WebhookDeliveryStatusWorkflow.run,
+            workflow_input,
+            id=g_run_id,
+            task_queue=TASK_QUEUE_NAME,
+        )
+        temporal.run(start_coro)
+    except Exception as exc:
+        logger.exception(
+            "delivery_status_temporal_enqueue_failed",
+            run_id=g_run_id,
+            error=str(exc),
+        )
+        return (
+            jsonify(
+                {
+                    "status": "error",
+                    "message": "Error enqueuing Temporal delivery status workflow",
+                }
+            ),
+            500,
+        )
+
+    response_data = {
+        "status": "accepted",
+        "message": "Delivery status processing workflow queued for background processing",
+        "temporal_workflow_id": g_run_id,
+    }
+    return jsonify(response_data), 202
 
 
 @celery.task(

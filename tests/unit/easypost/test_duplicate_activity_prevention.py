@@ -7,8 +7,9 @@ from datetime import datetime
 import requests
 from blueprints.easypost import (
     create_package_delivered_custom_activity_in_close,
-    check_existing_mailer_delivered_activities,
 )
+
+from utils.easypost import _check_existing_mailer_delivered_activities
 
 
 class TestDuplicateActivityPrevention:
@@ -26,7 +27,7 @@ class TestDuplicateActivityPrevention:
             "location_delivered": "Austin, TX",
         }
 
-    @patch("blueprints.easypost.make_close_request")
+    @patch("utils.easypost.make_close_request")
     def test_check_existing_activities_api_call(self, mock_make_request):
         """Test that check_existing_mailer_delivered_activities makes correct API call."""
         # Setup mocks
@@ -36,7 +37,7 @@ class TestDuplicateActivityPrevention:
         mock_make_request.return_value = mock_response
 
         # Call the function
-        result = check_existing_mailer_delivered_activities(self.test_lead_id)
+        result = _check_existing_mailer_delivered_activities(self.test_lead_id)
 
         # Verify API call was made correctly
         expected_url = "https://api.close.com/api/v1/activity/custom/"
@@ -52,7 +53,7 @@ class TestDuplicateActivityPrevention:
         # Should return False when no activities found
         assert result is False
 
-    @patch("blueprints.easypost.make_close_request")
+    @patch("utils.easypost.make_close_request")
     def test_activity_matching_logic_no_existing_activities(self, mock_make_request):
         """Test the logic when no existing activities are found."""
         # Setup mocks
@@ -62,12 +63,12 @@ class TestDuplicateActivityPrevention:
         mock_make_request.return_value = mock_response
 
         # Call the function
-        result = check_existing_mailer_delivered_activities(self.test_lead_id)
+        result = _check_existing_mailer_delivered_activities(self.test_lead_id)
 
         # Should return False when no activities found
         assert result is False
 
-    @patch("blueprints.easypost.make_close_request")
+    @patch("utils.easypost.make_close_request")
     def test_activity_matching_logic_existing_activities_found(self, mock_make_request):
         """Test the logic when existing activities are found."""
         # Setup mocks
@@ -85,13 +86,13 @@ class TestDuplicateActivityPrevention:
         mock_make_request.return_value = mock_response
 
         # Call the function
-        result = check_existing_mailer_delivered_activities(self.test_lead_id)
+        result = _check_existing_mailer_delivered_activities(self.test_lead_id)
 
         # Should return True when activities found
         assert result is True
 
-    @patch("blueprints.easypost.check_existing_mailer_delivered_activities")
-    @patch("blueprints.easypost.make_close_request")
+    @patch("utils.easypost._check_existing_mailer_delivered_activities")
+    @patch("utils.easypost.make_close_request")
     def test_create_activity_when_none_exists(
         self, mock_make_request, mock_check_existing
     ):
@@ -119,9 +120,9 @@ class TestDuplicateActivityPrevention:
         # Verify the result
         assert result == {"id": "new_activity_123"}
 
-    @patch("blueprints.easypost.check_existing_mailer_delivered_activities")
-    @patch("blueprints.easypost.make_close_request")
-    @patch("blueprints.easypost.logger")
+    @patch("utils.easypost._check_existing_mailer_delivered_activities")
+    @patch("utils.easypost.make_close_request")
+    @patch("utils.easypost.logger")
     def test_skip_activity_when_duplicate_exists(
         self, mock_logger, mock_make_request, mock_check_existing
     ):
@@ -148,8 +149,8 @@ class TestDuplicateActivityPrevention:
         # Verify the result indicates skipping
         assert result == {"status": "skipped", "reason": "duplicate_activity_exists"}
 
-    @patch("blueprints.easypost.make_close_request")
-    @patch("blueprints.easypost.logger")
+    @patch("utils.easypost.make_close_request")
+    @patch("utils.easypost.logger")
     def test_check_existing_activities_api_failure_fallback(
         self, mock_logger, mock_make_request
     ):
@@ -160,7 +161,7 @@ class TestDuplicateActivityPrevention:
         )
 
         # Call the function
-        result = check_existing_mailer_delivered_activities(self.test_lead_id)
+        result = _check_existing_mailer_delivered_activities(self.test_lead_id)
 
         # Should return False (fail-safe approach) when API call fails
         assert result is False
