@@ -58,12 +58,22 @@ jobs:
           TEST_EMAIL_SENDER: "dummy@example.com"
           TEST_EMAIL_RECIPIENT: "dummy@example.com"
           
-  deploy-to-staging:
+  blueprint-integration-tests:
     needs: blueprint-unit-tests
     runs-on: ubuntu-latest
+    strategy:
+      max-parallel: 1
+      matrix:
+        include:
+          - blueprint: instantly
+          - blueprint: gmail
+          - blueprint: easypost
+            temporal: true
+          - blueprint: easypost
+            temporal: false
     steps:
       - uses: actions/checkout@v3
-      
+
       - name: Install Heroku CLI
         run: |
           curl https://cli-assets.heroku.com/install.sh | sh
@@ -71,42 +81,36 @@ jobs:
           export PATH="/usr/local/bin:$PATH"
           # Verify installation
           heroku --version
-          
+
       - name: Deploy to Heroku Staging
         uses: akhileshns/heroku-deploy@v3.12.14
         with:
           heroku_api_key: ${{ secrets.HEROKU_API_KEY }}
           heroku_app_name: "mailer-automation-staging"
           heroku_email: ${{ vars.HEROKU_EMAIL }}
-          
+
+      - name: Set USE_TEMPORAL_FOR_EASYPOST_DELIVERY_STATUS env var
+        run: |
+          heroku config:set USE_TEMPORAL_FOR_EASYPOST_DELIVERY_STATUS=${{ matrix.temporal && 'true' || 'false' }} --app mailer-automation-staging
+
       - name: Wait for deployment to complete
         run: sleep 30  # Wait for the app to fully deploy
 
       - name: Scale Celery worker dyno
         run: |
           heroku ps:scale worker=1 --app mailer-automation-staging
-          
-  blueprint-integration-tests:
-    needs: deploy-to-staging
-    runs-on: ubuntu-latest
-    strategy:
-      max-parallel: 1  
-      matrix:
-        blueprint: [instantly, easypost, gmail]  # Added gmail to the integration test matrix
-    steps:
-      - uses: actions/checkout@v3
-      
+
       - name: Set up Python
         uses: actions/setup-python@v4
         with:
           python-version: '3.10'
-          
+
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
           pip install pytest
-          
+
       - name: Install Heroku CLI and get Redis URL
         run: |
           curl https://cli-assets.heroku.com/install.sh | sh
@@ -156,14 +160,15 @@ jobs:
           TEST_EMAIL_SENDER: ${{ secrets.TEST_EMAIL_SENDER }}
           TEST_EMAIL_RECIPIENT: ${{ secrets.TEST_EMAIL_RECIPIENT }}
           REDISCLOUD_URL: ${{ env.REDISCLOUD_URL }}
+          USE_TEMPORAL_FOR_EASYPOST_DELIVERY_STATUS: ${{ matrix.temporal && 'true' || 'false' }}
         run: |
           # Set the base URL for tests to point to staging
           export BASE_URL=$STAGING_URL
-          
+
           # Debug: Print environment variables (excluding secrets)
           echo "Environment variables:"
           env | grep -v "KEY" | grep -v "SECRET" | grep -v "TOKEN"
-          
+
           # Run the integration tests for this blueprint (excluding stress tests)
           echo "Running integration tests for ${{ matrix.blueprint }} (excluding stress tests)..."
 
