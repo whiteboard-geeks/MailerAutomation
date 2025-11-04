@@ -65,12 +65,12 @@ jobs:
       max-parallel: 1
       matrix:
         include:
-          - blueprint: instantly
-          - blueprint: gmail
           - blueprint: easypost
             temporal: true
           - blueprint: easypost
             temporal: false
+          - blueprint: instantly
+          - blueprint: gmail
     steps:
       - uses: actions/checkout@v3
 
@@ -108,8 +108,7 @@ jobs:
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install -r requirements.txt
-          pip install pytest
+          pip install -r requirements-dev.txt
 
       - name: Install Heroku CLI and get Redis URL
         run: |
