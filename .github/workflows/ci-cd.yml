@@ -160,13 +160,15 @@ jobs:
           TEST_EMAIL_SENDER: ${{ secrets.TEST_EMAIL_SENDER }}
           TEST_EMAIL_RECIPIENT: ${{ secrets.TEST_EMAIL_RECIPIENT }}
           REDISCLOUD_URL: ${{ env.REDISCLOUD_URL }}
-          USE_TEMPORAL_FOR_EASYPOST_DELIVERY_STATUS: ${{ matrix.temporal && 'true' || 'false' }}
           TEMPORAL_ADDRESS: ${{ secrets.TEMPORAL_ADDRESS_STAGING }}
           TEMPORAL_NAMESPACE: ${{ secrets.TEMPORAL_NAMESPACE_STAGING }}
           TEMPORAL_API_KEY: ${{ secrets.TEMPORAL_API_KEY_STAGING }}
         run: |
           # Set the base URL for tests to point to staging
           export BASE_URL=$STAGING_URL
+
+          # Set the temporal flag for easypost tests
+          export USE_TEMPORAL_FOR_EASYPOST_DELIVERY_STATUS=${{ matrix.temporal && 'true' || 'false' }}
 
           # Debug: Print environment variables (excluding secrets)
           echo "Environment variables:"
