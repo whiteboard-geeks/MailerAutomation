@@ -35,7 +35,7 @@ async def get_temporal_client() -> Client:
         namespace=os.getenv("TEMPORAL_NAMESPACE", "default")
         tls = False
     
-    logger.info("connecting_to_temporal_server",
+    logger.info("temporal.client_provider.get_temporal_client.connecting_to_temporal_server",
                  target_host=target_host, 
                  namespace=namespace)
 

@@ -23,6 +23,12 @@ from tests.utils.easypost_mock import EasyPostMock
 from celery_worker import celery
 
 
+@pytest.mark.skipif(
+    os.environ.get("USE_TEMPORAL_FOR_EASYPOST_DELIVERY_STATUS", "false").lower() == "true",
+    reason="USE_TEMPORAL_FOR_EASYPOST_DELIVERY_STATUS is set to true",
+)
+
+
 class TestAsyncEasyPostDeliveryStatus:
     # Test configuration
     IMMEDIATE_RESPONSE_TIMEOUT = 5  # Seconds - async should respond immediately
