@@ -58,7 +58,6 @@ class TrackingLocation(BaseModel):
 
 class Status(str, Enum):
     SUCCESS = "success"
-    NO_OP_DELIVERY_STATUS_NOT_DELIVERED = "no_op_delivery_status_not_delivered"
     NO_OP_RETURNED_TO_SENDER = "no_op_returned_to_sender"
     NO_OP_DUPLICATE_ACTIVITY = "no_op_duplicate_activity"
 
@@ -75,11 +74,6 @@ class WebhookDeliveryStatusWorkflow:
     @workflow.run
     async def run(self, input: WebhookDeliveryStatusPayload) -> WebhookDeliveryStatusResult:
         input_validated = self._validate_input(input)
-
-        if input_validated.result.status != "delivered":
-            return WebhookDeliveryStatusResult(
-                status=Status.NO_OP_DELIVERY_STATUS_NOT_DELIVERED
-            )
 
         last_tracking_detail = input_validated.result.tracking_details[-1]
 

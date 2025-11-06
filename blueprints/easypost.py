@@ -472,6 +472,25 @@ def handle_package_delivery_update_temporal():
         }
         return jsonify(response_data), 400
     
+    if "result" not in json_payload:
+        response_data = {
+            "status": "error",
+            "message": "Invalid request format",
+        }
+        return jsonify(response_data), 400
+
+    tracking_data = json_payload["result"]
+    easy_post_event_id = json_payload["id"]
+    logger.info(f"EasyPost Event ID: {easy_post_event_id}")
+    if tracking_data["status"] != "delivered":
+        logger.info("Tracking status is not 'delivered'; webhook did not run.")
+        return jsonify(
+            {
+                "status": "success",
+                "message": "Tracking status is not 'delivered' so did not run.",
+            }
+        ), 200
+
     g_run_id = getattr(g, "request_id", str(uuid.uuid4()))
     logger.info(
         "create_tracker_temporal_enqueue",
