@@ -190,27 +190,17 @@ class TestAsyncEasyPostDeliveryStatusTemporal:
         invalid_payload = {"id": "evt_invalid"}
 
         response, _ = self.post_easypost_delivery_status_webhook(invalid_payload)
-        self.assert_response_is_202(response)
-
-        temporal_workflow_id = self.get_temporal_workflow_id_or_fail(response)
-
-        print(f"Temporal workflow ID: {temporal_workflow_id}")
-        await self.assert_temporal_workflow_failed(temporal_workflow_id)
+        self.assert_response_is_400_invalid_request_format(response)
 
     @pytest.mark.asyncio
-    async def test_error_handling_status_non_delivered(self):
+    async def test_status_non_delivered(self):
         non_delivered_payload = self.build_non_delivered_payload()
 
         response, _ = self.post_easypost_delivery_status_webhook(non_delivered_payload)
-        self.assert_response_is_202(response)
-
-        temporal_workflow_id = self.get_temporal_workflow_id_or_fail(response)
-
-        workflow_result = await self.get_temporal_workflow_result(temporal_workflow_id)
-        assert workflow_result.status == Status.NO_OP_DELIVERY_STATUS_NOT_DELIVERED
+        self.assert_is_non_delivered_response(response)
     
     @pytest.mark.asyncio
-    async def test_error_handling_delivered_to_sender(self):
+    async def test_delivered_to_sender(self):
         delivered_to_sender_payload = self.build_delivered_to_sender_payload()
 
         response, _ = self.post_easypost_delivery_status_webhook(delivered_to_sender_payload)
@@ -309,10 +299,31 @@ class TestAsyncEasyPostDeliveryStatusTemporal:
             pytest.fail(
                 f"Response too slow: {response_time:.2f}s (expected <{self.IMMEDIATE_RESPONSE_TIMEOUT}s)"
             )
-    
-    def assert_response_is_202(self, response: requests.Response) -> None:
+
+    @staticmethod
+    def assert_response_is_202(response: requests.Response) -> None:
         if response.status_code != 202:
             pytest.fail(f"Expected 202, got {response.status_code}")
+
+    @staticmethod
+    def assert_response_is_400_invalid_request_format(response: requests.Response) -> None:
+        assert response.status_code == 400
+        assert response.json() == {
+            "status": "error",
+            "message": "Invalid request format",
+        }
+
+    @staticmethod
+    def assert_is_non_delivered_response(response: requests.Response) -> None:
+        assert response.status_code == 200
+
+        response_data = response.json()
+        expected_response = {
+            "status": "success",
+            "message": "Tracking status is not 'delivered' so did not run.",
+        }
+
+        assert response_data == expected_response
 
     def assert_close_num_mailer_delivered_activities(self, lead_id: str, expected_num: int) -> None:
         # Check custom activities after first webhook - should be exactly 1
