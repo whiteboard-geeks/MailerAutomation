@@ -58,9 +58,12 @@ def create_tracker_activity(
         client = get_easypost_client(tracking_number)
         tracker = client.tracker.create(tracking_code=tracking_number, carrier=carrier)
     except Exception as exc:  # pragma: no cover - defensive
-        error_msg = f"Error creating EasyPost tracker: {exc}"
-        send_email(subject="EasyPost Tracker Creation Error", body=error_msg)
-        raise ValueError(error_msg)
+        _send_error_email_create_tracker_failed(workflow_id=activity.info().workflow_id, 
+                                                lead_data=lead_data, 
+                                                tracking_number=tracking_number, 
+                                                carrier=carrier, 
+                                                error=exc)
+        raise ValueError(f"Failed to create tracker for lead {lead_data['id']} with tracking number {tracking_number} and carrier {carrier} : {exc}")
 
     return CreateTrackerActivityResult(tracker_id=tracker.id)
 
@@ -70,7 +73,7 @@ def _send_error_email_missing_data(lead_id: str, workflow_id: str, lead_data: di
         <h2>EasyPost Tracker Missing Data</h2>
         <p><strong>Error:</strong> Lead doesn't have tracking number or carrier</p>
         <p><strong>Lead ID:</strong> {lead_id}</p>
-        <p><strong>Route:</strong> create_tracker (temporal)</p>
+        <p><strong>Route:</strong> /easypost/create_tracker</p>
         <p><strong>Workflow ID:</strong> {workflow_id}</p>
         <p><strong>Time:</strong> {datetime.now().isoformat()}</p>
         
@@ -78,6 +81,25 @@ def _send_error_email_missing_data(lead_id: str, workflow_id: str, lead_data: di
         <pre>{json.dumps(lead_data, indent=2, default=str)}</pre>
         """
     send_email(subject="EasyPost Tracker Missing Data", body=detailed_error_message)
+
+
+def _send_error_email_create_tracker_failed(workflow_id: str, lead_data: dict[str, Any], tracking_number: str, carrier: str, error: Exception) -> None:
+    detailed_error_message = f"""
+        <h2>EasyPost Tracker Creation Failed</h2>
+        <p><strong>Lead ID:</strong> {lead_data['id']}</p>
+        <p><strong>Tracking Number:</strong> {tracking_number}</p>
+        <p><strong>Carrier:</strong> {carrier}</p>
+        <p><strong>Route:</strong> /easypost/create_tracker</p>
+        <p><strong>Workflow ID:</strong> {workflow_id}</p>
+        <p><strong>Time:</strong> {datetime.now().isoformat()}</p>
+        
+        <h3>Lead Data:</h3>
+        <pre>{json.dumps(lead_data, indent=2, default=str)}</pre>
+
+        <h3>Error:</h3>
+        <pre>{str(error)}</pre>
+        """
+    send_email(subject="EasyPost Tracker Creation Failed", body=detailed_error_message)
 
 
 @activity.defn
