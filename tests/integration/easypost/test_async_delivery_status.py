@@ -16,12 +16,6 @@ from temporal.workflows.easypost.webhook_delivery_status_workflow import Status,
 from tests.utils.close_api import CloseAPI
 
 
-@pytest.mark.skipif(
-    os.environ.get("USE_TEMPORAL_FOR_EASYPOST_DELIVERY_STATUS", "false").lower() != "true",
-    reason="USE_TEMPORAL_FOR_EASYPOST_DELIVERY_STATUS is not set to true",
-)
-
-
 class TestAsyncEasyPostDeliveryStatusTemporal:
     # Test configuration
     IMMEDIATE_RESPONSE_TIMEOUT = 5  # Seconds - async should respond immediately

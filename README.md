@@ -124,7 +124,7 @@ Flask:
 
     source env/bin/activate
     set -a; source .env; set +a
-    USE_TEMPORAL_FOR_EASYPOST_DELIVERY_STATUS=true FLASK_APP=app.py FLASK_ENV=development flask run --port=8080
+    FLASK_APP=app.py FLASK_ENV=development flask run --port=8080
 
 ### Project Structure
 
