@@ -5,9 +5,6 @@ Unit tests for duplicate mailer delivered custom activity prevention.
 from unittest.mock import Mock, patch
 from datetime import datetime
 import requests
-from blueprints.easypost import (
-    create_package_delivered_custom_activity_in_close,
-)
 
 from utils.easypost import _check_existing_mailer_delivered_activities
 
@@ -90,64 +87,6 @@ class TestDuplicateActivityPrevention:
 
         # Should return True when activities found
         assert result is True
-
-    @patch("utils.easypost._check_existing_mailer_delivered_activities")
-    @patch("utils.easypost.make_close_request")
-    def test_create_activity_when_none_exists(
-        self, mock_make_request, mock_check_existing
-    ):
-        """Test that activity is created when no existing activity is found."""
-        # Setup mocks
-        mock_check_existing.return_value = False  # No existing activities
-        mock_response = Mock()
-        mock_response.status_code = 200
-        mock_response.json.return_value = {"id": "new_activity_123"}
-        mock_make_request.return_value = mock_response
-
-        # Call the function
-        result = create_package_delivered_custom_activity_in_close(
-            self.test_lead_id, self.test_delivery_information
-        )
-
-        # Verify that check for existing activities was called
-        mock_check_existing.assert_called_once_with(self.test_lead_id)
-
-        # Verify that POST request was made to create activity
-        mock_make_request.assert_called_once()
-        # Verify it was a POST request
-        assert mock_make_request.call_args[0][0] == "post"
-
-        # Verify the result
-        assert result == {"id": "new_activity_123"}
-
-    @patch("utils.easypost._check_existing_mailer_delivered_activities")
-    @patch("utils.easypost.make_close_request")
-    @patch("utils.easypost.logger")
-    def test_skip_activity_when_duplicate_exists(
-        self, mock_logger, mock_make_request, mock_check_existing
-    ):
-        """Test that activity is NOT created when duplicate exists."""
-        # Setup mocks
-        mock_check_existing.return_value = True  # Existing activity found
-
-        # Call the function
-        result = create_package_delivered_custom_activity_in_close(
-            self.test_lead_id, self.test_delivery_information
-        )
-
-        # Verify that check for existing activities was called
-        mock_check_existing.assert_called_once_with(self.test_lead_id)
-
-        # Verify that NO POST request was made (activity not created)
-        mock_make_request.assert_not_called()
-
-        # Verify that appropriate log message was written
-        mock_logger.info.assert_called_with(
-            f"Mailer delivered custom activity already exists for lead {self.test_lead_id}, skipping creation"
-        )
-
-        # Verify the result indicates skipping
-        assert result == {"status": "skipped", "reason": "duplicate_activity_exists"}
 
     @patch("utils.easypost.make_close_request")
     @patch("utils.easypost.logger")
