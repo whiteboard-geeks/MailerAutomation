@@ -1,18 +1,14 @@
-import csv
 import json
 import os
-import io
 import logging
 import traceback
 from datetime import datetime
 from base64 import b64encode
-from io import StringIO
 from time import sleep
 import sys
 import uuid
 import time
 
-import requests
 from flask import Flask, request, jsonify, g
 import pytest
 import structlog
@@ -99,17 +95,6 @@ try:
 except Exception as e:
     logger.exception("temporal_client_start_failed", error=str(e))
 
-
-# Configure Redis and Celery
-REDISCLOUD_URL = os.environ.get("REDISCLOUD_URL")
-flask_app.config["CELERY_BROKER_URL"] = REDISCLOUD_URL
-flask_app.config["CELERY_RESULT_BACKEND"] = REDISCLOUD_URL
-
-# Import celery instance from celery_worker
-from celery_worker import celery
-
-# Configure Celery timezone (but don't use Beat scheduling)
-celery.conf.timezone = "America/Chicago"
 
 # Now import blueprints after Celery is configured
 # noqa: E402 - Disable linter warning about imports not at top of file
@@ -350,32 +335,6 @@ flask_app.register_blueprint(gmail_bp, url_prefix="/gmail")
 flask_app.send_email = send_email
 
 
-# /sync_delivery_status_from_easypost
-@flask_app.route("/sync_delivery_status_from_easypost", methods=["GET"])
-def sync_delivery_status_from_easypost():
-    """
-    Legacy endpoint for manually triggering a sync of delivery status from EasyPost.
-    This endpoint queues a Celery task to run in the background.
-
-    The task runs asynchronously and can be monitored using the
-    /easypost/sync_delivery_status/status/<task_id> endpoint.
-    """
-    # Import the task here to avoid circular imports
-    from blueprints.easypost import sync_delivery_status_task
-
-    # Queue the task to run in the background
-    task = sync_delivery_status_task.delay()
-
-    # Return success response with task ID
-    return jsonify(
-        {
-            "status": "success",
-            "message": "Delivery status sync task has been queued. This endpoint is deprecated, please use /easypost/sync_delivery_status instead.",
-            "task_id": task.id,
-        }
-    ), 200
-
-
 # /delivery_status
 def parse_delivery_information(tracking_data):
     delivery_information = {}
@@ -552,23 +511,6 @@ def handle_package_delivery_update():
     ), 308  # 308 Permanent Redirect
 
 
-# /prepare_contact_list_for_address_verification
-def download_csv_as_list_of_dicts(csv_url):
-    response = requests.get(csv_url)
-    response.raise_for_status()  # Ensure the request was successful
-
-    # Use StringIO to convert the text data into a file-like object so csv can read it
-    csv_file = StringIO(response.text)
-
-    # Read the CSV data
-    reader = csv.DictReader(csv_file)
-
-    # Convert the reader to a list of dictionaries
-    list_of_dicts = list(reader)
-
-    return list_of_dicts
-
-
 def search_close_for_contact_by_email_or_phone(contact):
     contact_email = contact["Email"]
     contact_phone_number = contact[
@@ -685,109 +627,6 @@ def search_close_for_contact_by_email_or_phone(contact):
     is_in_close = True if len(leads_found) > 0 else False
     contact["is_in_close"] = is_in_close
     return contact
-
-
-def check_if_contacts_present_in_close(contacts):
-    checked_contacts = []
-    for contact in contacts:
-        checked_contacts.append(search_close_for_contact_by_email_or_phone(contact))
-    return checked_contacts
-
-
-def check_if_contacts_have_email_and_mobile_phone(contacts):
-    contacts_with_email_and_mobile_phone = [
-        contact for contact in contacts if contact["Email"] and contact["Mobile Phone"]
-    ]
-    return contacts_with_email_and_mobile_phone
-
-
-def filter_contacts_not_in_close(contacts_with_close_info):
-    # Filter out contacts that are marked as present in Close
-    return [
-        contact for contact in contacts_with_close_info if not contact["is_in_close"]
-    ]
-
-
-def format_contacts_for_spreadsheet(contacts):
-    formatted_contacts = []
-    for contact in contacts:
-        formatted_contact = {
-            "First Name": contact.get("First Name", ""),
-            "Last Name": contact.get("Last Name", ""),
-            "Mobile Phone": f"'{contact.get('Mobile Phone', '')}",
-            "Direct Phone": f"'{contact.get('Direct Phone', '')}",
-            "Email Address": contact.get("Email", ""),
-            "Company": contact.get("Company", ""),
-            "Title": contact.get("Title", ""),
-            "Contact LinkedIn URL": contact.get("Person Linkedin Url", ""),
-        }
-        formatted_contacts.append(formatted_contact)
-    return formatted_contacts
-
-
-def create_csv_from_contacts(contacts):
-    csv_output = io.StringIO()
-    writer = csv.DictWriter(csv_output, fieldnames=contacts[0].keys())
-    writer.writeheader()
-    writer.writerows(contacts)
-    csv_output.seek(
-        0
-    )  # Rewind the StringIO object after writing to prepare for reading
-    return csv_output.getvalue()  # Return CSV data as a string
-
-
-def upload_to_bytescale(csv_data):
-    current_time = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-    filename = f"cleaned_{current_time}.csv"
-    url = f"https://api.bytescale.com/v2/accounts/{BYTESCALE_ACCOUNT_ID}/uploads/binary"
-    headers = {
-        "Content-Type": "text/csv",
-        "Authorization": f"Bearer {BYTESCALE_API_KEY}",
-    }
-    params = {"fileName": filename}
-    response = requests.request(
-        "POST", url, headers=headers, data=csv_data, params=params
-    )
-    file_url = response.json()["fileUrl"]
-    return file_url
-
-
-@celery.task(name="app.process_contact_list")
-def process_contact_list(csv_url):
-    # QUESTION FOR RICH: when you are going to loop over a list and perform a few operations do you 1. make a function that
-    # takes a list, or 2. a for loop that goes over the list and performs the operations or 3. a function that takes a list
-    # and then has sub-functions for each step in the loop?
-    contact_list = download_csv_as_list_of_dicts(csv_url)
-    contacts_with_email_and_mobile_phone = (
-        check_if_contacts_have_email_and_mobile_phone(contact_list)
-    )
-    contacts_with_close_info = check_if_contacts_present_in_close(
-        contacts_with_email_and_mobile_phone
-    )
-    contacts_not_in_close = filter_contacts_not_in_close(contacts_with_close_info)
-    formatted_contacts = format_contacts_for_spreadsheet(contacts_not_in_close)
-    csv_data = create_csv_from_contacts(formatted_contacts)
-    bytescale_file_url = upload_to_bytescale(csv_data)
-
-    requests.post(
-        "https://hooks.zapier.com/hooks/catch/628188/3jtben9/",
-        json={
-            "file_url": bytescale_file_url,
-            "time": datetime.now().strftime("%Y-%m-%d_%H-%M-%S"),
-        },
-    )
-    logger.info(f"File URL uploaded to Zapier: {bytescale_file_url}")
-
-
-@flask_app.route("/prepare_contact_list_for_address_verification", methods=["POST"])
-def prepare_contact_list_for_address_verification():
-    api_key = request.headers.get("X-API-KEY")
-    if api_key != WEBHOOK_API_KEY:
-        return jsonify({"status": "error", "message": "Unauthorized access"}), 401
-    data = request.json
-    csv_url = data["webContentLink"]
-    process_contact_list.delay(csv_url)
-    return jsonify({"status": "success", "message": "Processing started"}), 202
 
 
 @flask_app.route("/debug/env")

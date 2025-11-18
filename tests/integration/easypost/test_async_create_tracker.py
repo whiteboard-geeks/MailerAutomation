@@ -9,7 +9,7 @@ import time
 from easypost.models.tracker import Tracker
 import pytest
 import requests
-from blueprints.easypost import get_easypost_client
+from utils.easypost import get_easypost_client
 
 from close_utils import make_close_request
 from tests.utils.close_api import CloseAPI

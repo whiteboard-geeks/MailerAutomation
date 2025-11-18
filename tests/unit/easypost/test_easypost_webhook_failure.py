@@ -37,15 +37,6 @@ def close_webhook_payload():
     }
 
 
-@pytest.fixture(autouse=True)
-def disable_webhook_tracker_redis(monkeypatch):
-    """Prevent tests from attempting to write to an actual Redis instance."""
-    tracker = easypost_module._webhook_tracker
-    monkeypatch.setattr(tracker, "redis", None)
-    if not hasattr(tracker, "webhooks"):
-        tracker.webhooks = {}
-
-
 def test_temporal_feature_flag_dispatches_workflow(
     client, close_webhook_payload, monkeypatch
 ):

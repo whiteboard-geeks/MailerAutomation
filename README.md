@@ -12,14 +12,12 @@ MailerAutomation is a Flask-based application that helps track package shipments
 - **EasyPost Integration**: Creates and monitors package trackers, processes delivery status webhooks  
 - **Gmail Integration**: Processes email notifications and updates
 - **Instantly Integration**: Handles email campaign tracking
-- **Background Processing**: Uses Celery for asynchronous task processing
+- **Background Processing**: Uses Temporal for asynchronous task processing
 - **Robust Logging**: Structured logging with different formats for development and production
 
 ## System Architecture
 
 - **Flask Web Application**: Handles HTTP requests and webhook integrations
-- **Celery Workers** (deprecated): Process background and scheduled tasks
-- **Redis**: Used for Celery task queue and data caching
 - **Temporal**: Process background and scheduled tasks (replaces Celery)
   - `WebhookCreateTrackerWorkflow` orchestrates EasyPost tracker creation and Close lead updates
 - **Blueprints**:
@@ -32,7 +30,6 @@ MailerAutomation is a Flask-based application that helps track package shipments
 ### Prerequisites
 
 - Python 3.8+
-- Redis server
 - Close CRM account
 - EasyPost account
 - Gmail API credentials (for email integration)
@@ -47,7 +44,6 @@ Create a `.env` file with the following variables:
 CLOSE_API_KEY=your_close_api_key
 EASYPOST_PROD_API_KEY=your_easypost_production_key
 EASYPOST_TEST_API_KEY=your_easypost_test_key
-REDISCLOUD_URL=redis://localhost:6379/0
 ENV_TYPE=development  # or production, staging
 INSTANTLY_API_KEY=your_instantly_api_key
 GMAIL_SERVICE_ACCOUNT_INFO=service_account_in_json_string
@@ -80,11 +76,6 @@ flake8 .
 
 - `POST /create_tracker`: Create a new EasyPost tracker
 - `POST /delivery_status`: Handle package delivery status updates from EasyPost
-- `GET /sync_delivery_status`: Sync delivery statuses from EasyPost
-
-#### Contact Management
-
-- `POST /prepare_contact_list_for_address_verification`: Process contact lists for address verification
 
 #### Gmail Related
 
@@ -114,12 +105,6 @@ Redis:
     docker pull redis
     docker run -p 6379:6379 redis
 
-Celery:
-
-    source env/bin/activate
-    set -a; source .env; set +a
-    celery -A celery_worker.celery worker --loglevel=info
-
 Flask:
 
     source env/bin/activate
@@ -130,7 +115,6 @@ Flask:
 
 - `app.py`: Main application file
 - `close_utils.py`: Utility functions for Close CRM
-- `celery_worker.py`: Celery configuration and setup
 - `blueprints/`: Modular components of the application
   - `easypost.py`: EasyPost integration
   - `gmail.py`: Gmail integration
@@ -155,5 +139,3 @@ The application is configured to be deployed on platforms like Heroku:
 
 - Check logs for detailed error information
 - Verify environment variables are correctly set
-- Ensure Redis is running and accessible
-- For webhook issues, check the webhook tracker status at `/webhooks/status`
