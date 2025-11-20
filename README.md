@@ -51,9 +51,13 @@ GMAIL_WEBHOOK_PASSWORD=user_generated_for_sending_emails_with_endpoint
 TEMPORAL_API_KEY=your_temporal_api_key
 TEMPORAL_NAMESPACE=your_temporal_namespace
 TEMPORAL_ADDRESS=your_temporal_address
+TEMPORAL_WORKFLOW_UI_BASE_URL=your_temporal_workflow_ui_base_url
 ```
 
 Note: Only set `TEMPORAL_*` variables when you want Flask to connect to Temporal Cloud. Otherwise leave them unset so that Flask connects to the local Temporal Cluster.
+
+Example for `TEMPORAL_WORKFLOW_UI_BASE_URL`:
+`https://cloud.temporal.io/namespaces/mailerautomation-prod.y3flc/workflows`
 
 ### Installation
 

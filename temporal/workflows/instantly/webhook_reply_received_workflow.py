@@ -1,14 +1,18 @@
 from __future__ import annotations
 
+import json
 import os
-from datetime import timedelta
+from datetime import datetime, timedelta
+from typing import Any
 
 from pydantic import BaseModel, Field
 from temporalio import workflow
 from temporalio.common import RetryPolicy
 from temporalio.exceptions import ApplicationError
 
+from config import MAILER_AUTOMATION_TEMPORAL_PLAYBOOK_URL, TEMPORAL_WORKFLOW_UI_BASE_URL
 from temporal.shared import WAITING_FOR_RESUME_KEY_STR
+from utils.email import send_email
 
 ENV_TYPE = os.getenv("ENV_TYPE", "development")
 
@@ -146,25 +150,79 @@ class WebhookReplyReceivedWorkflow:
                 email_account=payload["email_account"],
             )
         except KeyError as exc:
+            _send_error_email_validation_error(workflow.info().workflow_id, payload, exc)
             raise ApplicationError(
                 f"Missing required field in reply received payload: {exc}"
             ) from exc
         except Exception as exc:  # pragma: no cover - defensive guard
+            _send_error_email_validation_error(workflow.info().workflow_id, payload, exc)
             raise ApplicationError(
                 f"Invalid payload for reply received webhook: {exc}"
             ) from exc
 
         if validated.event_type != "reply_received":
+            _send_error_email_event_type_not_reply_received(
+                workflow.info().workflow_id, validated.event_type
+            )
             raise ApplicationError(
                 f"Expected reply_received event, got {validated.event_type}"
             )
 
         if not (validated.reply_text or validated.reply_html):
+            _send_error_email_no_reply_body(workflow.info().workflow_id, validated)
             raise ApplicationError(
                 "Either reply_text or reply_html must be provided"
             )
 
         return validated
+
+
+def _send_error_email_validation_error(workflow_id: str, json_payload: dict[str, Any], error: Exception) -> None:
+    detailed_error_message = f"""
+        <h2>Reply Received Workflow: Payload Validation Error</h2>
+        <p><strong>Error:</strong> Payload validation failed</p>
+        <p><strong>Route:</strong> /instantly/reply_received</p>
+        <p><strong>Workflow Run:</strong> <a href="{TEMPORAL_WORKFLOW_UI_BASE_URL}/{workflow_id}">{workflow_id}</a></p>
+        <p><strong>Temporal Playbook:</strong> <a href="{MAILER_AUTOMATION_TEMPORAL_PLAYBOOK_URL}">Mailer Automation Temporal Playbook</a></p>
+        <p><strong>Time:</strong> {datetime.now().isoformat()}</p>
+
+        <h3>JSON Payload:</h3>
+        <pre>{json.dumps(json_payload, indent=2, default=str)}</pre>
+
+        <h3>Error:</h3>
+        <pre>{str(error)}</pre>
+        """
+    send_email(subject="Reply Received Workflow: Payload Validation Error",
+               body=detailed_error_message)
+
+
+def _send_error_email_event_type_not_reply_received(workflow_id: str, event_type: str) -> None:
+    detailed_error_message = f"""
+        <h2>Reply Received Workflow: event_type!="reply_received" in payload received from Instantly</h2>
+        <p><strong>Error:</strong> Expected event_type="reply_received", got "{event_type}"</p>
+        <p><strong>Route:</strong> /instantly/reply_received</p>
+        <p><strong>Workflow Run:</strong> <a href="{TEMPORAL_WORKFLOW_UI_BASE_URL}/{workflow_id}">{workflow_id}</a></p>
+        <p><strong>Temporal Playbook:</strong> <a href="{MAILER_AUTOMATION_TEMPORAL_PLAYBOOK_URL}">Mailer Automation Temporal Playbook</a></p>
+        <p><strong>Time:</strong> {datetime.now().isoformat()}</p>
+        """
+    send_email(subject="Reply Received Workflow: Event Type Not Reply Received",
+               body=detailed_error_message)
+
+
+def _send_error_email_no_reply_body(workflow_id: str, payload: WebhookReplyReceivedPayloadValidated) -> None:
+    detailed_error_message = f"""
+        <h2>Reply Received Workflow: No Reply Body in Payload</h2>
+        <p><strong>Error:</strong> No reply body found in payload: reply_text or reply_html must be provided</p>
+        <p><strong>Route:</strong> /instantly/reply_received</p>
+        <p><strong>Workflow Run:</strong> <a href="{TEMPORAL_WORKFLOW_UI_BASE_URL}/{workflow_id}">{workflow_id}</a></p>
+        <p><strong>Temporal Playbook:</strong> <a href="{MAILER_AUTOMATION_TEMPORAL_PLAYBOOK_URL}">Mailer Automation Temporal Playbook</a></p>
+        <p><strong>Time:</strong> {datetime.now().isoformat()}</p>
+
+        <h3>Payload:</h3>
+        <pre>{json.dumps(payload.dict(), indent=2, default=str)}</pre>
+        """
+    send_email(subject="Reply Received Workflow: No Reply Body in Payload",
+               body=detailed_error_message)
 
 
 __all__ = [

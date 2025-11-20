@@ -1,10 +1,14 @@
-from datetime import timedelta
+import json
+from datetime import datetime, timedelta
+import json
+from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field
 from temporalio import workflow
 from temporalio.common import RetryPolicy
 from temporalio.exceptions import ApplicationError
 
+from config import TEMPORAL_WORKFLOW_UI_BASE_URL, MAILER_AUTOMATION_TEMPORAL_PLAYBOOK_URL
 from temporal.shared import WAITING_FOR_RESUME_KEY_STR
 
 with workflow.unsafe.imports_passed_through():
@@ -88,7 +92,8 @@ class WebhookCreateTrackerWorkflow:
         try:
             input_validated = WebhookCreateTrackerPayloadValidated.model_validate(input.json_payload)
         except Exception as exc:
-            
+            _send_error_email_validation_error(workflow_id=workflow.info().workflow_id, 
+                                               json_payload=input.json_payload)
             raise ApplicationError(
                 f"Invalid payload for create tracker workflow: {exc}"
             ) from exc
@@ -128,3 +133,18 @@ class WebhookCreateTrackerWorkflow:
         workflow.upsert_search_attributes({WAITING_FOR_RESUME_KEY_STR: [True]})
         await workflow.wait_condition(lambda: self._data_issue_fixed)
         workflow.upsert_search_attributes({WAITING_FOR_RESUME_KEY_STR: [False]})
+
+
+def _send_error_email_validation_error(workflow_id: str, json_payload: dict[str, Any]) -> None:
+    detailed_error_message = f"""
+        <h2>Validation Error in EasyPost Create Tracker Workflow</h2>
+        <p><strong>Error:</strong> Payload validation failed</p>
+        <p><strong>Route:</strong> /easypost/create_tracker</p>
+        <p><strong>Workflow Run:</strong> <a href="{TEMPORAL_WORKFLOW_UI_BASE_URL}/{workflow_id}">{workflow_id}</a></p>
+        <p><strong>Temporal Playbook:</strong> <a href="{MAILER_AUTOMATION_TEMPORAL_PLAYBOOK_URL}">Mailer Automation Temporal Playbook</a></p>
+        <p><strong>Time:</strong> {datetime.now().isoformat()}</p>
+        
+        <h3>JSON Payload:</h3>
+        <pre>{json.dumps(json_payload, indent=2, default=str)}</pre>
+        """
+    send_email(subject="Validation Error in EasyPost Create Tracker Workflow", body=detailed_error_message)

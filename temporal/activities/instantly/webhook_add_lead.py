@@ -1,7 +1,11 @@
+from __future__ import annotations
+from datetime import datetime
+
 from temporalio import activity
 
 from pydantic import BaseModel, Field
 from close_utils import get_lead_by_id
+from config import CLOSE_CRM_UI_LEAD_BASE_URL, MAILER_AUTOMATION_TEMPORAL_PLAYBOOK_URL, TEMPORAL_WORKFLOW_UI_BASE_URL
 from utils.email import send_email
 from utils.instantly import add_to_instantly_campaign, campaign_exists, split_name
 
@@ -10,16 +14,8 @@ from utils.instantly import add_to_instantly_campaign, campaign_exists, split_na
 BARBARA_USER_ID = "user_8HHUh3SH67YzD8IMakjKoJ9SWputzlUdaihCG95g7as"
 
 
-class AddLeadToInstantlyCampaignArgs(BaseModel):
-    lead_id: str
-    campaign_name: str
-    task_text: str
-
-
-class AddLeadPayloadData(BaseModel):
-    id: str = Field(..., description="ID of the lead")
-    text: str = Field(..., description="Task name")
-    lead_id: str = Field(..., description="ID of the lead")
+class WebhookAddLeadPayloadValidated(BaseModel):
+    event: WebhookAddLeadPayloadEvent = Field(..., description="Event data")
 
 
 class WebhookAddLeadPayloadEvent(BaseModel):
@@ -28,8 +24,16 @@ class WebhookAddLeadPayloadEvent(BaseModel):
     data: AddLeadPayloadData = Field(..., description="Data of the object")
 
 
-class WebhookAddLeadPayloadValidated(BaseModel):
-    event: WebhookAddLeadPayloadEvent = Field(..., description="Event data")
+class AddLeadPayloadData(BaseModel):
+    id: str = Field(..., description="ID of the lead")
+    text: str = Field(..., description="Task name")
+    lead_id: str = Field(..., description="ID of the lead")
+
+
+class AddLeadToInstantlyCampaignArgs(BaseModel):
+    lead_id: str
+    campaign_name: str
+    task_text: str
 
 
 class LeadDetails(BaseModel):
@@ -59,11 +63,13 @@ def add_lead_to_instantly_campaign(args: AddLeadToInstantlyCampaignArgs):
     try:
         lead_details = _get_lead_details_from_close(lead_id=args.lead_id)
     except EmailNotFoundError:
-        _send_error_email_lead_email_not_found(lead_id=args.lead_id)
+        _send_error_email_lead_email_not_found(workflow_id=activity.info().workflow_id,
+                                               lead_id=args.lead_id)
         raise ValueError(f"No email found for lead ID: {args.lead_id}")
 
     if not lead_details:
-        _send_error_email_lead_not_found(lead_id=args.lead_id)
+        _send_error_email_no_lead_details_found(workflow_id=activity.info().workflow_id,
+                                                lead_id=args.lead_id)
         raise ValueError(f"Could not retrieve lead details for lead ID: {args.lead_id}")
 
     instantly_result = add_to_instantly_campaign(
@@ -76,43 +82,72 @@ def add_lead_to_instantly_campaign(args: AddLeadToInstantlyCampaignArgs):
     )
 
     if instantly_result.get("status") == "error":
-        _send_error_email_instantly_api_error(instantly_result_message=instantly_result.get("message"))
+        error_message = instantly_result.get("message") or ""
+        _send_error_email_instantly_api_error(workflow_id=activity.info().workflow_id,
+                                              lead_id=args.lead_id,
+                                              campaign_name=args.campaign_name,
+                                              error_message=error_message)
         raise ValueError(f"Failed to add lead to Instantly: {instantly_result.get('message')}")
 
 
 def _send_error_email_campaign_not_found(campaign_name: str, lead_id: str, task_text: str, workflow_id: str):
-    email_subject = f"Instantly Campaign Not Found: {campaign_name}"
-    close_lead_url = f"https://app.close.com/lead/{lead_id}/"
-    error_msg = f"Campaign '{campaign_name}' does not exist in Instantly"
-    email_body = f"""
-Error: Campaign not found in Instantly (Async Processing)
-
-Lead ID: {lead_id}
-Lead URL: {close_lead_url}
-Task Text: {task_text}
-Campaign Name (extracted): {campaign_name}
-Workflow ID: {workflow_id}
-
-The campaign name could not be found in Instantly. Please verify the campaign exists or check the task text format.
-
-Error details: {error_msg}
-            """
-    send_email(subject=email_subject, body=email_body)
+    detailed_error_message = f"""
+        <h2>Add Lead Workflow: Campaign Not Found in Instantly</h2>
+        <p><strong>Error:</strong> Campaign '{campaign_name}' does not exist in Instantly</p>
+        <p><strong>Lead ID:</strong> <a href="{CLOSE_CRM_UI_LEAD_BASE_URL}/{lead_id}/">{lead_id}</a></p>
+        <p><strong>Route:</strong> /instantly/add_lead</p>
+        <p><strong>Workflow Run:</strong> <a href="{TEMPORAL_WORKFLOW_UI_BASE_URL}/{workflow_id}">{workflow_id}</a></p>
+        <p><strong>Temporal Playbook:</strong> <a href="{MAILER_AUTOMATION_TEMPORAL_PLAYBOOK_URL}">Mailer Automation Temporal Playbook</a></p>
+        <p><strong>Time:</strong> {datetime.now().isoformat()}</p>
+        
+        <h3>Task Text (contains campaign name):</h3>
+        <pre>{task_text}</pre>
+        """
+    send_email(subject="Add Lead Workflow: Campaign Not Found in Instantly",
+               body=detailed_error_message)
 
 
-def _send_error_email_lead_not_found(lead_id: str):
-    error_msg = f"Could not retrieve lead details for lead ID: {lead_id}"
-    send_email(subject="Close Lead Details Error (Async)", body=error_msg)
+def _send_error_email_lead_email_not_found(workflow_id: str, lead_id: str):
+    detailed_error_message = f"""
+        <h2>Add Lead Workflow: No Email Found for Lead in Close</h2>
+        <p><strong>Error:</strong> No email found for lead ID: <a href="{CLOSE_CRM_UI_LEAD_BASE_URL}/{lead_id}/">{lead_id}</a></p>
+        <p><strong>Route:</strong> /instantly/add_lead</p>
+        <p><strong>Workflow Run:</strong> <a href="{TEMPORAL_WORKFLOW_UI_BASE_URL}/{workflow_id}">{workflow_id}</a></p>
+        <p><strong>Temporal Playbook:</strong> <a href="{MAILER_AUTOMATION_TEMPORAL_PLAYBOOK_URL}">Mailer Automation Temporal Playbook</a></p>
+        <p><strong>Time:</strong> {datetime.now().isoformat()}</p>
+        """
+    send_email(subject="Add Lead Workflow: No Email Found for Lead in Close",
+               body=detailed_error_message)
 
 
-def _send_error_email_lead_email_not_found(lead_id: str):
-    error_msg = f"No email found for lead ID: {lead_id}"
-    send_email(subject="Close Lead Email Error (Async)", body=error_msg)
+def _send_error_email_no_lead_details_found(workflow_id: str, lead_id: str):
+    detailed_error_message = f"""
+        <h2>Add Lead Workflow: No Lead Details Found for Lead in Close</h2>
+        <p><strong>Error:</strong> No lead details found for lead ID: <a href="{CLOSE_CRM_UI_LEAD_BASE_URL}/{lead_id}/">{lead_id}</a></p>
+        <p><strong>Route:</strong> /instantly/add_lead</p>
+        <p><strong>Workflow Run:</strong> <a href="{TEMPORAL_WORKFLOW_UI_BASE_URL}/{workflow_id}">{workflow_id}</a></p>
+        <p><strong>Temporal Playbook:</strong> <a href="{MAILER_AUTOMATION_TEMPORAL_PLAYBOOK_URL}">Mailer Automation Temporal Playbook</a></p>
+        <p><strong>Time:</strong> {datetime.now().isoformat()}</p>
+        """
+    send_email(subject="Add Lead Workflow: No Lead Details Found for Lead in Close",
+               body=detailed_error_message)
 
 
-def _send_error_email_instantly_api_error(instantly_result_message: str | None):
-    error_msg = (f"Failed to add lead to Instantly: {instantly_result_message}")
-    send_email(subject="Instantly API Error (Async)", body=error_msg)
+def _send_error_email_instantly_api_error(workflow_id: str, lead_id: str, campaign_name: str, error_message: str):
+    detailed_error_message = f"""
+        <h2>Add Lead Workflow: Error Adding Lead to Instantly</h2>
+        <p><strong>Lead ID:</strong> <a href="{CLOSE_CRM_UI_LEAD_BASE_URL}/{lead_id}/">{lead_id}</a></p>
+        <p><strong>Campaign Name:</strong> {campaign_name}</p>
+        <p><strong>Route:</strong> /instantly/add_lead</p>
+        <p><strong>Workflow Run:</strong> <a href="{TEMPORAL_WORKFLOW_UI_BASE_URL}/{workflow_id}">{workflow_id}</a></p>
+        <p><strong>Temporal Playbook:</strong> <a href="{MAILER_AUTOMATION_TEMPORAL_PLAYBOOK_URL}">Mailer Automation Temporal Playbook</a></p>
+        <p><strong>Time:</strong> {datetime.now().isoformat()}</p>
+
+        <h3>Error Message from Instantly API:</h3>
+        <pre>{error_message}</pre>
+        """
+    send_email(subject="Add Lead Workflow: Error Adding Lead to Instantly",
+               body=detailed_error_message)
 
 
 def _get_lead_details_from_close(lead_id: str) -> LeadDetails | None:
