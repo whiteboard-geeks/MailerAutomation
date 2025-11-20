@@ -17,8 +17,6 @@ class CompleteLeadTaskByEmailResult(BaseModel):
     lead_id: str
 
 
-
-
 @activity.defn
 def complete_lead_task_by_email(args: CompleteLeadTaskByEmailArgs) -> CompleteLeadTaskByEmailResult:
     """Mark task as complete in Close CRM.

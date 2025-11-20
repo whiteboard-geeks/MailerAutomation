@@ -5,7 +5,7 @@ from temporalio import activity
 
 from pydantic import BaseModel, Field
 from close_utils import get_lead_by_id
-from config import CLOSE_CRM_UI_LEAD_BASE_URL, MAILER_AUTOMATION_TEMPORAL_PLAYBOOK_URL, TEMPORAL_WORKFLOW_UI_BASE_URL
+from config import CLOSE_CRM_UI_LEAD_BASE_URL, MAILER_AUTOMATION_TEMPORAL_PLAYBOOK_URL, TEMPORAL_WORKFLOW_UI_BASE_URL, TEST_CAMPAIGN_NAME
 from utils.email import send_email
 from utils.instantly import add_to_instantly_campaign, campaign_exists, split_name
 
@@ -53,10 +53,13 @@ def add_lead_to_instantly_campaign(args: AddLeadToInstantlyCampaignArgs):
     campaign_check = campaign_exists(args.campaign_name)
 
     if not campaign_check.get("exists"):
-        _send_error_email_campaign_not_found(campaign_name=args.campaign_name,
-                                             lead_id=args.lead_id,
-                                             task_text=args.task_text,
-                                             workflow_id=activity.info().workflow_id)
+        if args.campaign_name == TEST_CAMPAIGN_NAME:
+            activity.logger.info(f"Test campaign {TEST_CAMPAIGN_NAME} does not exist in Instantly. This is expected in non-production environments. Skipping sending error email.")
+        else:
+            _send_error_email_campaign_not_found(campaign_name=args.campaign_name,
+                                                 lead_id=args.lead_id,
+                                                 task_text=args.task_text,
+                                                 workflow_id=activity.info().workflow_id)
         raise ValueError(f"Campaign '{args.campaign_name}' does not exist in Instantly")
 
     campaign_id = campaign_check.get("campaign_id")
