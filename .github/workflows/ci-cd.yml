@@ -154,6 +154,7 @@ jobs:
           TEMPORAL_ADDRESS: ${{ secrets.TEMPORAL_ADDRESS_STAGING }}
           TEMPORAL_NAMESPACE: ${{ secrets.TEMPORAL_NAMESPACE_STAGING }}
           TEMPORAL_API_KEY: ${{ secrets.TEMPORAL_API_KEY_STAGING }}
+          TEMPORAL_WORKFLOW_UI_BASE_URL: "dummy"
         run: |
           # Set the base URL for tests to point to staging
           export BASE_URL=$STAGING_URL
