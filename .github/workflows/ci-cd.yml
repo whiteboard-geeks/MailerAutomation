@@ -56,6 +56,7 @@ jobs:
           EASYPOST_PROD_API_KEY: "dummy"
           TEST_EMAIL_SENDER: "dummy@example.com"
           TEST_EMAIL_RECIPIENT: "dummy@example.com"
+          TEMPORAL_WORKFLOW_UI_BASE_URL: "dummy"
           
   deploy-to-staging:
     needs: blueprint-unit-tests
@@ -153,6 +154,7 @@ jobs:
           TEMPORAL_ADDRESS: ${{ secrets.TEMPORAL_ADDRESS_STAGING }}
           TEMPORAL_NAMESPACE: ${{ secrets.TEMPORAL_NAMESPACE_STAGING }}
           TEMPORAL_API_KEY: ${{ secrets.TEMPORAL_API_KEY_STAGING }}
+          TEMPORAL_WORKFLOW_UI_BASE_URL: "dummy"
         run: |
           # Set the base URL for tests to point to staging
           export BASE_URL=$STAGING_URL

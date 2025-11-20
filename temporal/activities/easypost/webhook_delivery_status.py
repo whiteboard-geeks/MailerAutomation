@@ -2,12 +2,14 @@ from __future__ import annotations
 
 from datetime import datetime
 from enum import Enum
+import json
 from typing import Any
 
 from pydantic import BaseModel, Field
 from temporalio import activity
 
 from close_utils import get_lead_by_id, load_query, search_close_leads, update_delivery_information_for_lead
+from config import CLOSE_CRM_UI_LEAD_BASE_URL, MAILER_AUTOMATION_TEMPORAL_PLAYBOOK_URL, TEMPORAL_WORKFLOW_UI_BASE_URL
 from utils.easypost import create_package_delivered_custom_activity_in_close
 from utils.email import send_email
 
@@ -69,9 +71,14 @@ def update_delivery_info_for_lead_activity(input: UpdateDeliveryInfoInput) -> Up
     try:
         close_leads : list[dict] = search_close_leads(close_query_to_find_leads_with_tracking_number)
     except Exception as e:
+        _send_error_email_search_close_leads_failed(workflow_id=activity.info().workflow_id,
+                                                    tracking_code=input.tracking_code,
+                                                    error=e)
         raise ValueError(f"Failed to search Close leads: {e}") from e
 
     if len(close_leads) == 0:
+        _send_error_email_no_leads_found(workflow_id=activity.info().workflow_id,
+                                         tracking_code=input.tracking_code)
         raise ValueError(f"No leads found with tracking number {input.tracking_code}")
 
     if len(close_leads) > 1:
@@ -85,8 +92,13 @@ def update_delivery_info_for_lead_activity(input: UpdateDeliveryInfoInput) -> Up
         if len(valid_leads) == 1:
             close_leads = valid_leads
         elif len(valid_leads) > 1:
+            _send_error_email_multiple_leads_found(workflow_id=activity.info().workflow_id,
+                                                   tracking_code=input.tracking_code,
+                                                   leads=valid_leads)
             raise ValueError(f"Multiple valid leads found with tracking number {input.tracking_code}: {valid_leads}")
         else:
+            _send_error_email_no_valid_leads_found(workflow_id=activity.info().workflow_id,
+                                                   tracking_code=input.tracking_code)
             raise ValueError(f"No valid leads found with tracking number {input.tracking_code}")
     else:
         valid_leads : list[dict] = []
@@ -95,9 +107,14 @@ def update_delivery_info_for_lead_activity(input: UpdateDeliveryInfoInput) -> Up
         if valid_lead:
             valid_leads.append(valid_lead)
         else:
+            _send_error_email_lead_not_found(workflow_id=activity.info().workflow_id,
+                                             tracking_code=input.tracking_code,
+                                             lead_id=lead_id)
             raise ValueError(f"Lead {lead_id} is not a valid lead")
     
     if not valid_leads:
+        _send_error_email_no_valid_leads_found(workflow_id=activity.info().workflow_id,
+                                               tracking_code=input.tracking_code)
         raise ValueError(f"No valid leads found with tracking number {input.tracking_code}")
     
     lead_id : str = valid_leads[0]["id"]
@@ -107,10 +124,112 @@ def update_delivery_info_for_lead_activity(input: UpdateDeliveryInfoInput) -> Up
     try:
         update_delivery_information_for_lead(lead_id, delivery_information)
     except Exception as e:
-        _send_error_email_lead_update_failed(lead_id, e)
+        _send_error_email_lead_update_failed(workflow_id=activity.info().workflow_id,
+                                             lead_id=lead_id,
+                                             tracking_code=input.tracking_code,
+                                             delivery_information=delivery_information,
+                                             error=e)
         raise ValueError(f"Failed to update lead {lead_id}: {e}") from e
     
     return UpdateDeliveryInfoResult(lead_id=lead_id)
+
+
+def _send_error_email_search_close_leads_failed(workflow_id: str, tracking_code: str, error: Exception) -> None:
+    detailed_error_message = f"""
+        <h2>Update Delivery Status: Search for Close Leads Failed</h2>
+        <p><strong>Error:</strong> Failed to search for leads on Close with tracking number {tracking_code}</p>
+        <p><strong>Route:</strong> /easypost/delivery_status</p>
+        <p><strong>Workflow ID:</strong> <a href="{TEMPORAL_WORKFLOW_UI_BASE_URL}/{workflow_id}">{workflow_id}</a></p>
+        <p><strong>Temporal Playbook:</strong> <a href="{MAILER_AUTOMATION_TEMPORAL_PLAYBOOK_URL}">Mailer Automation Temporal Playbook</a></p>
+        <p><strong>Time:</strong> {datetime.now().isoformat()}</p>
+        
+        <h3>Error:</h3>
+        <pre>{str(error)}</pre>
+        """
+    send_email(subject="Update Delivery Status: Search for Close Leads Failed",
+               body=detailed_error_message)
+
+
+def _send_error_email_no_leads_found(workflow_id: str, tracking_code: str) -> None:
+    detailed_error_message = f"""
+        <h2>Update Delivery Status: No Leads Found</h2>
+        <p><strong>Error:</strong> No leads found on Close with tracking number {tracking_code}</p>
+        <p><strong>Route:</strong> /easypost/delivery_status</p>
+        <p><strong>Workflow ID:</strong> <a href="{TEMPORAL_WORKFLOW_UI_BASE_URL}/{workflow_id}">{workflow_id}</a></p>
+        <p><strong>Temporal Playbook:</strong> <a href="{MAILER_AUTOMATION_TEMPORAL_PLAYBOOK_URL}">Mailer Automation Temporal Playbook</a></p>
+        <p><strong>Time:</strong> {datetime.now().isoformat()}</p>
+        """
+    send_email(subject="Update Delivery Status: No Leads Found",
+               body=detailed_error_message)
+
+
+def _send_error_email_multiple_leads_found(workflow_id: str, tracking_code: str, leads: list[dict]) -> None:
+    detailed_error_message = f"""
+        <h2>Update Delivery Status: Multiple Leads Found</h2>
+        <p><strong>Error:</strong> Multiple valid leads found with tracking number {tracking_code}</p>
+        <p><strong>Route:</strong> /easypost/delivery_status</p>
+        <p><strong>Workflow ID:</strong> <a href="{TEMPORAL_WORKFLOW_UI_BASE_URL}/{workflow_id}">{workflow_id}</a></p>
+        <p><strong>Temporal Playbook:</strong> <a href="{MAILER_AUTOMATION_TEMPORAL_PLAYBOOK_URL}">Mailer Automation Temporal Playbook</a></p>
+        <p><strong>Time:</strong> {datetime.now().isoformat()}</p>
+        
+        <h3>Leads:</h3>
+        <pre>{json.dumps(leads, indent=2, default=str)}</pre>
+        """
+    send_email(subject="Update Delivery Status: Multiple Leads Found",
+               body=detailed_error_message)
+
+
+def _send_error_email_no_valid_leads_found(workflow_id: str, tracking_code: str) -> None:
+    detailed_error_message = f"""
+        <h2>Update Delivery Status: No Valid Leads Found</h2>
+        <p><strong>Error:</strong> No valid leads found with tracking number {tracking_code}</p>
+        <p><strong>Route:</strong> /easypost/delivery_status</p>
+        <p><strong>Workflow ID:</strong> <a href="{TEMPORAL_WORKFLOW_UI_BASE_URL}/{workflow_id}">{workflow_id}</a></p>
+        <p><strong>Temporal Playbook:</strong> <a href="{MAILER_AUTOMATION_TEMPORAL_PLAYBOOK_URL}">Mailer Automation Temporal Playbook</a></p>
+        <p><strong>Time:</strong> {datetime.now().isoformat()}</p>
+        """
+    send_email(subject="Update Delivery Status: No Valid Leads Found",
+               body=detailed_error_message)
+
+
+def _send_error_email_lead_not_found(workflow_id: str, tracking_code: str, lead_id: str) -> None:
+    detailed_error_message = f"""
+        <h2>Update Delivery Status: Lead Not Found</h2>
+        <p><strong>Error:</strong> Lead {lead_id} is not a valid lead</p>
+        <p><strong>Tracking Code:</strong> {tracking_code}</p>
+        <p><strong>Route:</strong> /easypost/delivery_status</p>
+        <p><strong>Workflow ID:</strong> <a href="{TEMPORAL_WORKFLOW_UI_BASE_URL}/{workflow_id}">{workflow_id}</a></p>
+        <p><strong>Temporal Playbook:</strong> <a href="{MAILER_AUTOMATION_TEMPORAL_PLAYBOOK_URL}">Mailer Automation Temporal Playbook</a></p>
+        <p><strong>Time:</strong> {datetime.now().isoformat()}</p>
+        """
+    send_email(subject="Update Delivery Status: Lead Not Found",
+               body=detailed_error_message)
+
+
+def _send_error_email_lead_update_failed(
+    workflow_id: str,
+    lead_id: str,
+    tracking_code: str,
+    delivery_information: dict[str, Any],
+    error: Exception
+) -> None:
+    detailed_error_message = f"""
+        <h2>Update Delivery Status: Lead Update Failed</h2>
+        <p><strong>Error:</strong> Failed to update lead <a href="{CLOSE_CRM_UI_LEAD_BASE_URL}/{lead_id}">{lead_id}</a></p>
+        <p><strong>Tracking Code:</strong> {tracking_code}</p>
+        <p><strong>Route:</strong> /easypost/delivery_status</p>
+        <p><strong>Workflow ID:</strong> <a href="{TEMPORAL_WORKFLOW_UI_BASE_URL}/{workflow_id}">{workflow_id}</a></p>
+        <p><strong>Temporal Playbook:</strong> <a href="{MAILER_AUTOMATION_TEMPORAL_PLAYBOOK_URL}">Mailer Automation Temporal Playbook</a></p>
+        <p><strong>Time:</strong> {datetime.now().isoformat()}</p>
+        
+        <h3>Delivery Information that Failed to Update on Close:</h3>
+        <pre>{json.dumps(delivery_information, indent=2, default=str)}</pre>
+
+        <h3>Error:</h3>
+        <pre>{str(error)}</pre>
+        """
+    send_email(subject="Update Delivery Status: Lead Update Failed",
+               body=detailed_error_message)
 
 
 @activity.defn
@@ -120,7 +239,10 @@ def create_package_delivered_custom_activity_in_close_activity(input: CreatePack
     try:
         resp = create_package_delivered_custom_activity_in_close(input.lead_id, delivery_information)
     except Exception as e:
-        _send_error_email_creation_of_custom_activity_failed(input.lead_id, e)
+        _send_error_email_creation_of_custom_activity_failed(workflow_id=activity.info().workflow_id,
+                                                             lead_id= input.lead_id, 
+                                                             delivery_information=delivery_information,
+                                                             error=e)
         raise ValueError(f"Failed to create custom activity for lead {input.lead_id}: {e}") from e
     
     if resp.get("status") == "skipped" and resp.get("reason") == "duplicate_activity_exists":
@@ -151,12 +273,25 @@ def _parse_delivery_information(tracking_detail: TrackingDetail) -> dict[str, An
     return delivery_information
 
 
-def _send_error_email_lead_update_failed(lead_id: str, error: Exception) -> None:
-    error_msg = f"Failed to update lead {lead_id}: {error}"
-    send_email(subject="Delivery information update failed",
-               body=error_msg)
+def _send_error_email_creation_of_custom_activity_failed(
+    workflow_id: str,
+    lead_id: str,
+    delivery_information: dict[str, Any],
+    error: Exception
+) -> None:
+    detailed_error_message = f"""
+        <h2>Update Delivery Status: Creation of Custom Activity on Close Failed</h2>
+        <p><strong>Error:</strong> Failed to create custom activity for lead <a href="{CLOSE_CRM_UI_LEAD_BASE_URL}/{lead_id}">{lead_id}</a></p>
+        <p><strong>Route:</strong> /easypost/delivery_status</p>
+        <p><strong>Workflow ID:</strong> <a href="{TEMPORAL_WORKFLOW_UI_BASE_URL}/{workflow_id}">{workflow_id}</a></p>
+        <p><strong>Temporal Playbook:</strong> <a href="{MAILER_AUTOMATION_TEMPORAL_PLAYBOOK_URL}">Mailer Automation Temporal Playbook</a></p>
+        <p><strong>Time:</strong> {datetime.now().isoformat()}</p>
+        
+        <h3>Delivery Information that Failed to Create Custom Activity on Close:</h3>
+        <pre>{json.dumps(delivery_information, indent=2, default=str)}</pre>
 
-def _send_error_email_creation_of_custom_activity_failed(lead_id: str, error: Exception) -> None:
-    error_msg = f"Failed to create custom activity for lead {lead_id}: {error}"
-    send_email(subject="Creation of custom activity failed",
-               body=error_msg)
+        <h3>Error:</h3>
+        <pre>{str(error)}</pre>
+        """
+    send_email(subject="Update Delivery Status: Creation of Custom Activity Failed",
+               body=detailed_error_message)

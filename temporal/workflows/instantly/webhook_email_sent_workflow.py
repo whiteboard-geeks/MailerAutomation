@@ -1,11 +1,15 @@
 from datetime import timedelta
+import json
+from typing import Any
 
 from pydantic import BaseModel, Field
 from temporalio import workflow
 from temporalio.common import RetryPolicy
 from temporalio.exceptions import ApplicationError
 
+from config import MAILER_AUTOMATION_TEMPORAL_PLAYBOOK_URL, TEMPORAL_WORKFLOW_UI_BASE_URL
 from temporal.shared import WAITING_FOR_RESUME_KEY_STR
+from utils.email import send_email
 
 with workflow.unsafe.imports_passed_through():
     from temporal.activities.instantly.webhook_email_sent import (
@@ -97,10 +101,42 @@ class WebhookEmailSentWorkflow:
             )
 
         except Exception as e:
+            _send_error_email_validation_error(workflow_id=workflow.info().workflow_id, 
+                                               json_payload=input.json_payload)
             raise ApplicationError(f"Invalid payload for email sent webhook: {e}") from e
 
         if input_validated.event_type != "email_sent":
+            _send_error_email_event_type_not_email_sent(workflow_id=workflow.info().workflow_id,
+                                                       event_type=input_validated.event_type)
             raise ApplicationError(f"Expected email_sent event, got {input_validated.event_type}")
 
         return input_validated
 
+
+def _send_error_email_validation_error(workflow_id: str, json_payload: dict[str, Any]) -> None:
+    detailed_error_message = f"""
+        <h2>Email Sent Workflow: Payload Validation Error</h2>
+        <p><strong>Error:</strong> Payload validation failed</p>
+        <p><strong>Route:</strong> /instantly/email_sent</p>
+        <p><strong>Workflow Run:</strong> <a href="{TEMPORAL_WORKFLOW_UI_BASE_URL}/{workflow_id}">{workflow_id}</a></p>
+        <p><strong>Temporal Playbook:</strong> <a href="{MAILER_AUTOMATION_TEMPORAL_PLAYBOOK_URL}">Mailer Automation Temporal Playbook</a></p>
+        <p><strong>Time:</strong> {workflow.now().isoformat()}</p>
+        
+        <h3>JSON Payload:</h3>
+        <pre>{json.dumps(json_payload, indent=2, default=str)}</pre>
+        """
+    send_email(subject="Email Sent Workflow: Payload Validation Error",
+               body=detailed_error_message)
+
+
+def _send_error_email_event_type_not_email_sent(workflow_id: str, event_type: str) -> None:
+    detailed_error_message = f"""
+        <h2>Email Sent Workflow: event_type!="email_sent" in payload received from Instantly</h2>
+        <p><strong>Error:</strong> Expected event_type="email_sent", got "{event_type}"</p>
+        <p><strong>Route:</strong> /instantly/email_sent</p>
+        <p><strong>Workflow Run:</strong> <a href="{TEMPORAL_WORKFLOW_UI_BASE_URL}/{workflow_id}">{workflow_id}</a></p>
+        <p><strong>Temporal Playbook:</strong> <a href="{MAILER_AUTOMATION_TEMPORAL_PLAYBOOK_URL}">Mailer Automation Temporal Playbook</a></p>
+        <p><strong>Time:</strong> {workflow.now().isoformat()}</p>
+        """
+    send_email(subject="Email Sent Workflow: Event Type Not Email Sent",
+               body=detailed_error_message)
