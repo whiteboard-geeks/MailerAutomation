@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 import os
-from datetime import datetime, timedelta
+from datetime import timedelta
 from typing import Any
 
 from pydantic import BaseModel, Field
@@ -184,7 +184,7 @@ def _send_error_email_validation_error(workflow_id: str, json_payload: dict[str,
         <p><strong>Route:</strong> /instantly/reply_received</p>
         <p><strong>Workflow Run:</strong> <a href="{TEMPORAL_WORKFLOW_UI_BASE_URL}/{workflow_id}">{workflow_id}</a></p>
         <p><strong>Temporal Playbook:</strong> <a href="{MAILER_AUTOMATION_TEMPORAL_PLAYBOOK_URL}">Mailer Automation Temporal Playbook</a></p>
-        <p><strong>Time:</strong> {datetime.now().isoformat()}</p>
+        <p><strong>Time:</strong> {workflow.now().isoformat()}</p>
 
         <h3>JSON Payload:</h3>
         <pre>{json.dumps(json_payload, indent=2, default=str)}</pre>
@@ -203,7 +203,7 @@ def _send_error_email_event_type_not_reply_received(workflow_id: str, event_type
         <p><strong>Route:</strong> /instantly/reply_received</p>
         <p><strong>Workflow Run:</strong> <a href="{TEMPORAL_WORKFLOW_UI_BASE_URL}/{workflow_id}">{workflow_id}</a></p>
         <p><strong>Temporal Playbook:</strong> <a href="{MAILER_AUTOMATION_TEMPORAL_PLAYBOOK_URL}">Mailer Automation Temporal Playbook</a></p>
-        <p><strong>Time:</strong> {datetime.now().isoformat()}</p>
+        <p><strong>Time:</strong> {workflow.now().isoformat()}</p>
         """
     send_email(subject="Reply Received Workflow: Event Type Not Reply Received",
                body=detailed_error_message)
@@ -216,10 +216,10 @@ def _send_error_email_no_reply_body(workflow_id: str, payload: WebhookReplyRecei
         <p><strong>Route:</strong> /instantly/reply_received</p>
         <p><strong>Workflow Run:</strong> <a href="{TEMPORAL_WORKFLOW_UI_BASE_URL}/{workflow_id}">{workflow_id}</a></p>
         <p><strong>Temporal Playbook:</strong> <a href="{MAILER_AUTOMATION_TEMPORAL_PLAYBOOK_URL}">Mailer Automation Temporal Playbook</a></p>
-        <p><strong>Time:</strong> {datetime.now().isoformat()}</p>
+        <p><strong>Time:</strong> {workflow.now().isoformat()}</p>
 
         <h3>Payload:</h3>
-        <pre>{json.dumps(payload.dict(), indent=2, default=str)}</pre>
+        <pre>{json.dumps(payload.model_dump(), indent=2, default=str)}</pre>
         """
     send_email(subject="Reply Received Workflow: No Reply Body in Payload",
                body=detailed_error_message)

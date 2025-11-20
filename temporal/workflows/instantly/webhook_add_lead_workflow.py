@@ -1,4 +1,4 @@
-from datetime import datetime, timedelta
+from datetime import timedelta
 import json
 from typing import Any
 
@@ -112,7 +112,7 @@ def _send_error_email_validation_error(workflow_id: str, json_payload: dict[str,
         <p><strong>Route:</strong> /instantly/add_lead</p>
         <p><strong>Workflow Run:</strong> <a href="{TEMPORAL_WORKFLOW_UI_BASE_URL}/{workflow_id}">{workflow_id}</a></p>
         <p><strong>Temporal Playbook:</strong> <a href="{MAILER_AUTOMATION_TEMPORAL_PLAYBOOK_URL}">Mailer Automation Temporal Playbook</a></p>
-        <p><strong>Time:</strong> {datetime.now().isoformat()}</p>
+        <p><strong>Time:</strong> {workflow.now().isoformat()}</p>
         
         <h3>JSON Payload:</h3>
         <pre>{json.dumps(json_payload, indent=2, default=str)}</pre>
@@ -129,7 +129,7 @@ def _send_error_email_campaign_name_not_found(workflow_id: str, lead_id: str, ta
         <p><strong>Route:</strong> /instantly/add_lead</p>
         <p><strong>Workflow Run:</strong> <a href="{TEMPORAL_WORKFLOW_UI_BASE_URL}/{workflow_id}">{workflow_id}</a></p>
         <p><strong>Temporal Playbook:</strong> <a href="{MAILER_AUTOMATION_TEMPORAL_PLAYBOOK_URL}">Mailer Automation Temporal Playbook</a></p>
-        <p><strong>Time:</strong> {datetime.now().isoformat()}</p>
+        <p><strong>Time:</strong> {workflow.now().isoformat()}</p>
         
         <h3>Task Text:</h3>
         <pre>{task_text}</pre>
@@ -146,7 +146,7 @@ def _send_error_email_action_not_created(workflow_id: str, lead_id: str, action:
         <p><strong>Route:</strong> /instantly/add_lead</p>
         <p><strong>Workflow Run:</strong> <a href="{TEMPORAL_WORKFLOW_UI_BASE_URL}/{workflow_id}">{workflow_id}</a></p>
         <p><strong>Temporal Playbook:</strong> <a href="{MAILER_AUTOMATION_TEMPORAL_PLAYBOOK_URL}">Mailer Automation Temporal Playbook</a></p>
-        <p><strong>Time:</strong> {datetime.now().isoformat()}</p>
+        <p><strong>Time:</strong> {workflow.now().isoformat()}</p>
         """
     send_email(subject="Add Lead Workflow: Action Not Created",
                body=detailed_error_message)
@@ -160,7 +160,7 @@ def _send_error_email_object_type_not_task_lead(workflow_id: str, lead_id: str, 
         <p><strong>Route:</strong> /instantly/add_lead</p>
         <p><strong>Workflow Run:</strong> <a href="{TEMPORAL_WORKFLOW_UI_BASE_URL}/{workflow_id}">{workflow_id}</a></p>
         <p><strong>Temporal Playbook:</strong> <a href="{MAILER_AUTOMATION_TEMPORAL_PLAYBOOK_URL}">Mailer Automation Temporal Playbook</a></p>
-        <p><strong>Time:</strong> {datetime.now().isoformat()}</p>
+        <p><strong>Time:</strong> {workflow.now().isoformat()}</p>
         """
     send_email(subject="Add Lead Workflow: Object Type Not Task Lead",
                body=detailed_error_message)
@@ -174,7 +174,7 @@ def _send_error_email_task_does_not_start_with_instantly(workflow_id: str, lead_
         <p><strong>Route:</strong> /instantly/add_lead</p>
         <p><strong>Workflow Run:</strong> <a href="{TEMPORAL_WORKFLOW_UI_BASE_URL}/{workflow_id}">{workflow_id}</a></p>
         <p><strong>Temporal Playbook:</strong> <a href="{MAILER_AUTOMATION_TEMPORAL_PLAYBOOK_URL}">Mailer Automation Temporal Playbook</a></p>
-        <p><strong>Time:</strong> {datetime.now().isoformat()}</p>
+        <p><strong>Time:</strong> {workflow.now().isoformat()}</p>
         
         <h3>Task Text:</h3>
         <pre>{task_text}</pre>

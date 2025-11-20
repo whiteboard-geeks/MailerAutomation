@@ -1,5 +1,5 @@
 import json
-from datetime import datetime, timedelta
+from datetime import timedelta
 import json
 from typing import Any
 
@@ -19,13 +19,7 @@ with workflow.unsafe.imports_passed_through():
         create_tracker_activity,
         update_close_lead_activity,
     )
-
-
-def send_email(subject, body, **kwargs):
-    """Send email notification."""
-    from utils.email import send_email as app_send_email
-
-    return app_send_email(subject, body, **kwargs)
+    from utils.email import send_email
 
 
 class WebhookCreateTrackerPayload(BaseModel):
@@ -142,7 +136,7 @@ def _send_error_email_validation_error(workflow_id: str, json_payload: dict[str,
         <p><strong>Route:</strong> /easypost/create_tracker</p>
         <p><strong>Workflow Run:</strong> <a href="{TEMPORAL_WORKFLOW_UI_BASE_URL}/{workflow_id}">{workflow_id}</a></p>
         <p><strong>Temporal Playbook:</strong> <a href="{MAILER_AUTOMATION_TEMPORAL_PLAYBOOK_URL}">Mailer Automation Temporal Playbook</a></p>
-        <p><strong>Time:</strong> {datetime.now().isoformat()}</p>
+        <p><strong>Time:</strong> {workflow.now().isoformat()}</p>
         
         <h3>JSON Payload:</h3>
         <pre>{json.dumps(json_payload, indent=2, default=str)}</pre>

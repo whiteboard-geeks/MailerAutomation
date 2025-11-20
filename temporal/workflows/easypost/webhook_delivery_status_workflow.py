@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime, timedelta
+from datetime import timedelta
 from enum import Enum
 import json
 from typing import Any
@@ -12,7 +12,6 @@ from temporalio.exceptions import ApplicationError
 
 from config import MAILER_AUTOMATION_TEMPORAL_PLAYBOOK_URL, TEMPORAL_WORKFLOW_UI_BASE_URL
 from temporal.shared import WAITING_FOR_RESUME_KEY_STR
-from utils.email import send_email
 
 
 with workflow.unsafe.imports_passed_through():
@@ -25,6 +24,7 @@ with workflow.unsafe.imports_passed_through():
         update_delivery_info_for_lead_activity,
         TrackingDetail as TrackingDetailActivity,
     )
+    from utils.email import send_email
 
 
 class WebhookDeliveryStatusPayload(BaseModel):
@@ -165,7 +165,7 @@ def _send_error_email_validation_error(workflow_id: str, json_payload: dict[str,
         <p><strong>Route:</strong> /easypost/delivery_status</p>
         <p><strong>Workflow Run:</strong> <a href="{TEMPORAL_WORKFLOW_UI_BASE_URL}/{workflow_id}">{workflow_id}</a></p>
         <p><strong>Temporal Playbook:</strong> <a href="{MAILER_AUTOMATION_TEMPORAL_PLAYBOOK_URL}">Mailer Automation Temporal Playbook</a></p>
-        <p><strong>Time:</strong> {datetime.now().isoformat()}</p>
+        <p><strong>Time:</strong> {workflow.now().isoformat()}</p>
         
         <h3>JSON Payload:</h3>
         <pre>{json.dumps(json_payload, indent=2, default=str)}</pre>
