@@ -1,4 +1,5 @@
 from typing import Any, Dict
+from unittest.mock import patch
 
 import pytest
 from flask import Flask
@@ -83,6 +84,8 @@ def test_handle_reply_received_temporal_invalid_payload_returns_400(flask_app):
 
 
 def test_workflow_validation_requires_reply_body():
+    from unittest.mock import Mock
+
     payload = WebhookReplyReceivedPayload(
         json_payload={
             "event_type": "reply_received",
@@ -96,8 +99,17 @@ def test_workflow_validation_requires_reply_body():
         }
     )
 
-    with pytest.raises(ApplicationError):
-        WebhookReplyReceivedWorkflow._validate_input(payload)
+    # Mock workflow.info() and workflow.now() to avoid needing workflow context
+    mock_info = Mock()
+    mock_info.workflow_id = "test-workflow-id"
+
+    mock_now = Mock()
+    mock_now.isoformat.return_value = "2023-09-01T12:00:00Z"
+
+    with patch("temporal.workflows.instantly.webhook_reply_received_workflow.workflow.info", lambda: mock_info), \
+         patch("temporal.workflows.instantly.webhook_reply_received_workflow.workflow.now", lambda: mock_now):
+        with pytest.raises(ApplicationError):
+            WebhookReplyReceivedWorkflow._validate_input(payload)
 
 
 def test_send_notification_email_uses_custom_recipients(monkeypatch):
@@ -214,6 +226,8 @@ def test_add_email_activity_to_lead_returns_metadata(monkeypatch):
 
 
 def test_add_email_activity_to_lead_raises_when_no_leads(monkeypatch):
+    from unittest.mock import Mock
+
     payload = activities.WebhookReplyReceivedPayloadValidated(
         event_type="reply_received",
         lead_email="missing@example.com",
@@ -224,6 +238,11 @@ def test_add_email_activity_to_lead_raises_when_no_leads(monkeypatch):
         timestamp="2023-09-01T12:00:00Z",
         email_account="consultant@example.com",
     )
+
+    # Mock activity.info() to avoid needing activity context
+    mock_info = Mock()
+    mock_info.workflow_id = "test-workflow-id"
+    monkeypatch.setattr("temporal.activities.instantly.webhook_reply_received.activity.info", lambda: mock_info)
 
     monkeypatch.setattr(activities, "create_email_search_query", lambda _: "query")
     monkeypatch.setattr(activities, "search_close_leads", lambda _: [])

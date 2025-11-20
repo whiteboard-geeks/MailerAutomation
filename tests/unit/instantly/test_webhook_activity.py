@@ -1,7 +1,7 @@
 """Unit tests for the Instantly add lead Temporal activity."""
 
 import pytest
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 from temporal.activities.instantly.webhook_add_lead import (
     add_lead_to_instantly_campaign,
@@ -27,23 +27,28 @@ def test_add_lead_to_instantly_campaign_api_error(
         task_text="Instantly: Existing Campaign",
     )
 
-    mock_campaign_exists.return_value = {"exists": True, "campaign_id": "camp-123"}
-    mock_get_lead_details.return_value = LeadDetails(
-        email="test@example.com",
-        first_name="Test",
-        last_name="User",
-        company_name="ACME",
-        date_location="",
-    )
-    mock_add_to_campaign.return_value = {
-        "status": "error",
-        "message": "Instantly API rate limit exceeded",
-    }
+    # Mock activity.info() to avoid needing activity context
+    mock_info = Mock()
+    mock_info.workflow_id = "test-workflow-id"
 
-    with pytest.raises(ValueError) as exc:
-        add_lead_to_instantly_campaign(args)
+    with patch("temporal.activities.instantly.webhook_add_lead.activity.info", lambda: mock_info):
+        mock_campaign_exists.return_value = {"exists": True, "campaign_id": "camp-123"}
+        mock_get_lead_details.return_value = LeadDetails(
+            email="test@example.com",
+            first_name="Test",
+            last_name="User",
+            company_name="ACME",
+            date_location="",
+        )
+        mock_add_to_campaign.return_value = {
+            "status": "error",
+            "message": "Instantly API rate limit exceeded",
+        }
 
-    assert "Failed to add lead to Instantly" in str(exc.value)
-    mock_send_email.assert_called_once()
-    assert mock_send_email.call_args.kwargs["subject"] == "Instantly API Error (Async)"
-    assert "Instantly API rate limit exceeded" in mock_send_email.call_args.kwargs["body"]
+        with pytest.raises(ValueError) as exc:
+            add_lead_to_instantly_campaign(args)
+
+        assert "Failed to add lead to Instantly" in str(exc.value)
+        mock_send_email.assert_called_once()
+        assert mock_send_email.call_args.kwargs["subject"] == "Add Lead Workflow: Error Adding Lead to Instantly"
+        assert "Instantly API rate limit exceeded" in mock_send_email.call_args.kwargs["body"]
