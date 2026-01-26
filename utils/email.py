@@ -7,11 +7,11 @@ def send_email(subject, body, **kwargs):
     """
     Send an email using the Gmail API.
 
-    In production, emails are sent to the entire team by default:
-    - Lance Johnson
-    - Barbara Pigg
-    - Lauren Poche
-    - Noura Mahmoud
+    In production, error emails are sent to:
+    - Lance Johnson only
+    
+    Note: Other team members (Barbara, Lauren, Noura) are excluded from default 
+    error recipients. Consultants receive reply notifications for their assigned leads.
 
     In development/staging, no emails are sent.
 
@@ -34,9 +34,6 @@ def send_email(subject, body, **kwargs):
 
     recipients_list = [
         "Lance Johnson <lance@whiteboardgeeks.com>",
-        "Barbara Pigg <barbara.pigg@whiteboardgeeks.com>",
-        "Lauren Poche <lauren.poche@whiteboardgeeks.com>",
-        "Noura Mahmoud <noura.mahmoud@whiteboardgeeks.com>",
     ]
     recipients = ", ".join(recipients_list)
 

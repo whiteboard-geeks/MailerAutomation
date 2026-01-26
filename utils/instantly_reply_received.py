@@ -29,13 +29,26 @@ def determine_notification_recipients(lead_details, env_type):
         return None, None
 
     if consultant == "Barbara Pigg":
+        if env_type == "development":
+            recipients = "lance@whiteboardgeeks.com"
+            logger.info(
+                "consultant_determined",
+                lead_id=lead_id,
+                consultant="Barbara Pigg",
+                environment="development",
+                recipients=recipients,
+            )
+            return recipients, None
+
+        recipients = "barbara.pigg@whiteboardgeeks.com"
         logger.info(
             "consultant_determined",
             lead_id=lead_id,
             consultant="Barbara Pigg",
-            recipients="default",
+            environment="production",
+            recipients=recipients,
         )
-        return None, None
+        return recipients, None
 
     if consultant == "April Lowrie":
         if env_type == "development":
@@ -49,11 +62,7 @@ def determine_notification_recipients(lead_details, env_type):
             )
             return recipients, None
 
-        recipients_list = [
-            "april.lowrie@whiteboardgeeks.com",
-            "lauren.poche@whiteboardgeeks.com",
-        ]
-        recipients = ",".join(recipients_list)
+        recipients = "april.lowrie@whiteboardgeeks.com"
         logger.info(
             "consultant_determined",
             lead_id=lead_id,

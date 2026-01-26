@@ -118,26 +118,31 @@ class TestConsultantNotification:
             ],
         }
 
-    def test_barbara_pigg_lead_uses_default_recipients(self):
-        """Test that Barbara's leads use default notification recipients."""
+    def test_barbara_pigg_lead_uses_custom_recipients(self):
+        """Test that Barbara's leads use custom notification recipients."""
         # Test in production environment
         recipients, error = determine_notification_recipients(
             self.barbara_lead_details, "production"
         )
 
-        # Barbara should use default recipients (None means use default)
-        assert recipients is None, "Barbara's leads should use default recipients"
+        # Barbara should get her email only in production
+        expected_recipients = "barbara.pigg@whiteboardgeeks.com"
+        assert (
+            recipients == expected_recipients
+        ), f"Expected Barbara's email only, got {recipients}"
         assert error is None, "No error should occur for Barbara's leads"
 
-        # Test in development environment
+    def test_barbara_pigg_lead_uses_lance_in_development(self):
+        """Test that Barbara's leads use Lance only in development."""
         recipients, error = determine_notification_recipients(
             self.barbara_lead_details, "development"
         )
 
-        # Barbara should use default recipients in development too
+        # Barbara should get Lance only in development
+        expected_recipients = "lance@whiteboardgeeks.com"
         assert (
-            recipients is None
-        ), "Barbara's leads should use default recipients in development"
+            recipients == expected_recipients
+        ), f"Expected Lance only in development, got {recipients}"
         assert error is None, "No error should occur for Barbara's leads in development"
 
     def test_april_lowrie_lead_uses_custom_recipients_production(self):
@@ -146,11 +151,11 @@ class TestConsultantNotification:
             self.april_lead_details, "production"
         )
 
-        # April should get custom recipients in production
-        expected_recipients = "april.lowrie@whiteboardgeeks.com,lauren.poche@whiteboardgeeks.com"
+        # April should get her email only in production
+        expected_recipients = "april.lowrie@whiteboardgeeks.com"
         assert (
             recipients == expected_recipients
-        ), f"Expected April's team recipients, got {recipients}"
+        ), f"Expected April's email only, got {recipients}"
         assert error is None, "No error should occur for April's leads"
 
     def test_april_lowrie_lead_uses_lance_in_development(self):
@@ -251,33 +256,28 @@ class TestConsultantNotification:
         assert self.april_lead_details[consultant_field_key] == "April Lowrie"
         assert self.unknown_consultant_lead_details[consultant_field_key] == "John Doe"
 
-    def test_april_team_recipients_format(self):
-        """Test that April's team recipients are formatted correctly."""
+    def test_april_recipients_format(self):
+        """Test that April's recipients are formatted correctly."""
         recipients, error = determine_notification_recipients(
             self.april_lead_details, "production"
         )
 
-        # Verify the exact format and order of April's team
-        expected_recipients = "april.lowrie@whiteboardgeeks.com,lauren.poche@whiteboardgeeks.com"
+        # Verify April gets her email only
+        expected_recipients = "april.lowrie@whiteboardgeeks.com"
         assert (
             recipients == expected_recipients
-        ), f"April's team recipients format incorrect: {recipients}"
-
-        # Verify all three team members are included
-        recipient_list = recipients.split(",")
-        assert (
-            len(recipient_list) == 2
-        ), f"Expected 2 recipients for April's team, got {len(recipient_list)}"
-        assert "april.lowrie@whiteboardgeeks.com" in recipient_list
-        assert "lauren.poche@whiteboardgeeks.com" in recipient_list
+        ), f"April's recipients format incorrect: {recipients}"
+        assert error is None
 
     def test_development_environment_override(self):
-        """Test that development environment always uses Lance only."""
+        """Test that development environment always uses Lance only for consultants."""
         # Test Barbara in development
         recipients, error = determine_notification_recipients(
             self.barbara_lead_details, "development"
         )
-        assert recipients is None, "Barbara should use default (Lance) in development"
+        assert (
+            recipients == "lance@whiteboardgeeks.com"
+        ), "Barbara should use Lance only in development"
         assert error is None
 
         # Test April in development
@@ -295,15 +295,18 @@ class TestConsultantNotification:
         recipients, error = determine_notification_recipients(
             self.barbara_lead_details, "production"
         )
-        assert recipients is None, "Barbara should use default team in production"
+        expected_barbara = "barbara.pigg@whiteboardgeeks.com"
+        assert (
+            recipients == expected_barbara
+        ), "Barbara should use her email only in production"
         assert error is None
 
         # Test April in production
         recipients, error = determine_notification_recipients(
             self.april_lead_details, "production"
         )
-        expected_april_team = "april.lowrie@whiteboardgeeks.com,lauren.poche@whiteboardgeeks.com"
+        expected_april = "april.lowrie@whiteboardgeeks.com"
         assert (
-            recipients == expected_april_team
-        ), "April should use her team in production"
+            recipients == expected_april
+        ), "April should use her email only in production"
         assert error is None
