@@ -49,7 +49,7 @@ class EmailNotFoundError(Exception):
 
 
 @activity.defn
-def add_lead_to_instantly_campaign(args: AddLeadToInstantlyCampaignArgs):
+def add_lead_to_instantly_campaign(args: AddLeadToInstantlyCampaignArgs) -> None:
     campaign_check = campaign_exists(args.campaign_name)
 
     if not campaign_check.get("exists"):
@@ -93,7 +93,7 @@ def add_lead_to_instantly_campaign(args: AddLeadToInstantlyCampaignArgs):
         raise ValueError(f"Failed to add lead to Instantly: {instantly_result.get('message')}")
 
 
-def _send_error_email_campaign_not_found(campaign_name: str, lead_id: str, task_text: str, workflow_id: str):
+def _send_error_email_campaign_not_found(campaign_name: str, lead_id: str, task_text: str, workflow_id: str) -> None:
     detailed_error_message = f"""
         <h2>Add Lead Workflow: Campaign Not Found in Instantly</h2>
         <p><strong>Error:</strong> Campaign '{campaign_name}' does not exist in Instantly</p>
@@ -110,7 +110,7 @@ def _send_error_email_campaign_not_found(campaign_name: str, lead_id: str, task_
                body=detailed_error_message)
 
 
-def _send_error_email_lead_email_not_found(workflow_id: str, lead_id: str):
+def _send_error_email_lead_email_not_found(workflow_id: str, lead_id: str) -> None:
     detailed_error_message = f"""
         <h2>Add Lead Workflow: No Email Found for Lead in Close</h2>
         <p><strong>Error:</strong> No email found for lead ID: <a href="{CLOSE_CRM_UI_LEAD_BASE_URL}/{lead_id}/">{lead_id}</a></p>
@@ -123,7 +123,7 @@ def _send_error_email_lead_email_not_found(workflow_id: str, lead_id: str):
                body=detailed_error_message)
 
 
-def _send_error_email_no_lead_details_found(workflow_id: str, lead_id: str):
+def _send_error_email_no_lead_details_found(workflow_id: str, lead_id: str) -> None:
     detailed_error_message = f"""
         <h2>Add Lead Workflow: No Lead Details Found for Lead in Close</h2>
         <p><strong>Error:</strong> No lead details found for lead ID: <a href="{CLOSE_CRM_UI_LEAD_BASE_URL}/{lead_id}/">{lead_id}</a></p>
@@ -136,7 +136,7 @@ def _send_error_email_no_lead_details_found(workflow_id: str, lead_id: str):
                body=detailed_error_message)
 
 
-def _send_error_email_instantly_api_error(workflow_id: str, lead_id: str, campaign_name: str, error_message: str):
+def _send_error_email_instantly_api_error(workflow_id: str, lead_id: str, campaign_name: str, error_message: str) -> None:
     detailed_error_message = f"""
         <h2>Add Lead Workflow: Error Adding Lead to Instantly</h2>
         <p><strong>Lead ID:</strong> <a href="{CLOSE_CRM_UI_LEAD_BASE_URL}/{lead_id}/">{lead_id}</a></p>

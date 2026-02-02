@@ -127,7 +127,7 @@ class AddEmailActivityToLeadArgs(BaseModel):
 
 
 @activity.defn
-def add_email_activity_to_lead(args: AddEmailActivityToLeadArgs):
+def add_email_activity_to_lead(args: AddEmailActivityToLeadArgs) -> None:
     lead_details = get_lead_by_id(args.lead_id)
     if not lead_details:
         _send_error_email_no_lead_details_found(workflow_id=activity.info().workflow_id,
@@ -186,7 +186,7 @@ class WebhookEmailSentPaylodValidated(BaseModel):
     email_account: str = Field(..., description="Email account used to send the email")
 
 
-def _send_error_email_no_lead_details_found(workflow_id: str, lead_id: str):
+def _send_error_email_no_lead_details_found(workflow_id: str, lead_id: str) -> None:
     detailed_error_message = f"""
         <h2>Email Sent Workflow: No Lead Details Found for Lead in Close</h2>
         <p><strong>Error:</strong> No lead details found for lead ID: <a href="{CLOSE_CRM_UI_LEAD_BASE_URL}/{lead_id}/">{lead_id}</a></p>
@@ -199,7 +199,7 @@ def _send_error_email_no_lead_details_found(workflow_id: str, lead_id: str):
                body=detailed_error_message)
 
 
-def _send_error_email_no_contact_found(workflow_id: str, lead_id: str, lead_email: str):
+def _send_error_email_no_contact_found(workflow_id: str, lead_id: str, lead_email: str) -> None:
     detailed_error_message = f"""
         <h2>Email Sent Workflow: No Contact Found for Lead in Close</h2>
         <p><strong>Error:</strong> No contact found for lead ID: <a href="{CLOSE_CRM_UI_LEAD_BASE_URL}/{lead_id}/">{lead_id}</a> with email {lead_email}</p>

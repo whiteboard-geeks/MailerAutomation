@@ -1,3 +1,5 @@
 -r requirements.txt
 flake8==7.3.0
 pytest-asyncio
+mypy
+types-protobuf

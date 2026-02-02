@@ -9,7 +9,7 @@ MailerAutomation is a Flask-based application that helps track package shipments
 ## Key Features
 
 - **Close CRM Integration**: Searches and updates leads, creates tasks and activities
-- **EasyPost Integration**: Creates and monitors package trackers, processes delivery status webhooks  
+- **EasyPost Integration**: Creates and monitors package trackers, processes delivery status webhooks
 - **Gmail Integration**: Processes email notifications and updates
 - **Instantly Integration**: Handles email campaign tracking
 - **Background Processing**: Uses Temporal for asynchronous task processing
@@ -70,6 +70,7 @@ Example for `TEMPORAL_WORKFLOW_UI_BASE_URL`:
 
 ```bash
 flake8 .
+mypy
 ```
 
 ## Usage

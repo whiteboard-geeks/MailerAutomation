@@ -132,7 +132,7 @@ def _send_error_email_create_tracker_failed(workflow_id: str,
 @activity.defn
 def update_close_lead_activity(input: UpdateCloseLeadActivityInput) -> None:
 
-    def verify_delivery_information_updated(response_data, lead_update_data):
+    def verify_delivery_information_updated(response_data: dict[str, Any], lead_update_data: dict[str, Any]) -> bool:
         for key, value in lead_update_data.items():
             if key not in response_data or response_data[key] != value:
                 return False

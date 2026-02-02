@@ -1,8 +1,9 @@
 import logging
 import os
 import structlog
-from temporalio.client import Client, TLSConfig
+from temporalio.client import Client
 from temporalio.contrib.pydantic import pydantic_data_converter
+from temporalio.service import TLSConfig
 
 
 async def get_temporal_client() -> Client:
@@ -34,6 +35,12 @@ async def get_temporal_client() -> Client:
         target_host=os.getenv("TEMPORAL_ADDRESS", "localhost:7233")
         namespace=os.getenv("TEMPORAL_NAMESPACE", "default")
         tls = False
+      
+    if not target_host:
+        raise ValueError("TEMPORAL_ADDRESS environment variable is not set")
+    
+    if not namespace:
+        raise ValueError("TEMPORAL_NAMESPACE environment variable is not set")
     
     logger.info("temporal.client_provider.get_temporal_client.connecting_to_temporal_server",
                  target_host=target_host, 

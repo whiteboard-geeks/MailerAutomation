@@ -32,7 +32,7 @@ class TrackingDetail(BaseModel):
     datetime: str = Field(..., description="Datetime of the tracking detail.")
 
     @classmethod
-    def new(cls, city: str | None, state: str | None, datetime: str):
+    def new(cls, city: str | None, state: str | None, datetime: str) -> TrackingDetail:
         return cls(
             tracking_location=TrackingLocation(city=city, state=state),
             datetime=datetime,
@@ -81,11 +81,12 @@ def update_delivery_info_for_lead_activity(input: UpdateDeliveryInfoInput) -> Up
                                          tracking_code=input.tracking_code)
         raise ValueError(f"No leads found with tracking number {input.tracking_code}")
 
-    if len(close_leads) > 1:
-        valid_leads : list[dict] = []
+
+    valid_leads : list[dict] = []
+    if len(close_leads) > 1:    
         for lead in close_leads:
-            lead_id = lead["id"]
-            valid_lead = get_lead_by_id(lead_id)
+            lead_id_ = lead["id"]
+            valid_lead = get_lead_by_id(lead_id_)
             if valid_lead:
                 valid_leads.append(lead)
         
@@ -101,16 +102,15 @@ def update_delivery_info_for_lead_activity(input: UpdateDeliveryInfoInput) -> Up
                                                    tracking_code=input.tracking_code)
             raise ValueError(f"No valid leads found with tracking number {input.tracking_code}")
     else:
-        valid_leads : list[dict] = []
-        lead_id = close_leads[0]["id"]
-        valid_lead = get_lead_by_id(lead_id)
+        lead_id__ = close_leads[0]["id"]
+        valid_lead = get_lead_by_id(lead_id__)
         if valid_lead:
             valid_leads.append(valid_lead)
         else:
             _send_error_email_lead_not_found(workflow_id=activity.info().workflow_id,
                                              tracking_code=input.tracking_code,
-                                             lead_id=lead_id)
-            raise ValueError(f"Lead {lead_id} is not a valid lead")
+                                             lead_id=lead_id__)
+            raise ValueError(f"Lead {lead_id__} is not a valid lead")
     
     if not valid_leads:
         _send_error_email_no_valid_leads_found(workflow_id=activity.info().workflow_id,
@@ -253,9 +253,9 @@ def create_package_delivered_custom_activity_in_close_activity(input: CreatePack
 
 def _parse_delivery_information(tracking_detail: TrackingDetail) -> dict[str, Any]:
     """Parse delivery information from tracking data."""
-    delivery_information = {}
-    delivery_information["delivery_city"] = tracking_detail.tracking_location.city.title()
-    delivery_information["delivery_state"] = tracking_detail.tracking_location.state.upper()
+    delivery_information : dict[str, Any] = {}
+    delivery_information["delivery_city"] = tracking_detail.tracking_location.city.title() if tracking_detail.tracking_location.city else "N/A"
+    delivery_information["delivery_state"] = tracking_detail.tracking_location.state.upper() if tracking_detail.tracking_location.state else "N/A"
 
     delivery_datetime = datetime.strptime(tracking_detail.datetime, "%Y-%m-%dT%H:%M:%SZ")
 
