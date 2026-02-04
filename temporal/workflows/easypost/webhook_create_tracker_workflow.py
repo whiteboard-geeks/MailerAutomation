@@ -8,7 +8,11 @@ from temporalio import workflow
 from temporalio.common import RetryPolicy
 from temporalio.exceptions import ApplicationError
 
-from config import TEMPORAL_WORKFLOW_UI_BASE_URL, MAILER_AUTOMATION_TEMPORAL_PLAYBOOK_URL
+from config import (
+    TEMPORAL_WORKFLOW_UI_BASE_URL,
+    MAILER_AUTOMATION_TEMPORAL_PLAYBOOK_URL,
+    TEMPORAL_WORKFLOW_ACTIVITY_MAX_ATTEMPTS,
+)
 from temporal.shared import WAITING_FOR_RESUME_KEY_STR
 
 with workflow.unsafe.imports_passed_through():
@@ -54,7 +58,7 @@ class WebhookCreateTrackerWorkflow:
         self._data_issue_fixed: bool = True
         self._activity_retry_policy = RetryPolicy(
             initial_interval=timedelta(seconds=5),
-            maximum_attempts=2,
+            maximum_attempts=TEMPORAL_WORKFLOW_ACTIVITY_MAX_ATTEMPTS,
         )
 
     @workflow.signal
@@ -79,15 +83,17 @@ class WebhookCreateTrackerWorkflow:
 
         await self._update_close_lead(update_activity_input)
 
-
     def _validate_input(
         self, input: WebhookCreateTrackerPayload
     ) -> WebhookCreateTrackerPayloadValidated:
         try:
-            input_validated = WebhookCreateTrackerPayloadValidated.model_validate(input.json_payload)
+            input_validated = WebhookCreateTrackerPayloadValidated.model_validate(
+                input.json_payload
+            )
         except Exception as exc:
-            _send_error_email_validation_error(workflow_id=workflow.info().workflow_id, 
-                                               json_payload=input.json_payload)
+            _send_error_email_validation_error(
+                workflow_id=workflow.info().workflow_id, json_payload=input.json_payload
+            )
             raise ApplicationError(
                 f"Invalid payload for create tracker workflow: {exc}"
             ) from exc
@@ -100,10 +106,11 @@ class WebhookCreateTrackerWorkflow:
         while True:
             try:
                 return await workflow.execute_activity(
-                        create_tracker_activity,
-                        CreateTrackerActivityInput(lead_id=input.lead_id),
-                        start_to_close_timeout=timedelta(seconds=60),
-                        retry_policy=self._activity_retry_policy)
+                    create_tracker_activity,
+                    CreateTrackerActivityInput(lead_id=input.lead_id),
+                    start_to_close_timeout=timedelta(seconds=60),
+                    retry_policy=self._activity_retry_policy,
+                )
             except Exception:
                 await self._wait_for_signal_data_issue_fixed()
 
@@ -129,7 +136,9 @@ class WebhookCreateTrackerWorkflow:
         workflow.upsert_search_attributes({WAITING_FOR_RESUME_KEY_STR: [False]})
 
 
-def _send_error_email_validation_error(workflow_id: str, json_payload: dict[str, Any]) -> None:
+def _send_error_email_validation_error(
+    workflow_id: str, json_payload: dict[str, Any]
+) -> None:
     detailed_error_message = f"""
         <h2>Validation Error in EasyPost Create Tracker Workflow</h2>
         <p><strong>Error:</strong> Payload validation failed</p>
@@ -141,4 +150,7 @@ def _send_error_email_validation_error(workflow_id: str, json_payload: dict[str,
         <h3>JSON Payload:</h3>
         <pre>{json.dumps(json_payload, indent=2, default=str)}</pre>
         """
-    send_email(subject="Validation Error in EasyPost Create Tracker Workflow", body=detailed_error_message)
+    send_email(
+        subject="Validation Error in EasyPost Create Tracker Workflow",
+        body=detailed_error_message,
+    )

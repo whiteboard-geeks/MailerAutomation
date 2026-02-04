@@ -7,7 +7,11 @@ from temporalio import workflow
 from temporalio.common import RetryPolicy
 from temporalio.exceptions import ApplicationError
 
-from config import MAILER_AUTOMATION_TEMPORAL_PLAYBOOK_URL, TEMPORAL_WORKFLOW_UI_BASE_URL
+from config import (
+    MAILER_AUTOMATION_TEMPORAL_PLAYBOOK_URL, 
+    TEMPORAL_WORKFLOW_UI_BASE_URL, 
+    TEMPORAL_WORKFLOW_ACTIVITY_MAX_ATTEMPTS,
+)
 from temporal.shared import WAITING_FOR_RESUME_KEY_STR
 from utils.email import send_email
 
@@ -31,7 +35,7 @@ class WebhookEmailSentWorkflow:
         self._data_issue_fixed: bool = True
         self._activity_retry_policy = RetryPolicy(
             initial_interval=timedelta(seconds=5),
-            maximum_attempts=2,
+            maximum_attempts=TEMPORAL_WORKFLOW_ACTIVITY_MAX_ATTEMPTS,
         )
 
     @workflow.signal

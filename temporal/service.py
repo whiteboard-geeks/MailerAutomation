@@ -1,7 +1,7 @@
 # temporal_service.py
 import asyncio
 import threading
-from typing import Optional, Awaitable
+from typing import Any, Optional, Coroutine
 
 from temporalio.client import Client
 
@@ -72,7 +72,7 @@ class TemporalService:
 
     # ----- sync entrypoint to run async Temporal calls -----------------------
 
-    def run(self, coro: Awaitable):
+    def run(self, coro: Coroutine[Any, Any, Any]) -> Any:
         """Run an async Temporal coroutine on the service loop and block until done."""
         self.ensure_started()
         return asyncio.run_coroutine_threadsafe(coro, self._loop).result()

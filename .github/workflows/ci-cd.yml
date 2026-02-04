@@ -26,6 +26,10 @@ jobs:
         run: |
           flake8 .
 
+      - name: Run type checking
+        run: |
+          mypy
+
   blueprint-unit-tests:
     needs: lint
     runs-on: ubuntu-latest
