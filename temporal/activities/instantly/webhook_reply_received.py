@@ -15,8 +15,13 @@ from close_utils import (
     pause_sequence_subscription,
     search_close_leads,
 )
-from config import CLOSE_CRM_UI_LEAD_BASE_URL, MAILER_AUTOMATION_TEMPORAL_PLAYBOOK_URL, TEMPORAL_WORKFLOW_UI_BASE_URL
+from config import (
+    CLOSE_CRM_UI_LEAD_BASE_URL,
+    MAILER_AUTOMATION_TEMPORAL_PLAYBOOK_URL,
+    TEMPORAL_WORKFLOW_UI_BASE_URL,
+)
 from temporal.activities.instantly.webhook_add_lead import BARBARA_USER_ID
+from temporal.shared import is_last_attempt
 from utils.email import send_email
 from utils.instantly_reply_received import determine_notification_recipients
 
@@ -73,24 +78,29 @@ class SendNotificationEmailResult(BaseModel):
 
 
 @activity.defn(name="reply_received_add_email_activity_to_lead")
-def add_email_activity_to_lead(args: AddEmailActivityToLeadArgs) -> AddEmailActivityToLeadResult:
+def add_email_activity_to_lead(
+    args: AddEmailActivityToLeadArgs,
+) -> AddEmailActivityToLeadResult:
     payload = args.payload
 
     query = create_email_search_query(payload.lead_email)
     leads = search_close_leads(query)
 
     if not leads:
-        _send_error_email_no_lead_found(workflow_id=activity.info().workflow_id,
-                                        lead_email=payload.lead_email)
+        if is_last_attempt(activity.info()):
+            _send_error_email_no_lead_found(
+                workflow_id=activity.info().workflow_id, lead_email=payload.lead_email
+            )
         raise ValueError(f"No lead found with email: {payload.lead_email}")
 
     if len(leads) > 1:
-        _send_error_email_multiple_leads_found(workflow_id=activity.info().workflow_id,
-                                               lead_email=payload.lead_email,
-                                               leads=leads)
-        raise ValueError(
-            f"Multiple leads found with email: {payload.lead_email}"
-        )
+        if is_last_attempt(activity.info()):
+            _send_error_email_multiple_leads_found(
+                workflow_id=activity.info().workflow_id,
+                lead_email=payload.lead_email,
+                leads=leads,
+            )
+        raise ValueError(f"Multiple leads found with email: {payload.lead_email}")
 
     lead = leads[0]
     lead_id = lead["id"]
@@ -98,11 +108,11 @@ def add_email_activity_to_lead(args: AddEmailActivityToLeadArgs) -> AddEmailActi
 
     lead_details = get_lead_by_id(lead_id)
     if not lead_details:
-        _send_error_email_no_lead_details_found(workflow_id=activity.info().workflow_id,
-                                                lead_id=lead_id)
-        raise ValueError(
-            f"Could not retrieve lead details for lead ID: {lead_id}"
-        )
+        if is_last_attempt(activity.info()):
+            _send_error_email_no_lead_details_found(
+                workflow_id=activity.info().workflow_id, lead_id=lead_id
+            )
+        raise ValueError(f"Could not retrieve lead details for lead ID: {lead_id}")
 
     contact = None
     target_email = (payload.lead_email or "").strip().lower()
@@ -136,9 +146,12 @@ def add_email_activity_to_lead(args: AddEmailActivityToLeadArgs) -> AddEmailActi
             payload.lead_email,
             contact_debug,
         )
-        _send_error_email_no_contact_found(workflow_id=activity.info().workflow_id,
-                                           lead_id=lead_id,
-                                           lead_email=payload.lead_email)
+        if is_last_attempt(activity.info()):
+            _send_error_email_no_contact_found(
+                workflow_id=activity.info().workflow_id,
+                lead_id=lead_id,
+                lead_email=payload.lead_email,
+            )
         raise ValueError(f"No contact found with email: {payload.lead_email}")
 
     email_data = {
@@ -184,11 +197,15 @@ def _send_error_email_no_lead_found(workflow_id: str, lead_email: str) -> None:
         <p><strong>Temporal Playbook:</strong> <a href="{MAILER_AUTOMATION_TEMPORAL_PLAYBOOK_URL}">Mailer Automation Temporal Playbook</a></p>
         <p><strong>Time:</strong> {datetime.now().isoformat()}</p>
         """
-    send_email(subject="Reply Received Workflow: No Lead Found for Email",
-               body=detailed_error_message)
+    send_email(
+        subject="Reply Received Workflow: No Lead Found for Email",
+        body=detailed_error_message,
+    )
 
 
-def _send_error_email_multiple_leads_found(workflow_id: str, lead_email: str, leads: list[dict]) -> None:
+def _send_error_email_multiple_leads_found(
+    workflow_id: str, lead_email: str, leads: list[dict]
+) -> None:
     detailed_error_message = f"""
         <h2>Reply Received Workflow: Multiple Leads Found for Email</h2>
         <p><strong>Error:</strong> Multiple leads found for email {lead_email}</p>
@@ -200,8 +217,10 @@ def _send_error_email_multiple_leads_found(workflow_id: str, lead_email: str, le
         <h3>Leads Found:</h3>
         <pre>{json.dumps(leads, indent=2, default=str)}</pre>
         """
-    send_email(subject="Reply Received Workflow: Multiple Leads Found for Email",
-               body=detailed_error_message)
+    send_email(
+        subject="Reply Received Workflow: Multiple Leads Found for Email",
+        body=detailed_error_message,
+    )
 
 
 def _send_error_email_no_lead_details_found(workflow_id: str, lead_id: str) -> None:
@@ -213,11 +232,15 @@ def _send_error_email_no_lead_details_found(workflow_id: str, lead_id: str) -> N
         <p><strong>Temporal Playbook:</strong> <a href="{MAILER_AUTOMATION_TEMPORAL_PLAYBOOK_URL}">Mailer Automation Temporal Playbook</a></p>
         <p><strong>Time:</strong> {datetime.now().isoformat()}</p>
         """
-    send_email(subject="Reply Received Workflow: No Lead Details Found for Lead in Close",
-               body=detailed_error_message)
+    send_email(
+        subject="Reply Received Workflow: No Lead Details Found for Lead in Close",
+        body=detailed_error_message,
+    )
 
 
-def _send_error_email_no_contact_found(workflow_id: str, lead_id: str, lead_email: str) -> None:
+def _send_error_email_no_contact_found(
+    workflow_id: str, lead_id: str, lead_email: str
+) -> None:
     detailed_error_message = f"""
         <h2>Reply Received Workflow: No Contact Found for Lead in Close</h2>
         <p><strong>Error:</strong> No contact found for lead ID: <a href="{CLOSE_CRM_UI_LEAD_BASE_URL}/{lead_id}/">{lead_id}</a> with email {lead_email}</p>
@@ -226,8 +249,10 @@ def _send_error_email_no_contact_found(workflow_id: str, lead_id: str, lead_emai
         <p><strong>Temporal Playbook:</strong> <a href="{MAILER_AUTOMATION_TEMPORAL_PLAYBOOK_URL}">Mailer Automation Temporal Playbook</a></p>
         <p><strong>Time:</strong> {datetime.now().isoformat()}</p>
         """
-    send_email(subject="Reply Received Workflow: No Contact Found for Lead in Close",
-               body=detailed_error_message)
+    send_email(
+        subject="Reply Received Workflow: No Contact Found for Lead in Close",
+        body=detailed_error_message,
+    )
 
 
 @activity.defn(name="reply_received_pause_sequence_subscriptions")

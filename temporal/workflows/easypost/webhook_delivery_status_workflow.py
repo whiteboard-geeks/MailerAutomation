@@ -10,16 +10,20 @@ from temporalio import workflow
 from temporalio.common import RetryPolicy
 from temporalio.exceptions import ApplicationError
 
-from config import MAILER_AUTOMATION_TEMPORAL_PLAYBOOK_URL, TEMPORAL_WORKFLOW_UI_BASE_URL
+from config import (
+    MAILER_AUTOMATION_TEMPORAL_PLAYBOOK_URL,
+    TEMPORAL_WORKFLOW_UI_BASE_URL,
+    TEMPORAL_WORKFLOW_ACTIVITY_MAX_ATTEMPTS,
+)
 from temporal.shared import WAITING_FOR_RESUME_KEY_STR
 
 
 with workflow.unsafe.imports_passed_through():
     from temporal.activities.easypost.webhook_delivery_status import (
-        CreatePackageDeliveredCustomInput, 
-        CreatePackageDeliveredCustomResult, 
+        CreatePackageDeliveredCustomInput,
+        CreatePackageDeliveredCustomResult,
         UpdateDeliveryInfoInput,
-        UpdateDeliveryInfoResult, 
+        UpdateDeliveryInfoResult,
         create_package_delivered_custom_activity_in_close_activity,
         update_delivery_info_for_lead_activity,
         TrackingDetail as TrackingDetailActivity,
@@ -72,19 +76,19 @@ class WebhookDeliveryStatusWorkflow:
         self._data_issue_fixed: bool = True
         self._activity_retry_policy = RetryPolicy(
             initial_interval=timedelta(seconds=5),
-            maximum_attempts=2,
+            maximum_attempts=TEMPORAL_WORKFLOW_ACTIVITY_MAX_ATTEMPTS,
         )
 
     @workflow.run
-    async def run(self, input: WebhookDeliveryStatusPayload) -> WebhookDeliveryStatusResult:
+    async def run(
+        self, input: WebhookDeliveryStatusPayload
+    ) -> WebhookDeliveryStatusResult:
         input_validated = self._validate_input(input)
 
         last_tracking_detail = input_validated.result.tracking_details[-1]
 
         if last_tracking_detail.message == "Delivered, To Original Sender":
-            return WebhookDeliveryStatusResult(
-                status=Status.NO_OP_RETURNED_TO_SENDER
-            )
+            return WebhookDeliveryStatusResult(status=Status.NO_OP_RETURNED_TO_SENDER)
 
         update_delivery_info_input = UpdateDeliveryInfoInput(
             tracking_code=input_validated.result.tracking_code,
@@ -96,19 +100,26 @@ class WebhookDeliveryStatusWorkflow:
         )
 
         update_delivery_info_result = await self._update_delivery_info_for_lead(
-            update_delivery_info_input)
+            update_delivery_info_input
+        )
 
         create_package_delivered_custom_input = CreatePackageDeliveredCustomInput(
             lead_id=update_delivery_info_result.lead_id,
             last_tracking_detail=update_delivery_info_input.last_tracking_detail,
         )
 
-        create_package_delivered_custom_result = await self._create_package_delivered_custom_activity(
-            create_package_delivered_custom_input)
-        
+        create_package_delivered_custom_result = (
+            await self._create_package_delivered_custom_activity(
+                create_package_delivered_custom_input
+            )
+        )
+
         status = Status.SUCCESS
 
-        if create_package_delivered_custom_result.status == CreatePackageDeliveredCustomResult.Status.SKIPPED:
+        if (
+            create_package_delivered_custom_result.status
+            == CreatePackageDeliveredCustomResult.Status.SKIPPED
+        ):
             status = Status.NO_OP_DUPLICATE_ACTIVITY
 
         return WebhookDeliveryStatusResult(status=status)
@@ -117,17 +128,22 @@ class WebhookDeliveryStatusWorkflow:
         self, input: WebhookDeliveryStatusPayload
     ) -> WebhookDeliveryStatusPayloadValidated:
         try:
-            input_validated = WebhookDeliveryStatusPayloadValidated.model_validate(input.json_payload)
+            input_validated = WebhookDeliveryStatusPayloadValidated.model_validate(
+                input.json_payload
+            )
         except Exception as exc:
-            _send_error_email_validation_error(workflow_id=workflow.info().workflow_id, 
-                                               json_payload=input.json_payload)
+            _send_error_email_validation_error(
+                workflow_id=workflow.info().workflow_id, json_payload=input.json_payload
+            )
             raise ApplicationError(
                 f"Invalid payload for delivery status workflow: {exc}"
             ) from exc
 
         return input_validated
-    
-    async def _update_delivery_info_for_lead(self, input: UpdateDeliveryInfoInput) -> UpdateDeliveryInfoResult:
+
+    async def _update_delivery_info_for_lead(
+        self, input: UpdateDeliveryInfoInput
+    ) -> UpdateDeliveryInfoResult:
         while True:
             try:
                 return await workflow.execute_activity(
@@ -139,7 +155,9 @@ class WebhookDeliveryStatusWorkflow:
             except Exception:
                 await self._wait_for_signal_data_issue_fixed()
 
-    async def _create_package_delivered_custom_activity(self, input: CreatePackageDeliveredCustomInput) -> CreatePackageDeliveredCustomResult:
+    async def _create_package_delivered_custom_activity(
+        self, input: CreatePackageDeliveredCustomInput
+    ) -> CreatePackageDeliveredCustomResult:
         while True:
             try:
                 return await workflow.execute_activity(
@@ -158,7 +176,9 @@ class WebhookDeliveryStatusWorkflow:
         workflow.upsert_search_attributes({WAITING_FOR_RESUME_KEY_STR: [False]})
 
 
-def _send_error_email_validation_error(workflow_id: str, json_payload: dict[str, Any]) -> None:
+def _send_error_email_validation_error(
+    workflow_id: str, json_payload: dict[str, Any]
+) -> None:
     detailed_error_message = f"""
         <h2>Validation Error in EasyPost Delivery Status Workflow</h2>
         <p><strong>Error:</strong> Payload validation failed</p>
@@ -170,4 +190,7 @@ def _send_error_email_validation_error(workflow_id: str, json_payload: dict[str,
         <h3>JSON Payload:</h3>
         <pre>{json.dumps(json_payload, indent=2, default=str)}</pre>
         """
-    send_email(subject="Validation Error in EasyPost Delivery Status Workflow", body=detailed_error_message)
+    send_email(
+        subject="Validation Error in EasyPost Delivery Status Workflow",
+        body=detailed_error_message,
+    )
