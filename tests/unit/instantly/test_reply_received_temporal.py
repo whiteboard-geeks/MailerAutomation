@@ -106,8 +106,13 @@ def test_workflow_validation_requires_reply_body():
     mock_now = Mock()
     mock_now.isoformat.return_value = "2023-09-01T12:00:00Z"
 
-    with patch("temporal.workflows.instantly.webhook_reply_received_workflow.workflow.info", lambda: mock_info), \
-         patch("temporal.workflows.instantly.webhook_reply_received_workflow.workflow.now", lambda: mock_now):
+    with patch(
+        "temporal.workflows.instantly.webhook_reply_received_workflow.workflow.info",
+        lambda: mock_info,
+    ), patch(
+        "temporal.workflows.instantly.webhook_reply_received_workflow.workflow.now",
+        lambda: mock_now,
+    ):
         with pytest.raises(ApplicationError):
             WebhookReplyReceivedWorkflow._validate_input(payload)
 
@@ -242,7 +247,11 @@ def test_add_email_activity_to_lead_raises_when_no_leads(monkeypatch):
     # Mock activity.info() to avoid needing activity context
     mock_info = Mock()
     mock_info.workflow_id = "test-workflow-id"
-    monkeypatch.setattr("temporal.activities.instantly.webhook_reply_received.activity.info", lambda: mock_info)
+    mock_info.attempt = 1
+    monkeypatch.setattr(
+        "temporal.activities.instantly.webhook_reply_received.activity.info",
+        lambda: mock_info,
+    )
 
     monkeypatch.setattr(activities, "create_email_search_query", lambda _: "query")
     monkeypatch.setattr(activities, "search_close_leads", lambda _: [])

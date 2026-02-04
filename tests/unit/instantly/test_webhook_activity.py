@@ -30,8 +30,12 @@ def test_add_lead_to_instantly_campaign_api_error(
     # Mock activity.info() to avoid needing activity context
     mock_info = Mock()
     mock_info.workflow_id = "test-workflow-id"
+    mock_info.attempt = 3
 
-    with patch("temporal.activities.instantly.webhook_add_lead.activity.info", lambda: mock_info):
+    with patch(
+        "temporal.activities.instantly.webhook_add_lead.activity.info",
+        lambda: mock_info,
+    ):
         mock_campaign_exists.return_value = {"exists": True, "campaign_id": "camp-123"}
         mock_get_lead_details.return_value = LeadDetails(
             email="test@example.com",
@@ -50,5 +54,11 @@ def test_add_lead_to_instantly_campaign_api_error(
 
         assert "Failed to add lead to Instantly" in str(exc.value)
         mock_send_email.assert_called_once()
-        assert mock_send_email.call_args.kwargs["subject"] == "Add Lead Workflow: Error Adding Lead to Instantly"
-        assert "Instantly API rate limit exceeded" in mock_send_email.call_args.kwargs["body"]
+        assert (
+            mock_send_email.call_args.kwargs["subject"]
+            == "Add Lead Workflow: Error Adding Lead to Instantly"
+        )
+        assert (
+            "Instantly API rate limit exceeded"
+            in mock_send_email.call_args.kwargs["body"]
+        )
