@@ -2,26 +2,26 @@ name: CI/CD Pipeline
 
 on:
   push:
-    branches: [ main ]
+    branches: [main]
   pull_request:
-    branches: [ main ]
+    branches: [main]
 
 jobs:
   lint:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v3
-      
+
       - name: Set up Python
         uses: actions/setup-python@v4
         with:
-          python-version: '3.10'
-          
+          python-version: "3.10"
+
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements-dev.txt
-          
+
       - name: Run linting
         run: |
           flake8 .
@@ -35,20 +35,20 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        blueprint: [instantly, gmail, easypost]  # Added gmail blueprint to the test matrix
+        blueprint: [easypost, gmail, instantly, utils] # Added gmail blueprint to the test matrix
     steps:
       - uses: actions/checkout@v3
-      
+
       - name: Set up Python
         uses: actions/setup-python@v4
         with:
-          python-version: '3.10'
-          
+          python-version: "3.10"
+
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements-dev.txt
-          
+
       - name: Run unit tests for ${{ matrix.blueprint }}
         run: |
           pytest tests/unit/${{ matrix.blueprint }} -v
@@ -61,13 +61,14 @@ jobs:
           TEST_EMAIL_SENDER: "dummy@example.com"
           TEST_EMAIL_RECIPIENT: "dummy@example.com"
           TEMPORAL_WORKFLOW_UI_BASE_URL: "dummy"
-          
+          ERROR_EMAIL_RECIPIENTS_CSV: ""
+
   deploy-to-staging:
     needs: blueprint-unit-tests
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v3
-      
+
       - name: Install Heroku CLI
         run: |
           curl https://cli-assets.heroku.com/install.sh | sh
@@ -75,41 +76,41 @@ jobs:
           export PATH="/usr/local/bin:$PATH"
           # Verify installation
           heroku --version
-          
+
       - name: Deploy to Heroku Staging
         uses: akhileshns/heroku-deploy@v3.12.14
         with:
           heroku_api_key: ${{ secrets.HEROKU_API_KEY }}
           heroku_app_name: "mailer-automation-staging"
           heroku_email: ${{ vars.HEROKU_EMAIL }}
-          
+
       - name: Wait for deployment to complete
-        run: sleep 30  # Wait for the app to fully deploy
-          
+        run: sleep 30 # Wait for the app to fully deploy
+
   blueprint-integration-tests:
     needs: deploy-to-staging
     runs-on: ubuntu-latest
     strategy:
-      max-parallel: 1  
+      max-parallel: 1
       matrix:
-        blueprint: [instantly, easypost, gmail]  # Added gmail to the integration test matrix
+        blueprint: [instantly, easypost, gmail] # Added gmail to the integration test matrix
     steps:
       - uses: actions/checkout@v3
-      
+
       - name: Set up Python
         uses: actions/setup-python@v4
         with:
-          python-version: '3.10'
-          
+          python-version: "3.10"
+
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements-dev.txt
-          
+
       - name: Install Heroku CLI and get Redis URL
         run: |
           curl https://cli-assets.heroku.com/install.sh | sh
-          
+
           # Login to Heroku using API key
           cat > ~/.netrc << EOF
           machine api.heroku.com
@@ -120,15 +121,15 @@ jobs:
             password ${{ secrets.HEROKU_API_KEY }}
           EOF
           chmod 600 ~/.netrc
-          
+
           # Get the Redis URL from Heroku config using the API directly
           echo "Attempting to get Redis URL from Heroku config..."
           REDIS_URL=$(curl -s -n -X GET https://api.heroku.com/apps/mailer-automation-staging/config-vars \
             -H "Accept: application/vnd.heroku+json; version=3" \
             -H "Authorization: Bearer ${{ secrets.HEROKU_API_KEY }}" | jq -r '.REDISCLOUD_URL // empty')
-          
+
           echo "Redis URL length: ${#REDIS_URL}"
-          
+
           # Set it as an environment variable for subsequent steps
           if [ -n "$REDIS_URL" ] && [ "$REDIS_URL" != "null" ]; then
             echo "Setting REDISCLOUD_URL environment variable..."
@@ -142,7 +143,7 @@ jobs:
               -H "Authorization: Bearer ${{ secrets.HEROKU_API_KEY }}"
             exit 1
           fi
-          
+
       - name: Run integration tests for ${{ matrix.blueprint }}
         env:
           STAGING_URL: "https://mailer-automation-staging-a1a3b6abc50d.herokuapp.com"
@@ -162,27 +163,27 @@ jobs:
         run: |
           # Set the base URL for tests to point to staging
           export BASE_URL=$STAGING_URL
-          
+
           # Debug: Print environment variables (excluding secrets)
           echo "Environment variables:"
           env | grep -v "KEY" | grep -v "SECRET" | grep -v "TOKEN"
-          
+
           # Run the integration tests for this blueprint (excluding stress tests)
           echo "Running integration tests for ${{ matrix.blueprint }} (excluding stress tests)..."
 
           pytest tests/integration/${{ matrix.blueprint }} -v -rs -m "not stress"
-          
+
   deploy-to-production:
     needs: blueprint-integration-tests
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v3
-      
+
       - name: Install Heroku CLI
         run: |
           curl https://cli-assets.heroku.com/install.sh | sh
-          
+
       - name: Deploy to Heroku Production
         uses: akhileshns/heroku-deploy@v3.12.14
         with:
@@ -195,18 +196,18 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v3
-      
+
       - name: Set up Python
         uses: actions/setup-python@v4
         with:
-          python-version: '3.10'
-          
+          python-version: "3.10"
+
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
           pip install requests  # For API calls
-          
+
       - name: Verify and create webhooks
         env:
           CLOSE_API_KEY: ${{ secrets.CLOSE_API_KEY }}

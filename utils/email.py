@@ -1,16 +1,17 @@
-from config import env_type
+from typing import Any
+from config import ERROR_EMAIL_RECIPIENTS, env_type
 import pytz
 from datetime import datetime
 
 
-def send_email(subject, body, **kwargs):
+def send_email(subject: str, body: str, **kwargs: str) -> dict[str, Any]:
     """
     Send an email using the Gmail API.
 
     In production, error emails are sent to:
     - Lance Johnson only
-    
-    Note: Other team members (Barbara, Lauren, Noura) are excluded from default 
+
+    Note: Other team members (Barbara, Lauren, Noura) are excluded from default
     error recipients. Consultants receive reply notifications for their assigned leads.
 
     In development/staging, no emails are sent.
@@ -32,13 +33,13 @@ def send_email(subject, body, **kwargs):
     central_time_now = datetime.now(central_time_zone)
     time_now_formatted = central_time_now.strftime("%Y-%m-%d %H:%M:%S%z")
 
-    recipients_list = [
-        "Lance Johnson <lance@whiteboardgeeks.com>",
-    ]
-    recipients = ", ".join(recipients_list)
+    recipients = ", ".join(ERROR_EMAIL_RECIPIENTS)
 
     # Override with any explicitly provided recipients
     recipients = kwargs.get("recipients", recipients)
+
+    if not recipients:
+        return {"status": "success", "message": "Recipient list is empty."}
 
     # Add environment information to the body
     environment_info = f"<p><strong>Environment:</strong> {env_type}</p>"
@@ -51,7 +52,7 @@ def send_email(subject, body, **kwargs):
 
     # Import here to avoid circular import
     from blueprints.gmail import send_gmail as bp_send_gmail
-    
+
     # Send email using Gmail API
     gmail_response = bp_send_gmail(
         sender="lance@whiteboardgeeks.com",
