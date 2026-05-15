@@ -68,6 +68,7 @@ class Status(str, Enum):
     SUCCESS = "success"
     NO_OP_RETURNED_TO_SENDER = "no_op_returned_to_sender"
     NO_OP_DUPLICATE_ACTIVITY = "no_op_duplicate_activity"
+    NO_OP_NOT_IN_CLOSE = "no_op_not_in_close"
 
 
 @workflow.defn
@@ -102,6 +103,12 @@ class WebhookDeliveryStatusWorkflow:
         update_delivery_info_result = await self._update_delivery_info_for_lead(
             update_delivery_info_input
         )
+
+        # Cross-tenant tracker (e.g. an onspring-mailer shipment on the shared EasyPost
+        # account). No Close lead exists for this tracking number — short-circuit so we
+        # don't downstream-fail-and-email-the-team for events that aren't ours.
+        if update_delivery_info_result.not_found:
+            return WebhookDeliveryStatusResult(status=Status.NO_OP_NOT_IN_CLOSE)
 
         create_package_delivered_custom_input = CreatePackageDeliveredCustomInput(
             lead_id=update_delivery_info_result.lead_id,

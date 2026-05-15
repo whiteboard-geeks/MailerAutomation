@@ -5,6 +5,7 @@ from enum import Enum
 import json
 from typing import Any
 
+import structlog
 from pydantic import BaseModel, Field
 from temporalio import activity
 
@@ -23,6 +24,8 @@ from temporal.shared import is_last_attempt
 from utils.easypost import create_package_delivered_custom_activity_in_close
 from utils.email import send_email
 
+logger = structlog.get_logger(__name__)
+
 
 class UpdateDeliveryInfoInput(BaseModel):
     tracking_code: str = Field(..., description="Tracking code of the package.")
@@ -32,7 +35,16 @@ class UpdateDeliveryInfoInput(BaseModel):
 
 
 class UpdateDeliveryInfoResult(BaseModel):
-    lead_id: str = Field(..., description="Close lead identifier.")
+    lead_id: str = Field(..., description="Close lead identifier, or empty when not_found.")
+    not_found: bool = Field(
+        default=False,
+        description=(
+            "True when no Close lead matched the tracking number. This is expected for "
+            "trackers created by other tenants on the same EasyPost account (e.g. the "
+            "onspring-mailer fork) — those events arrive here too because EasyPost fires "
+            "every configured webhook for every tracker.event. Short-circuit, don't error."
+        ),
+    )
 
 
 class TrackingDetail(BaseModel):
@@ -94,12 +106,14 @@ def update_delivery_info_for_lead_activity(
         raise ValueError(f"Failed to search Close leads: {e}") from e
 
     if len(close_leads) == 0:
-        if is_last_attempt(activity.info()):
-            _send_error_email_no_leads_found(
-                workflow_id=activity.info().workflow_id,
-                tracking_code=input.tracking_code,
-            )
-        raise ValueError(f"No leads found with tracking number {input.tracking_code}")
+        # Could be a cross-tenant tracker (onspring-mailer shares this EasyPost account
+        # so every Onspring delivered event reaches us too). Return a soft "not_found"
+        # marker so the workflow can no-op without retrying and without paging the team.
+        logger.info(
+            "update_delivery_info.no_leads_found_no_op",
+            tracking_code=input.tracking_code,
+        )
+        return UpdateDeliveryInfoResult(lead_id="", not_found=True)
 
     valid_leads: list[dict] = []
     if len(close_leads) > 1:
@@ -191,20 +205,6 @@ def _send_error_email_search_close_leads_failed(
     send_email(
         subject="Update Delivery Status: Search for Close Leads Failed",
         body=detailed_error_message,
-    )
-
-
-def _send_error_email_no_leads_found(workflow_id: str, tracking_code: str) -> None:
-    detailed_error_message = f"""
-        <h2>Update Delivery Status: No Leads Found</h2>
-        <p><strong>Error:</strong> No leads found on Close with tracking number {tracking_code}</p>
-        <p><strong>Route:</strong> /easypost/delivery_status</p>
-        <p><strong>Workflow ID:</strong> <a href="{TEMPORAL_WORKFLOW_UI_BASE_URL}/{workflow_id}">{workflow_id}</a></p>
-        <p><strong>Temporal Playbook:</strong> <a href="{MAILER_AUTOMATION_TEMPORAL_PLAYBOOK_URL}">Mailer Automation Temporal Playbook</a></p>
-        <p><strong>Time:</strong> {datetime.now().isoformat()}</p>
-        """
-    send_email(
-        subject="Update Delivery Status: No Leads Found", body=detailed_error_message
     )
 
 
