@@ -426,13 +426,30 @@ def list_instantly_campaigns():
         return jsonify(campaigns), 200 if campaigns.get("status") != "error" else 500
 
 
+def _campaign_name_excluded(campaign_name):
+    """Campaigns with 'lance' in the name are personal/raise campaigns that must
+    bypass mailer automation (Close task completion, reply routing, etc.)."""
+    return bool(campaign_name) and "lance" in campaign_name.lower()
+
+
 @instantly_bp.route("/email_sent", methods=["POST"])
 def handle_instantly_email_sent():
     """Handle webhooks from Instantly when an email is sent."""
     g_run_id = getattr(g, "request_id", str(uuid.uuid4()))
 
+    json_payload = request.get_json()
+    campaign_name = (json_payload or {}).get("campaign_name")
+    if _campaign_name_excluded(campaign_name):
+        logger.info(
+            "instantly_webhook_excluded",
+            route="email_sent",
+            campaign_name=campaign_name,
+            run_id=g_run_id,
+        )
+        return jsonify({"status": "ignored", "message": "Campaign excluded from automation"}), 200
+
     input = WebhookEmailSentPayload(
-        json_payload=request.get_json(),
+        json_payload=json_payload,
     )
 
     _ = temporal.run(temporal.client.start_workflow(
@@ -463,11 +480,25 @@ def handle_instantly_reply_received_temporal():
 
     g_run_id = getattr(g, "request_id", str(uuid.uuid4()))
 
+    campaign_name = json_payload.get("campaign_name")
+    if _campaign_name_excluded(campaign_name):
+        logger.info(
+            "instantly_webhook_excluded",
+            route="reply_received",
+            campaign_name=campaign_name,
+            run_id=g_run_id,
+        )
+        response_data = {
+            "status": "ignored",
+            "message": "Campaign excluded from automation",
+        }
+        return log_webhook_response(200, response_data, {"campaign_name": campaign_name})
+
     logger.info(
         "reply_received_temporal_enqueue",
         run_id=g_run_id,
         event_type=json_payload.get("event_type"),
-        campaign_name=json_payload.get("campaign_name"),
+        campaign_name=campaign_name,
         lead_email=json_payload.get("lead_email"),
     )
 
