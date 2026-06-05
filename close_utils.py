@@ -296,7 +296,17 @@ def search_close_leads(query):
         query (dict): The Close query to execute.
 
     Returns:
-        list: A list of leads matching the query, or empty list if none found or error occurs.
+        list: The leads matching the query. An empty list means the search
+            succeeded but matched nothing.
+
+    Raises:
+        Exception: if the Close API request itself fails (rate limiting, timeout,
+            5xx, or a malformed response). Callers MUST NOT treat a failed
+            request as "no leads found". Doing so previously caused Temporal
+            activities to permanently park on transient Close errors (the real
+            error was masked and surfaced as a misleading "No lead found"), and
+            caused the EasyPost delivery flow to silently no-op real deliveries.
+            Letting the exception propagate lets the Temporal activity retry.
     """
     try:
         data_to_return = []
@@ -338,16 +348,18 @@ def search_close_leads(query):
                 break
 
         if not data_to_return:
-            logger.warning("No leads found in Close API search")
-            return []  # Return empty list instead of None
+            logger.info("Close API search succeeded with no matching leads")
 
         return data_to_return
 
     except Exception as e:
+        # Log for diagnostics, then RE-RAISE. A failed request is NOT the same as
+        # "no leads found": returning [] here previously masked transient Close
+        # failures and parked Temporal workflows forever. See the docstring.
         logger.error(f"Failed to search Close leads: {e}")
         logger.error(f"Query used: {query}")
         logger.error(f"Traceback: {traceback.format_exc()}")
-        return []  # Return empty list instead of None
+        raise
 
 
 def get_lead_by_id(lead_id) -> dict | None:

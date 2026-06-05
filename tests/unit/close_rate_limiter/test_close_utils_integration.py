@@ -285,6 +285,33 @@ class TestCloseUtilsIntegration:
         # Verify result
         assert result == [{"id": "lead_123"}]
 
+    @patch("close_utils.make_close_request")
+    def test_search_close_leads_empty_result_returns_empty_list(self, mock_make_request):
+        """A successful search that matches nothing returns []."""
+        mock_response = Mock()
+        mock_response.json.return_value = {"data": [], "cursor": None}
+        mock_make_request.return_value = mock_response
+
+        result = search_close_leads({"query": {"queries": []}})
+
+        assert result == []
+
+    @patch("close_utils.make_close_request")
+    def test_search_close_leads_propagates_request_failure(self, mock_make_request):
+        """A failed Close request must RAISE, not be masked as "no leads found".
+
+        Regression guard: returning [] on transient failures (rate limiting,
+        timeouts, 5xx) made callers conclude the lead/task was absent, which
+        permanently parked Temporal workflows and silently no-op'd EasyPost
+        deliveries. The exception must propagate so the activity retries.
+        """
+        mock_make_request.side_effect = requests.exceptions.RequestException(
+            "Rate limit exceeded after retries"
+        )
+
+        with pytest.raises(requests.exceptions.RequestException):
+            search_close_leads({"query": {"queries": []}})
+
     @patch("close_utils.get_close_rate_limiter")
     def test_rate_limiter_header_parsing_integration(self, mock_get_limiter):
         """Test that response headers are parsed and cached."""
