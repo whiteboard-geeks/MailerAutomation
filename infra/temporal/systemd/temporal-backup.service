@@ -1,0 +1,11 @@
+[Unit]
+Description=Back up Temporal PostgreSQL databases
+Requires=docker.service
+After=docker.service
+
+[Service]
+Type=oneshot
+ExecStart=/opt/temporal/scripts/backup.sh
+Nice=10
+IOSchedulingClass=best-effort
+IOSchedulingPriority=7

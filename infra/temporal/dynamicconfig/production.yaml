@@ -1,0 +1,5 @@
+# Runtime-updatable settings for this small single-node deployment.
+# Keep the history shard count in docker-compose.yml immutable after first boot.
+limit.maxIDLength:
+  - value: 255
+    constraints: {}
