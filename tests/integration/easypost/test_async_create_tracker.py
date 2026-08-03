@@ -95,21 +95,29 @@ class TestAsyncEasyPostTrackerCreationTemporal:
 
     def test_when_webhook_is_triggered_it_updates_the_tracker_id_in_close(self):
         """Test the integration between MailerAutomation in staging and Close CRM in prod."""
-        # given a test lead in Close CRM with a dummy tracker id
+        # Close's production webhook fires automatically when this lead is created.
+        # Wait for that workflow to finish before setting the sentinel value; otherwise
+        # the production workflow can race this staging-specific test and overwrite the
+        # sentinel before the test invokes the staging endpoint.
         lead_id = self.close_crm_create_test_lead_with_tracking_info()
+        production_tracker_id = self.wait_for_tracker_id_from_close(lead_id=lead_id)
+        assert production_tracker_id is not None
+
         dummy_tracker_id = "dummy_tracker_id"
         close_crm_set_tracker_id(lead_id, dummy_tracker_id)
         assert self.close_crm_get_tracker_id(lead_id) == dummy_tracker_id
-        time.sleep(2)
 
-        # when the MailerAutomation webhook is triggered
+        # when the MailerAutomation staging webhook is triggered
         response = self.mailerautomation_call_create_tracker_endpoint(lead_id)
         assert response.status_code == 202
         assert "celery_task_id" not in response.json()
-        time.sleep(2)
 
         # then MailerAutomation shall create a Tracker in EasyPost and set the tracker id in Close CRM
-        updated_tracker_id = self.close_crm_get_tracker_id(lead_id)
+        updated_tracker_id = self.wait_for_tracker_id_change(
+            lead_id=lead_id,
+            previous_tracker_id=dummy_tracker_id,
+        )
+        assert updated_tracker_id is not None
         assert updated_tracker_id != dummy_tracker_id
     
     def close_crm_create_test_lead_with_tracking_info(self, tracking_number : str | None = None, carrier: str | None = None) -> str:
@@ -204,6 +212,19 @@ class TestAsyncEasyPostTrackerCreationTemporal:
             if tracker_id:
                 return tracker_id
             time.sleep(2)
+
+    def wait_for_tracker_id_change(
+        self,
+        lead_id: str,
+        previous_tracker_id: str,
+    ) -> str | None:
+        start_time = time.time()
+        while (time.time() - start_time) < self.BACKGROUND_PROCESSING_TIMEOUT:
+            tracker_id = self.close_crm_get_tracker_id(lead_id)
+            if tracker_id and tracker_id != previous_tracker_id:
+                return tracker_id
+            time.sleep(1)
+        return None
 
 
 def close_crm_set_tracker_id(lead_id: str, tracker_id: str):
