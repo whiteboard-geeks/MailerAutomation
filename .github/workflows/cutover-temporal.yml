@@ -12,6 +12,14 @@ on:
           - both
           - production
           - staging
+      operation:
+        description: Configure self-hosted Temporal or remove the retired Cloud drain
+        required: true
+        default: configure
+        type: choice
+        options:
+          - configure
+          - remove-legacy
 
 permissions:
   contents: read
@@ -30,6 +38,7 @@ jobs:
       TEMPORAL_TLS_CERT_BASE64: ${{ secrets.TEMPORAL_SELF_HOSTED_CLIENT_CERT_BASE64 }}
       TEMPORAL_TLS_KEY_BASE64: ${{ secrets.TEMPORAL_SELF_HOSTED_CLIENT_KEY_BASE64 }}
       HEROKU_API_KEY: ${{ secrets.HEROKU_API_KEY }}
+      REMOVE_LEGACY: ${{ inputs.operation == 'remove-legacy' }}
     steps:
       - uses: actions/checkout@v4
       - name: Update production config vars
@@ -48,6 +57,7 @@ jobs:
       TEMPORAL_TLS_CERT_BASE64: ${{ secrets.TEMPORAL_SELF_HOSTED_CLIENT_CERT_BASE64 }}
       TEMPORAL_TLS_KEY_BASE64: ${{ secrets.TEMPORAL_SELF_HOSTED_CLIENT_KEY_BASE64 }}
       HEROKU_API_KEY: ${{ secrets.HEROKU_API_KEY }}
+      REMOVE_LEGACY: ${{ inputs.operation == 'remove-legacy' }}
     steps:
       - uses: actions/checkout@v4
       - name: Update staging config vars

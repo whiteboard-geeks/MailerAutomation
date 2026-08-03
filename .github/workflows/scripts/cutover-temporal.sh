@@ -4,18 +4,24 @@ set -euo pipefail
 : "${APP_NAME:?APP_NAME is required}"
 : "${HEROKU_API_KEY:?HEROKU_API_KEY is required}"
 : "${TEMPORAL_NAMESPACE:?TEMPORAL_NAMESPACE is required}"
-: "${TEMPORAL_LEGACY_ADDRESS:?TEMPORAL_LEGACY_ADDRESS is required}"
-: "${TEMPORAL_LEGACY_NAMESPACE:?TEMPORAL_LEGACY_NAMESPACE is required}"
-: "${TEMPORAL_LEGACY_API_KEY:?TEMPORAL_LEGACY_API_KEY is required}"
 : "${TEMPORAL_TLS_CA_BASE64:?TEMPORAL_TLS_CA_BASE64 is required}"
 : "${TEMPORAL_TLS_CERT_BASE64:?TEMPORAL_TLS_CERT_BASE64 is required}"
 : "${TEMPORAL_TLS_KEY_BASE64:?TEMPORAL_TLS_KEY_BASE64 is required}"
+
+REMOVE_LEGACY="${REMOVE_LEGACY:-false}"
+if [[ "$REMOVE_LEGACY" != "true" ]]; then
+  : "${TEMPORAL_LEGACY_ADDRESS:?TEMPORAL_LEGACY_ADDRESS is required}"
+  : "${TEMPORAL_LEGACY_NAMESPACE:?TEMPORAL_LEGACY_NAMESPACE is required}"
+  : "${TEMPORAL_LEGACY_API_KEY:?TEMPORAL_LEGACY_API_KEY is required}"
+fi
+export REMOVE_LEGACY
 
 python3 - <<'PY' >/tmp/temporal-config.json
 import json
 import os
 
 namespace = os.environ["TEMPORAL_NAMESPACE"]
+remove_legacy = os.environ["REMOVE_LEGACY"] == "true"
 print(json.dumps({
     "TEMPORAL_ADDRESS": "app.whiteboardgeeks.com:7233",
     "TEMPORAL_NAMESPACE": namespace,
@@ -32,9 +38,15 @@ print(json.dumps({
         "https://app.whiteboardgeeks.com/temporal/namespaces/"
         f"{namespace}/workflows"
     ),
-    "TEMPORAL_LEGACY_ADDRESS": os.environ["TEMPORAL_LEGACY_ADDRESS"],
-    "TEMPORAL_LEGACY_NAMESPACE": os.environ["TEMPORAL_LEGACY_NAMESPACE"],
-    "TEMPORAL_LEGACY_API_KEY": os.environ["TEMPORAL_LEGACY_API_KEY"],
+    "TEMPORAL_LEGACY_ADDRESS": (
+        None if remove_legacy else os.environ["TEMPORAL_LEGACY_ADDRESS"]
+    ),
+    "TEMPORAL_LEGACY_NAMESPACE": (
+        None if remove_legacy else os.environ["TEMPORAL_LEGACY_NAMESPACE"]
+    ),
+    "TEMPORAL_LEGACY_API_KEY": (
+        None if remove_legacy else os.environ["TEMPORAL_LEGACY_API_KEY"]
+    ),
 }))
 PY
 
