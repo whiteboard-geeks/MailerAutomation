@@ -156,9 +156,12 @@ jobs:
           TEST_EMAIL_SENDER: ${{ secrets.TEST_EMAIL_SENDER }}
           TEST_EMAIL_RECIPIENT: ${{ secrets.TEST_EMAIL_RECIPIENT }}
           REDISCLOUD_URL: ${{ env.REDISCLOUD_URL }}
-          TEMPORAL_ADDRESS: ${{ secrets.TEMPORAL_ADDRESS_STAGING }}
-          TEMPORAL_NAMESPACE: ${{ secrets.TEMPORAL_NAMESPACE_STAGING }}
-          TEMPORAL_API_KEY: ${{ secrets.TEMPORAL_API_KEY_STAGING }}
+          TEMPORAL_ADDRESS: "app.whiteboardgeeks.com:7233"
+          TEMPORAL_NAMESPACE: "mailerautomation-staging"
+          TEMPORAL_TLS_CA_BASE64: ${{ secrets.TEMPORAL_SELF_HOSTED_CA_BASE64 }}
+          TEMPORAL_TLS_CERT_BASE64: ${{ secrets.TEMPORAL_SELF_HOSTED_CLIENT_CERT_BASE64 }}
+          TEMPORAL_TLS_KEY_BASE64: ${{ secrets.TEMPORAL_SELF_HOSTED_CLIENT_KEY_BASE64 }}
+          TEMPORAL_TLS_SERVER_NAME: "app.whiteboardgeeks.com"
           TEMPORAL_WORKFLOW_UI_BASE_URL: "dummy"
         run: |
           # Set the base URL for tests to point to staging
