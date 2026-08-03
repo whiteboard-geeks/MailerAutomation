@@ -6,14 +6,18 @@ import logging
 from datetime import timedelta
 
 import structlog
+from temporalio.client import Client
 from temporalio.worker import Worker
 
-from temporal.activities.easypost.webhook_delivery_status import create_package_delivered_custom_activity_in_close_activity, update_delivery_info_for_lead_activity
+from temporal.activities.easypost.webhook_delivery_status import (
+    create_package_delivered_custom_activity_in_close_activity,
+    update_delivery_info_for_lead_activity,
+)
 
 from .activities.instantly import webhook_email_sent
 from .activities.instantly import webhook_reply_received as reply_received_activities
 from .activities.easypost import webhook_create_tracker as easypost_activities
-from temporal.client_provider import get_temporal_client
+from temporal.client_provider import get_temporal_client, temporal_config_is_set
 from temporal.shared import TASK_QUEUE_NAME
 
 from .workflows.instantly.webhook_add_lead_workflow import WebhookAddLeadWorkflow
@@ -29,64 +33,76 @@ from .workflows.easypost.webhook_create_tracker_workflow import (
     WebhookCreateTrackerWorkflow,
 )
 
-async def run_worker() -> None:
-    """Run the Temporal worker with proper configuration."""
+WORKFLOWS = [
+    WebhookEmailSentWorkflow,
+    WebhookAddLeadWorkflow,
+    WebhookReplyReceivedWorkflow,
+    WebhookCreateTrackerWorkflow,
+    WebhookDeliveryStatusWorkflow,
+]
 
-    # Configure logging
+ACTIVITIES = [
+    webhook_email_sent.complete_lead_task_by_email,
+    webhook_email_sent.add_email_activity_to_lead,
+    add_lead_to_instantly_campaign,
+    reply_received_activities.add_email_activity_to_lead,
+    reply_received_activities.pause_sequence_subscriptions,
+    reply_received_activities.send_notification_email,
+    easypost_activities.create_tracker_activity,
+    easypost_activities.update_close_lead_activity,
+    update_delivery_info_for_lead_activity,
+    create_package_delivered_custom_activity_in_close_activity,
+]
+
+
+def _build_worker(client: Client, executor: ThreadPoolExecutor) -> Worker:
+    return Worker(
+        client,
+        task_queue=TASK_QUEUE_NAME,
+        workflows=WORKFLOWS,
+        activities=ACTIVITIES,
+        graceful_shutdown_timeout=timedelta(minutes=1),
+        max_concurrent_activities=10,
+        max_concurrent_workflow_tasks=5,
+        activity_executor=executor,
+    )
+
+
+async def run_worker() -> None:
+    """Run the primary worker and, during migration, the Cloud drain worker."""
     logging.basicConfig(level=logging.INFO)
     logger = structlog.get_logger(__name__)
 
     try:
-        # Connect to Temporal server
-        client = await get_temporal_client()
+        primary_client = await get_temporal_client()
+    except Exception as exc:
+        logger.exception("failed_to_connect_to_primary_temporal_server", error=str(exc))
+        raise
 
-        logger.info("connected_to_temporal_server")
-    except Exception as e:
-        logger.error(f"Failed to connect to Temporal server: {e}")
-        logger.info("Worker will run without Temporal connection (for testing)")
-        return
+    clients: list[tuple[str, Client]] = [("primary", primary_client)]
 
-    with ThreadPoolExecutor(max_workers=10) as activity_executor:
-        # Create worker with all workflows and activities
-        worker = Worker(
-            client,
-            task_queue=TASK_QUEUE_NAME,
-            workflows=[
-                WebhookEmailSentWorkflow,
-                WebhookAddLeadWorkflow,
-                WebhookReplyReceivedWorkflow,
-                WebhookCreateTrackerWorkflow,
-                WebhookDeliveryStatusWorkflow,
-            ],
-            activities=[
-                webhook_email_sent.complete_lead_task_by_email,
-                webhook_email_sent.add_email_activity_to_lead,
-                add_lead_to_instantly_campaign,
-                reply_received_activities.add_email_activity_to_lead,
-                reply_received_activities.pause_sequence_subscriptions,
-                reply_received_activities.send_notification_email,
-                easypost_activities.create_tracker_activity,
-                easypost_activities.update_close_lead_activity,
-                update_delivery_info_for_lead_activity,
-                create_package_delivered_custom_activity_in_close_activity,
-            ],
-            # Graceful shutdown timeout
-            graceful_shutdown_timeout=timedelta(minutes=1),
-            # Activity task configuration
-            max_concurrent_activities=10,
-            max_concurrent_workflow_tasks=5,
-            activity_executor=activity_executor,
-
-        )
-
-        logger.info("Starting Temporal worker...")
+    if temporal_config_is_set("TEMPORAL_LEGACY"):
         try:
-            await worker.run()
-        except KeyboardInterrupt:
-            logger.info("Worker stopped by user")
-        except Exception as e:
-            logger.error(f"Worker failed: {e}")
+            legacy_client = await get_temporal_client("TEMPORAL_LEGACY")
+        except Exception as exc:
+            logger.exception(
+                "failed_to_connect_to_legacy_temporal_server", error=str(exc)
+            )
             raise
+        clients.append(("legacy", legacy_client))
+
+    with ThreadPoolExecutor(max_workers=10 * len(clients)) as activity_executor:
+        workers = [
+            (name, _build_worker(client, activity_executor))
+            for name, client in clients
+        ]
+
+        logger.info(
+            "starting_temporal_workers",
+            clusters=[name for name, _ in workers],
+            task_queue=TASK_QUEUE_NAME,
+        )
+        await asyncio.gather(*(worker.run() for _, worker in workers))
 
 
 if __name__ == "__main__":

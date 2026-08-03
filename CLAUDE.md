@@ -4,16 +4,17 @@
 
 - **Heroku app (prod):** `mailer-automation` — `web` ×2 + `worker_temporal` ×1, addons `papertrail` + `rediscloud` (whiteboard-geeks team)
 - **Heroku app (staging):** `mailer-automation-staging`
-- **Temporal Cloud:** namespace `mailerautomation-prod.y3flc`, gRPC `mailerautomation-prod.y3flc.tmprl.cloud:7233`, UI https://cloud.temporal.io/namespaces/mailerautomation-prod.y3flc/workflows
-- The Flask web dynos enqueue Temporal workflows; the `worker_temporal` dyno runs the activities.
+- **Temporal (self-hosted):** Whiteboard Geeks Hetzner `wbg-apps`, namespace `mailerautomation-prod`, mTLS gRPC `app.whiteboardgeeks.com:7233`, SSO UI https://app.whiteboardgeeks.com/temporal/namespaces/mailerautomation-prod/workflows
+- **Legacy drain:** old Temporal Cloud namespace `mailerautomation-prod.y3flc` remains only for pre-cutover open workflows. The worker polls both clusters until the Cloud open-workflow count reaches zero.
+- The Flask web dynos enqueue new workflows on self-hosted Temporal; the `worker_temporal` dyno runs activities for both the primary and temporary legacy clusters.
 
 ## Logs & where to look first
 
 | Symptom | First place to look |
 |---|---|
 | Webhook not triggering anything downstream | `heroku logs -a mailer-automation -n 1500 \| grep <route>` — confirms the request hit Flask and was/wasn't enqueued |
-| Workflow ran but produced wrong output | Temporal Cloud UI → search by workflow id, view event history. Or `temporal --env prod workflow show -w <id>` |
-| "Did the worker actually pick this up?" | Temporal UI status. `RUNNING` for >1 min usually means an activity is failing or waiting on `_data_issue_fixed` signal |
+| Workflow ran but produced wrong output | Self-hosted Temporal UI → search by workflow id and view event history. For pre-cutover workflows, use `temporal --env prod workflow show -w <id>` against legacy Cloud. |
+| "Did the worker actually pick this up?" | Temporal UI status. `RUNNING` for >1 min usually means an activity is failing or waiting on `_data_issue_fixed` signal. Check both clusters during the drain. |
 | Older than ~12h | Heroku CLI tail is short — use **Papertrail** (addon `PAPERTRAIL`, `heroku addons:open papertrail -a mailer-automation`) |
 | Redis-related | `rediscloud:100` addon |
 
@@ -21,7 +22,7 @@ Papertrail keeps logs much longer than `heroku logs` (which is rolling, only 150
 
 ## Temporal CLI
 
-A `prod` env is configured at `~/.config/temporalio/temporal.yaml`. Useful one-liners:
+The `prod` env at `~/.config/temporalio/temporal.yaml` intentionally remains pointed at legacy Cloud during the drain. Self-hosted server operations and backups are documented in `infra/temporal/README.md`. Useful legacy one-liners:
 
 ```sh
 temporal --env prod workflow list --limit 20 --query 'WorkflowType="WebhookDeliveryStatusWorkflow"'

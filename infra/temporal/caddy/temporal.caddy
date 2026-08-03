@@ -1,0 +1,14 @@
+# Temporal UI, mounted at /temporal/ and protected by the shared Google SSO.
+redir /temporal /temporal/ permanent
+
+handle /temporal/* {
+    forward_auth localhost:4180 {
+        uri /code-chat/oauth2/auth
+        copy_headers X-Auth-Request-Email X-Auth-Request-User
+        @denied status 401 403
+        handle_response @denied {
+            redir * /code-chat/oauth2/start?rd={http.request.orig_uri} 302
+        }
+    }
+    reverse_proxy localhost:8088
+}
