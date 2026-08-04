@@ -61,9 +61,15 @@ ls -lh /var/backups/temporal
 sha256sum -c /var/backups/temporal/sha256-*.txt
 ```
 
-Hetzner automated backups are enabled for host-level recovery. Manual cutover
-snapshots are tagged `purpose=temporal-cutover`. Keep an off-host copy of any
-archive that must survive loss of the Hetzner account.
+Hetzner automated backups are enabled in the `10-14` UTC window with the
+standard seven-image rotation. Manual cutover snapshots are tagged
+`purpose=temporal-cutover`:
+
+- `415966829` — initial self-hosted cutover, August 3, 2026
+- `416266945` — final Cloud retirement with verified archive, August 4, 2026
+
+Keep an off-host copy of any archive that must survive loss of the Hetzner
+account.
 
 ## Retired Temporal Cloud archive
 
