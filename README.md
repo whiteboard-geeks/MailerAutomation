@@ -34,7 +34,7 @@ MailerAutomation is a Flask-based application that helps track package shipments
 - EasyPost account
 - Gmail API credentials (for email integration)
 - Instantly account (for email campaigns)
-- Temporal Cloud account (for background processing)
+- Access to the self-hosted Temporal endpoint, or a local Temporal development server
 
 ### Environment Variables
 
@@ -48,16 +48,21 @@ ENV_TYPE=development  # or production, staging
 INSTANTLY_API_KEY=your_instantly_api_key
 GMAIL_SERVICE_ACCOUNT_INFO=service_account_in_json_string
 GMAIL_WEBHOOK_PASSWORD=user_generated_for_sending_emails_with_endpoint
-TEMPORAL_API_KEY=your_temporal_api_key
 TEMPORAL_NAMESPACE=your_temporal_namespace
 TEMPORAL_ADDRESS=your_temporal_address
+TEMPORAL_TLS_CA_BASE64=base64_encoded_ca_certificate
+TEMPORAL_TLS_CERT_BASE64=base64_encoded_client_certificate
+TEMPORAL_TLS_KEY_BASE64=base64_encoded_client_private_key
+TEMPORAL_TLS_SERVER_NAME=app.whiteboardgeeks.com
 TEMPORAL_WORKFLOW_UI_BASE_URL=your_temporal_workflow_ui_base_url
 ```
 
-Note: Only set `TEMPORAL_*` variables when you want Flask to connect to Temporal Cloud. Otherwise leave them unset so that Flask connects to the local Temporal Cluster.
+Leave `TEMPORAL_*` unset to connect to a plaintext local development server at
+`localhost:7233`. Production and staging use the self-hosted mTLS endpoint; see
+`infra/temporal/README.md`.
 
 Example for `TEMPORAL_WORKFLOW_UI_BASE_URL`:
-`https://cloud.temporal.io/namespaces/mailerautomation-prod.y3flc/workflows`
+`https://app.whiteboardgeeks.com/temporal/namespaces/mailerautomation-prod/workflows`
 
 ### Installation
 

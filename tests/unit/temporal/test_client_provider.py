@@ -21,9 +21,8 @@ def clear_temporal_environment(monkeypatch: pytest.MonkeyPatch) -> None:
         "TLS_CA_BASE64",
         "TLS_SERVER_NAME",
     ]
-    for prefix in ("TEMPORAL", "TEMPORAL_LEGACY"):
-        for suffix in suffixes:
-            monkeypatch.delenv(f"{prefix}_{suffix}", raising=False)
+    for suffix in suffixes:
+        monkeypatch.delenv(f"TEMPORAL_{suffix}", raising=False)
 
 
 @pytest.mark.asyncio
@@ -86,13 +85,3 @@ async def test_mtls_cert_and_key_are_required_together(
 
     with pytest.raises(ValueError, match="must be configured together"):
         await client_provider.get_temporal_client()
-
-
-@pytest.mark.asyncio
-async def test_legacy_connection_has_no_local_defaults(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    monkeypatch.setenv("TEMPORAL_LEGACY_ADDRESS", "cloud.example:7233")
-
-    with pytest.raises(ValueError, match="TEMPORAL_LEGACY_NAMESPACE"):
-        await client_provider.get_temporal_client("TEMPORAL_LEGACY")

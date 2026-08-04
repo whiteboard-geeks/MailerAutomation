@@ -17,7 +17,7 @@ from temporal.activities.easypost.webhook_delivery_status import (
 from .activities.instantly import webhook_email_sent
 from .activities.instantly import webhook_reply_received as reply_received_activities
 from .activities.easypost import webhook_create_tracker as easypost_activities
-from temporal.client_provider import get_temporal_client, temporal_config_is_set
+from temporal.client_provider import get_temporal_client
 from temporal.shared import TASK_QUEUE_NAME
 
 from .workflows.instantly.webhook_add_lead_workflow import WebhookAddLeadWorkflow
@@ -69,40 +69,20 @@ def _build_worker(client: Client, executor: ThreadPoolExecutor) -> Worker:
 
 
 async def run_worker() -> None:
-    """Run the primary worker and, during migration, the Cloud drain worker."""
+    """Run the self-hosted Temporal worker."""
     logging.basicConfig(level=logging.INFO)
     logger = structlog.get_logger(__name__)
 
     try:
-        primary_client = await get_temporal_client()
+        client = await get_temporal_client()
     except Exception as exc:
-        logger.exception("failed_to_connect_to_primary_temporal_server", error=str(exc))
+        logger.exception("failed_to_connect_to_temporal_server", error=str(exc))
         raise
 
-    clients: list[tuple[str, Client]] = [("primary", primary_client)]
-
-    if temporal_config_is_set("TEMPORAL_LEGACY"):
-        try:
-            legacy_client = await get_temporal_client("TEMPORAL_LEGACY")
-        except Exception as exc:
-            logger.exception(
-                "failed_to_connect_to_legacy_temporal_server", error=str(exc)
-            )
-            raise
-        clients.append(("legacy", legacy_client))
-
-    with ThreadPoolExecutor(max_workers=10 * len(clients)) as activity_executor:
-        workers = [
-            (name, _build_worker(client, activity_executor))
-            for name, client in clients
-        ]
-
-        logger.info(
-            "starting_temporal_workers",
-            clusters=[name for name, _ in workers],
-            task_queue=TASK_QUEUE_NAME,
-        )
-        await asyncio.gather(*(worker.run() for _, worker in workers))
+    with ThreadPoolExecutor(max_workers=10) as activity_executor:
+        worker = _build_worker(client, activity_executor)
+        logger.info("starting_temporal_worker", task_queue=TASK_QUEUE_NAME)
+        await worker.run()
 
 
 if __name__ == "__main__":

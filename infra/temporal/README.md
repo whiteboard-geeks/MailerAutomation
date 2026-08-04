@@ -13,6 +13,7 @@ Geeks Hetzner application server.
 - Temporal UI on host loopback `127.0.0.1:8088`, published by Caddy at
   `https://app.whiteboardgeeks.com/temporal/` behind Google SSO
 - Daily PostgreSQL logical backups in `/var/backups/temporal`, retained 14 days
+- Hetzner automated backups enabled, plus manual cutover snapshots
 
 The Temporal Server itself is not exposed directly. Heroku and GitHub Actions
 connect through the HAProxy mTLS boundary.
@@ -60,18 +61,32 @@ ls -lh /var/backups/temporal
 sha256sum -c /var/backups/temporal/sha256-*.txt
 ```
 
-These are same-host backups. A Hetzner snapshot or off-host copy is still
-required for host-level disaster recovery.
+Hetzner automated backups are enabled for host-level recovery. Manual cutover
+snapshots are tagged `purpose=temporal-cutover`. Keep an off-host copy of any
+archive that must survive loss of the Hetzner account.
 
-## Cloud drain
+## Retired Temporal Cloud archive
 
-Temporal does not support moving open Workflow histories between clusters.
-During cutover, each Heroku worker polls both clusters:
+Temporal Cloud was fully retired on August 3, 2026. Temporal cannot import an
+existing Workflow event history as a live execution on another cluster, so the
+pre-cutover histories are preserved as a read-only audit and SDK replay archive.
 
-- `TEMPORAL_*`: self-hosted primary; all new Workflows start here
-- `TEMPORAL_LEGACY_*`: old Temporal Cloud namespace; only existing open
-  Workflows drain here
+The verified archive is stored in two places:
 
-Do not remove the legacy variables or delete the Cloud namespaces until their
-open Workflow count reaches zero (or the parked Workflows are explicitly
-terminated after review).
+- Server: `/opt/temporal/legacy-cloud-archive/temporal-cloud-archive-20260803`
+- Off-host workstation copy:
+  `~/Backups/Temporal/temporal-cloud-archive-20260803.tar.gz`
+
+Archive coverage:
+
+- Production visibility metadata: 7,076 Workflows, including all 96 that were
+  still open at retirement
+- Staging visibility metadata: 102 Workflows, including all 44 that were still
+  open and both failed executions
+- Raw event histories: 448 selected executions (all open, all retained failed,
+  250 recent completed production, and all retained completed staging)
+- `SHA256SUMS` verifies every archive file
+
+All Temporal Cloud namespaces and Cloud API credentials were deleted. Heroku
+has no `TEMPORAL_LEGACY_*` configuration, and the local `prod` and `staging`
+Temporal CLI environments now point to the self-hosted mTLS endpoint.

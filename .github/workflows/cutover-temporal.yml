@@ -1,4 +1,4 @@
-name: Cut over Heroku to self-hosted Temporal
+name: Configure Heroku self-hosted Temporal
 
 on:
   workflow_dispatch:
@@ -12,15 +12,6 @@ on:
           - both
           - production
           - staging
-      operation:
-        description: Configure self-hosted Temporal or remove the retired Cloud drain
-        required: true
-        default: configure
-        type: choice
-        options:
-          - configure
-          - remove-legacy
-
 permissions:
   contents: read
 
@@ -31,16 +22,12 @@ jobs:
     env:
       APP_NAME: mailer-automation
       TEMPORAL_NAMESPACE: mailerautomation-prod
-      TEMPORAL_LEGACY_ADDRESS: ${{ secrets.TEMPORAL_LEGACY_ADDRESS_PROD }}
-      TEMPORAL_LEGACY_NAMESPACE: ${{ secrets.TEMPORAL_LEGACY_NAMESPACE_PROD }}
-      TEMPORAL_LEGACY_API_KEY: ${{ secrets.TEMPORAL_LEGACY_API_KEY_PROD }}
       TEMPORAL_TLS_CA_BASE64: ${{ secrets.TEMPORAL_SELF_HOSTED_CA_BASE64 }}
       TEMPORAL_TLS_CERT_BASE64: ${{ secrets.TEMPORAL_SELF_HOSTED_CLIENT_CERT_BASE64 }}
       TEMPORAL_TLS_KEY_BASE64: ${{ secrets.TEMPORAL_SELF_HOSTED_CLIENT_KEY_BASE64 }}
       HEROKU_API_KEY: ${{ secrets.HEROKU_API_KEY }}
-      REMOVE_LEGACY: ${{ inputs.operation == 'remove-legacy' }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - name: Update production config vars
         run: .github/workflows/scripts/cutover-temporal.sh
 
@@ -50,15 +37,11 @@ jobs:
     env:
       APP_NAME: mailer-automation-staging
       TEMPORAL_NAMESPACE: mailerautomation-staging
-      TEMPORAL_LEGACY_ADDRESS: ${{ secrets.TEMPORAL_ADDRESS_STAGING }}
-      TEMPORAL_LEGACY_NAMESPACE: ${{ secrets.TEMPORAL_NAMESPACE_STAGING }}
-      TEMPORAL_LEGACY_API_KEY: ${{ secrets.TEMPORAL_API_KEY_STAGING }}
       TEMPORAL_TLS_CA_BASE64: ${{ secrets.TEMPORAL_SELF_HOSTED_CA_BASE64 }}
       TEMPORAL_TLS_CERT_BASE64: ${{ secrets.TEMPORAL_SELF_HOSTED_CLIENT_CERT_BASE64 }}
       TEMPORAL_TLS_KEY_BASE64: ${{ secrets.TEMPORAL_SELF_HOSTED_CLIENT_KEY_BASE64 }}
       HEROKU_API_KEY: ${{ secrets.HEROKU_API_KEY }}
-      REMOVE_LEGACY: ${{ inputs.operation == 'remove-legacy' }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - name: Update staging config vars
         run: .github/workflows/scripts/cutover-temporal.sh
