@@ -13,7 +13,7 @@ from config import (
     TEMPORAL_WORKFLOW_ACTIVITY_MAX_ATTEMPTS,
     TEMPORAL_WORKFLOW_UI_BASE_URL,
 )
-from temporal.shared import WAITING_FOR_RESUME_KEY_STR
+from temporal.shared import WAITING_FOR_RESUME_KEY_STR, raise_if_test_campaign
 from utils.email import send_email
 
 with workflow.unsafe.imports_passed_through():
@@ -120,7 +120,8 @@ class WebhookAddLeadWorkflow:
                     retry_policy=self._activity_retry_policy,
                 )
                 return
-            except Exception:
+            except Exception as exc:
+                raise_if_test_campaign(exc, input.campaign_name)
                 await self._wait_for_signal_data_issue_fixed()
 
     async def _wait_for_signal_data_issue_fixed(self) -> None:

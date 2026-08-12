@@ -1,8 +1,11 @@
 from temporalio import activity
 from temporalio.common import SearchAttributeKey
-from temporalio.exceptions import TimeoutError as TemporalTimeoutError
+from temporalio.exceptions import (
+    ApplicationError,
+    TimeoutError as TemporalTimeoutError,
+)
 
-from config import TEMPORAL_WORKFLOW_ACTIVITY_MAX_ATTEMPTS
+from config import TEMPORAL_WORKFLOW_ACTIVITY_MAX_ATTEMPTS, TEST_CAMPAIGN_NAME
 
 
 TASK_QUEUE_NAME = "task_queue"
@@ -32,3 +35,19 @@ def is_timeout_failure(exc: BaseException) -> bool:
             return True
         current = getattr(current, "cause", None)
     return False
+
+
+def raise_if_test_campaign(exc: BaseException, campaign_name: str | None) -> None:
+    """Fail the workflow instead of parking when this is the integration-test campaign.
+
+    Integration tests run against production using TEST_CAMPAIGN_NAME, which does not
+    exist in Instantly on purpose. Parking on the data_issue_fixed signal leaves a
+    Running workflow forever -- roughly four per CI run, accumulating indefinitely and
+    burying genuinely stuck workflows in the WaitingForResume queue. Failing fast keeps
+    that queue meaningful; the test campaign is never something a human needs to repair.
+    """
+    if campaign_name == TEST_CAMPAIGN_NAME:
+        raise ApplicationError(
+            f"Campaign '{TEST_CAMPAIGN_NAME}' is the integration-test campaign and is "
+            "expected to fail. Failing fast instead of waiting for a manual signal."
+        ) from exc

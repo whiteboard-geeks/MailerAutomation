@@ -13,7 +13,7 @@ from config import (
     TEMPORAL_WORKFLOW_ACTIVITY_MAX_ATTEMPTS,
     TEMPORAL_ACTIVITY_START_TO_CLOSE_TIMEOUT_SECONDS,
 )
-from temporal.shared import WAITING_FOR_RESUME_KEY_STR
+from temporal.shared import WAITING_FOR_RESUME_KEY_STR, raise_if_test_campaign
 from temporal.workflows.alerting import alert_if_activity_timeout
 from utils.email import send_email
 
@@ -37,6 +37,7 @@ class WebhookEmailSentPayload(BaseModel):
 class WebhookEmailSentWorkflow:
     def __init__(self) -> None:
         self._data_issue_fixed: bool = True
+        self._campaign_name: str | None = None
         self._activity_retry_policy = RetryPolicy(
             initial_interval=timedelta(seconds=5),
             maximum_attempts=TEMPORAL_WORKFLOW_ACTIVITY_MAX_ATTEMPTS,
@@ -50,6 +51,7 @@ class WebhookEmailSentWorkflow:
     @workflow.run
     async def run(self, input: WebhookEmailSentPayload) -> None:
         input_validated = self._validate_input(input)
+        self._campaign_name = input_validated.campaign_name
 
         complete_lead_task_result = await self._complete_lead_task_by_email(input_validated)
 
@@ -83,6 +85,7 @@ class WebhookEmailSentWorkflow:
                     lead_email=input.lead_email,
                     campaign_name=input.campaign_name,
                 )
+                raise_if_test_campaign(exc, input.campaign_name)
                 await self._wait_for_signal_data_issue_fixed()
 
     async def _add_email_activity_to_lead(self, input: AddEmailActivityToLeadArgs) -> None:
@@ -105,6 +108,7 @@ class WebhookEmailSentWorkflow:
                     lead_email=input.lead_email,
                     lead_id=input.lead_id,
                 )
+                raise_if_test_campaign(exc, self._campaign_name)
                 await self._wait_for_signal_data_issue_fixed()
 
     async def _wait_for_signal_data_issue_fixed(self) -> None:

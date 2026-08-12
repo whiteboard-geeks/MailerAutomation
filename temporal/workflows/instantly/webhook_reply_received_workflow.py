@@ -16,7 +16,7 @@ from config import (
     TEMPORAL_WORKFLOW_ACTIVITY_MAX_ATTEMPTS,
     TEMPORAL_ACTIVITY_START_TO_CLOSE_TIMEOUT_SECONDS,
 )
-from temporal.shared import WAITING_FOR_RESUME_KEY_STR
+from temporal.shared import WAITING_FOR_RESUME_KEY_STR, raise_if_test_campaign
 from temporal.workflows.alerting import alert_if_activity_timeout
 from utils.email import send_email
 
@@ -45,6 +45,7 @@ class WebhookReplyReceivedPayload(BaseModel):
 class WebhookReplyReceivedWorkflow:
     def __init__(self) -> None:
         self._data_issue_fixed: bool = True
+        self._campaign_name: str | None = None
         self._activity_retry_policy = RetryPolicy(
             initial_interval=timedelta(seconds=5),
             maximum_attempts=TEMPORAL_WORKFLOW_ACTIVITY_MAX_ATTEMPTS,
@@ -57,6 +58,7 @@ class WebhookReplyReceivedWorkflow:
     @workflow.run
     async def run(self, input: WebhookReplyReceivedPayload) -> None:
         input_validated = self._validate_input(input)
+        self._campaign_name = input_validated.campaign_name
 
         add_email_result = await self._add_email_activity_to_lead(input_validated)
 
@@ -93,6 +95,7 @@ class WebhookReplyReceivedWorkflow:
                     lead_email=input_validated.lead_email,
                     campaign_name=input_validated.campaign_name,
                 )
+                raise_if_test_campaign(exc, input_validated.campaign_name)
                 await self._wait_for_signal_data_issue_fixed()
 
     async def _pause_sequence_subscriptions(
@@ -120,6 +123,7 @@ class WebhookReplyReceivedWorkflow:
                     lead_email=lead_email,
                     lead_id=lead_id,
                 )
+                raise_if_test_campaign(exc, self._campaign_name)
                 await self._wait_for_signal_data_issue_fixed()
 
     async def _send_notification_email(
@@ -160,6 +164,7 @@ class WebhookReplyReceivedWorkflow:
                     campaign_name=input_validated.campaign_name,
                     lead_id=add_email_result.lead_id,
                 )
+                raise_if_test_campaign(exc, input_validated.campaign_name)
                 await self._wait_for_signal_data_issue_fixed()
 
     async def _wait_for_signal_data_issue_fixed(self) -> None:
