@@ -14,6 +14,8 @@ from temporal.activities.easypost.webhook_delivery_status import (
     update_delivery_info_for_lead_activity,
 )
 
+from temporal.activities.notifications import send_activity_timeout_alert
+
 from .activities.instantly import webhook_email_sent
 from .activities.instantly import webhook_reply_received as reply_received_activities
 from .activities.easypost import webhook_create_tracker as easypost_activities
@@ -52,6 +54,7 @@ ACTIVITIES = [
     easypost_activities.update_close_lead_activity,
     update_delivery_info_for_lead_activity,
     create_package_delivered_custom_activity_in_close_activity,
+    send_activity_timeout_alert,
 ]
 
 

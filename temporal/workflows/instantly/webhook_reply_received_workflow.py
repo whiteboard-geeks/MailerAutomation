@@ -14,11 +14,14 @@ from config import (
     MAILER_AUTOMATION_TEMPORAL_PLAYBOOK_URL,
     TEMPORAL_WORKFLOW_UI_BASE_URL,
     TEMPORAL_WORKFLOW_ACTIVITY_MAX_ATTEMPTS,
+    TEMPORAL_ACTIVITY_START_TO_CLOSE_TIMEOUT_SECONDS,
 )
 from temporal.shared import WAITING_FOR_RESUME_KEY_STR
+from temporal.workflows.alerting import alert_if_activity_timeout
 from utils.email import send_email
 
 ENV_TYPE = os.getenv("ENV_TYPE", "development")
+ROUTE = "/instantly/reply_received"
 
 with workflow.unsafe.imports_passed_through():
     from temporal.activities.instantly.webhook_reply_received import (
@@ -77,10 +80,19 @@ class WebhookReplyReceivedWorkflow:
                 return await workflow.execute_activity(
                     add_email_activity_to_lead,
                     AddEmailActivityToLeadArgs(payload=input_validated),
-                    start_to_close_timeout=timedelta(seconds=10),
+                    start_to_close_timeout=timedelta(
+                        seconds=TEMPORAL_ACTIVITY_START_TO_CLOSE_TIMEOUT_SECONDS
+                    ),
                     retry_policy=self._activity_retry_policy,
                 )
-            except Exception:
+            except Exception as exc:
+                await alert_if_activity_timeout(
+                    exc,
+                    activity_name="add_email_activity_to_lead",
+                    route=ROUTE,
+                    lead_email=input_validated.lead_email,
+                    campaign_name=input_validated.campaign_name,
+                )
                 await self._wait_for_signal_data_issue_fixed()
 
     async def _pause_sequence_subscriptions(
@@ -95,10 +107,19 @@ class WebhookReplyReceivedWorkflow:
                     PauseSequenceSubscriptionsArgs(
                         lead_id=lead_id, lead_email=lead_email
                     ),
-                    start_to_close_timeout=timedelta(seconds=10),
+                    start_to_close_timeout=timedelta(
+                        seconds=TEMPORAL_ACTIVITY_START_TO_CLOSE_TIMEOUT_SECONDS
+                    ),
                     retry_policy=self._activity_retry_policy,
                 )
-            except Exception:
+            except Exception as exc:
+                await alert_if_activity_timeout(
+                    exc,
+                    activity_name="pause_sequence_subscriptions",
+                    route=ROUTE,
+                    lead_email=lead_email,
+                    lead_id=lead_id,
+                )
                 await self._wait_for_signal_data_issue_fixed()
 
     async def _send_notification_email(
@@ -124,11 +145,21 @@ class WebhookReplyReceivedWorkflow:
                         lead_details=add_email_result.lead_details,
                         email_activity_id=add_email_result.email_activity_id,
                     ),
-                    start_to_close_timeout=timedelta(seconds=10),
+                    start_to_close_timeout=timedelta(
+                        seconds=TEMPORAL_ACTIVITY_START_TO_CLOSE_TIMEOUT_SECONDS
+                    ),
                     retry_policy=self._activity_retry_policy,
                 )
                 return
-            except Exception:
+            except Exception as exc:
+                await alert_if_activity_timeout(
+                    exc,
+                    activity_name="send_notification_email",
+                    route=ROUTE,
+                    lead_email=add_email_result.lead_email,
+                    campaign_name=input_validated.campaign_name,
+                    lead_id=add_email_result.lead_id,
+                )
                 await self._wait_for_signal_data_issue_fixed()
 
     async def _wait_for_signal_data_issue_fixed(self) -> None:

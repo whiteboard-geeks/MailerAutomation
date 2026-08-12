@@ -11,9 +11,13 @@ from config import (
     MAILER_AUTOMATION_TEMPORAL_PLAYBOOK_URL, 
     TEMPORAL_WORKFLOW_UI_BASE_URL, 
     TEMPORAL_WORKFLOW_ACTIVITY_MAX_ATTEMPTS,
+    TEMPORAL_ACTIVITY_START_TO_CLOSE_TIMEOUT_SECONDS,
 )
 from temporal.shared import WAITING_FOR_RESUME_KEY_STR
+from temporal.workflows.alerting import alert_if_activity_timeout
 from utils.email import send_email
+
+ROUTE = "/instantly/email_sent"
 
 with workflow.unsafe.imports_passed_through():
     from temporal.activities.instantly.webhook_email_sent import (
@@ -66,10 +70,19 @@ class WebhookEmailSentWorkflow:
                 return await workflow.execute_activity(
                     complete_lead_task_by_email,
                     CompleteLeadTaskByEmailArgs(lead_email=input.lead_email, campaign_name=input.campaign_name),
-                    start_to_close_timeout=timedelta(seconds=10),
+                    start_to_close_timeout=timedelta(
+                        seconds=TEMPORAL_ACTIVITY_START_TO_CLOSE_TIMEOUT_SECONDS
+                    ),
                     retry_policy=self._activity_retry_policy,
                 )
-            except Exception:
+            except Exception as exc:
+                await alert_if_activity_timeout(
+                    exc,
+                    activity_name="complete_lead_task_by_email",
+                    route=ROUTE,
+                    lead_email=input.lead_email,
+                    campaign_name=input.campaign_name,
+                )
                 await self._wait_for_signal_data_issue_fixed()
 
     async def _add_email_activity_to_lead(self, input: AddEmailActivityToLeadArgs) -> None:
@@ -78,11 +91,20 @@ class WebhookEmailSentWorkflow:
                 await workflow.execute_activity(
                     add_email_activity_to_lead,
                     input,
-                    start_to_close_timeout=timedelta(seconds=10),
+                    start_to_close_timeout=timedelta(
+                        seconds=TEMPORAL_ACTIVITY_START_TO_CLOSE_TIMEOUT_SECONDS
+                    ),
                     retry_policy=self._activity_retry_policy,
                 )
                 return
-            except Exception:
+            except Exception as exc:
+                await alert_if_activity_timeout(
+                    exc,
+                    activity_name="add_email_activity_to_lead",
+                    route=ROUTE,
+                    lead_email=input.lead_email,
+                    lead_id=input.lead_id,
+                )
                 await self._wait_for_signal_data_issue_fixed()
 
     async def _wait_for_signal_data_issue_fixed(self) -> None:
