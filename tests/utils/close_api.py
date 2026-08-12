@@ -630,6 +630,36 @@ class CloseAPI:
 
         return response.json().get("data", [])
 
+    @retry(stop=stop_after_attempt(12), wait=wait_fixed(5))
+    def wait_for_task_complete(self, task_id: str) -> dict:
+        """Wait until a Close task has been marked complete.
+
+        Args:
+            task_id (str): The Close task id to poll.
+
+        Returns:
+            dict: The completed task.
+        """
+        task = self.get_task(task_id)
+        if not task.get("is_complete"):
+            raise Exception(f"Task {task_id} is not complete yet")
+        return task
+
+    @retry(stop=stop_after_attempt(12), wait=wait_fixed(5))
+    def wait_for_lead_email_activities(self, lead_id: str) -> list:
+        """Wait until at least one email activity exists on a lead.
+
+        Args:
+            lead_id (str): The Close lead id to poll.
+
+        Returns:
+            list: The lead's email activities.
+        """
+        activities = self.get_lead_email_activities(lead_id)
+        if not activities:
+            raise Exception(f"No email activity on lead {lead_id} yet")
+        return activities
+
     @retry(stop=stop_after_attempt(6), wait=wait_fixed(5))
     def wait_for_lead_by_email(self, email: str) -> None:
         """Wait until a lead can be found in Close CRM by email.

@@ -1,6 +1,5 @@
 import os
 import json
-from time import sleep
 import requests
 from tests.utils.close_api import CloseAPI
 from datetime import datetime
@@ -71,21 +70,25 @@ class TestInstantlyEmailSentIntegration:
         print(f"Webhook response status: {response.status_code}")
         print(f"Webhook response: {response.json()}")
         
-        sleep(6)
-
-        # Define verification functions with retries
-        print("Checking if task is complete...")
-        task = self.close_api.get_task(self.test_data["task_id"])
+        # The workflow runs two activities in sequence against Close, each allowed up to
+        # TEMPORAL_ACTIVITY_START_TO_CLOSE_TIMEOUT_SECONDS. A fixed sleep here raced that
+        # work and made this test flaky: the task would be complete while the email
+        # activity from the second activity had not landed yet. Poll instead.
+        print("Waiting for task to be marked complete...")
+        task = self.close_api.wait_for_task_complete(self.test_data["task_id"])
         assert task["is_complete"], "Task was not marked as complete"
 
-        print("Checking for email activities...")
-        email_activities = self.close_api.get_lead_email_activities(lead_data["id"])
+        print("Waiting for email activity to be created...")
+        email_activities = self.close_api.wait_for_lead_email_activities(
+            lead_data["id"]
+        )
         assert len(email_activities) > 0, "No email activity was created"
 
         print(f"Found {len(email_activities)} email activities")
 
         print(f"Looking for email with subject: {self.mock_payload['email_subject']}")
 
+        matching_email = None
         for email in email_activities:
             if email["subject"] == self.mock_payload["email_subject"]:
                 matching_email = email
