@@ -13,6 +13,12 @@ logger = structlog.get_logger("easypost")
 EASYPOST_PROD_API_KEY = os.environ.get("EASYPOST_PROD_API_KEY")
 EASYPOST_TEST_API_KEY = os.environ.get("EASYPOST_TEST_API_KEY")
 
+# Close "Mailer Delivered" custom activity type, and the date_delivered field on it.
+# The date field is what scopes duplicate detection to a single delivery so that a
+# re-mailed (recycled) lead still gets a new activity.
+MAILER_DELIVERED_ACTIVITY_TYPE_ID = "custom.actitype_3KhBfWgjtVfiGYbczbgOWv"
+ACTIVITY_DATE_DELIVERED_FIELD = "custom.cf_wS7icPETKthDz764rkbuC1kQYzP0l88CzlMxoJAlOkO"
+
 
 # EasyPost client setup
 def get_easypost_client(tracking_number=None):
@@ -55,10 +61,15 @@ def get_easypost_client(tracking_number=None):
 
 def create_package_delivered_custom_activity_in_close(lead_id, delivery_information) -> dict[str, Any]:
     """Create a custom activity in Close for delivered package."""
-    # Check if there are already existing mailer delivered activities for this lead
-    if _check_existing_mailer_delivered_activities(lead_id):
+    # Only skip if an activity already exists for THIS delivery date. Recycled
+    # leads carry a 'Mailer Delivered' activity from their previous mailing; a
+    # lead-wide existence check would suppress every re-mail forever.
+    if _check_existing_mailer_delivered_activities(
+        lead_id, delivery_date=delivery_information.get("delivery_date")
+    ):
         logger.info(
-            f"Mailer delivered custom activity already exists for lead {lead_id}, skipping creation"
+            f"Mailer delivered custom activity already exists for lead {lead_id} "
+            f"on {delivery_information.get('delivery_date')}, skipping creation"
         )
         return {"status": "skipped", "reason": "duplicate_activity_exists"}
 
@@ -121,15 +132,21 @@ def create_package_delivered_custom_activity_in_close(lead_id, delivery_informat
     return response_data
 
 
-def _check_existing_mailer_delivered_activities(lead_id):
+def _check_existing_mailer_delivered_activities(lead_id, delivery_date=None):
     """
-    Check if there are existing 'Mailer Delivered' custom activities for a lead.
+    Check for existing 'Mailer Delivered' custom activities on a lead.
 
     Args:
         lead_id (str): The ID of the lead to check
+        delivery_date (date | str | None): When provided, only an activity whose
+            own date_delivered matches this date counts as a duplicate. This is
+            what makes re-mailing a recycled lead work: the lead keeps the
+            activity from its earlier mailing, and the new delivery still gets
+            its own activity. When omitted, any existing activity counts
+            (legacy lead-wide behaviour).
 
     Returns:
-        bool: True if existing activities found, False otherwise
+        bool: True if a matching activity was found, False otherwise
     """
     try:
         params = {
@@ -147,16 +164,30 @@ def _check_existing_mailer_delivered_activities(lead_id):
             response_data = response.json()
             activities = response_data.get("data", [])
 
-            # Return True if any mailer delivered activities found, False otherwise
+            if delivery_date is not None:
+                wanted = (
+                    delivery_date.isoformat()
+                    if hasattr(delivery_date, "isoformat")
+                    else str(delivery_date)
+                )[:10]
+                activities = [
+                    a
+                    for a in activities
+                    if str(a.get(ACTIVITY_DATE_DELIVERED_FIELD) or "")[:10] == wanted
+                ]
+
             has_existing_delivered_activities = len(activities) > 0
 
             if has_existing_delivered_activities:
                 logger.info(
-                    f"Found {len(activities)} existing mailer delivered activities for lead {lead_id}"
+                    f"Found {len(activities)} existing mailer delivered activities for "
+                    f"lead {lead_id}"
+                    + (f" on {delivery_date}" if delivery_date is not None else "")
                 )
             else:
                 logger.info(
                     f"No existing mailer delivered activities found for lead {lead_id}"
+                    + (f" on {delivery_date}" if delivery_date is not None else "")
                 )
 
             return has_existing_delivered_activities
