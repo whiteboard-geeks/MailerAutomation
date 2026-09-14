@@ -1,0 +1,191 @@
+{
+ "counters": {},
+ "created_by": "user_8HHUh3SH67YzD8IMakjKoJ9SWputzlUdaihCG95g7as",
+ "date_created": "2025-03-27T21:17:16.598653",
+ "date_updated": "2025-03-27T21:27:35.806753",
+ "events": [
+  {
+   "action": "created",
+   "extra_filter": {
+    "filters": [
+     {
+      "field": "data",
+      "filter": {
+       "field": "custom.cf_iSOPYKzS9IPK20gJ8eH9Q74NT7grCQW9psqo4lZR3Ii",
+       "filter": {
+        "type": "non_null"
+       },
+       "type": "field_accessor"
+      },
+      "type": "field_accessor"
+     },
+     {
+      "field": "data",
+      "filter": {
+       "field": "custom.cf_2QQR5e6vJUyGzlYBtHddFpdqNp5393nEnUiZk1Ukl9l",
+       "filter": {
+        "type": "non_null"
+       },
+       "type": "field_accessor"
+      },
+      "type": "field_accessor"
+     },
+     {
+      "field": "data",
+      "filter": {
+       "field": "custom.cf_JsirGUJdp8RrCI6XwW48xFKEccSwulSCwZ7pAZL84vh",
+       "filter": {
+        "type": "is_null"
+       },
+       "type": "field_accessor"
+      },
+      "type": "field_accessor"
+     }
+    ],
+    "type": "and"
+   },
+   "object_type": "lead"
+  },
+  {
+   "action": "updated",
+   "extra_filter": {
+    "filters": [
+     {
+      "filters": [
+       {
+        "field": "changed_fields",
+        "filter": {
+         "type": "contains",
+         "value": "custom.cf_2QQR5e6vJUyGzlYBtHddFpdqNp5393nEnUiZk1Ukl9l"
+        },
+        "type": "field_accessor"
+       },
+       {
+        "field": "data",
+        "filter": {
+         "field": "custom.cf_iSOPYKzS9IPK20gJ8eH9Q74NT7grCQW9psqo4lZR3Ii",
+         "filter": {
+          "type": "non_null"
+         },
+         "type": "field_accessor"
+        },
+        "type": "field_accessor"
+       }
+      ],
+      "type": "and"
+     },
+     {
+      "filters": [
+       {
+        "field": "changed_fields",
+        "filter": {
+         "type": "contains",
+         "value": "custom.cf_iSOPYKzS9IPK20gJ8eH9Q74NT7grCQW9psqo4lZR3Ii"
+        },
+        "type": "field_accessor"
+       },
+       {
+        "field": "data",
+        "filter": {
+         "field": "custom.cf_2QQR5e6vJUyGzlYBtHddFpdqNp5393nEnUiZk1Ukl9l",
+         "filter": {
+          "type": "non_null"
+         },
+         "type": "field_accessor"
+        },
+        "type": "field_accessor"
+       }
+      ],
+      "type": "and"
+     }
+    ],
+    "type": "or"
+   },
+   "object_type": "lead"
+  }
+ ],
+ "health_status": "healthy",
+ "history": {
+  "errors": [],
+  "successes": [
+   {
+    "attempt_number": 1,
+    "datetime": "2026-09-10T17:21:07.768569+00:00",
+    "error": null,
+    "event_id": "ev_2vnR4AshDxjY2mTl32dVIn",
+    "response_status_code": 202
+   },
+   {
+    "attempt_number": 1,
+    "datetime": "2026-09-10T17:21:07.216661+00:00",
+    "error": null,
+    "event_id": "ev_1hkfvbOolHNjX4eC858Wib",
+    "response_status_code": 202
+   },
+   {
+    "attempt_number": 1,
+    "datetime": "2026-09-10T17:21:06.442125+00:00",
+    "error": null,
+    "event_id": "ev_6QPM1hvUMz3tYAB0cVFKrA",
+    "response_status_code": 202
+   },
+   {
+    "attempt_number": 1,
+    "datetime": "2026-09-10T17:20:54.587302+00:00",
+    "error": null,
+    "event_id": "ev_4XZKvyrnbQYzpBduZseJUo",
+    "response_status_code": 202
+   },
+   {
+    "attempt_number": 1,
+    "datetime": "2026-09-10T17:20:53.864806+00:00",
+    "error": null,
+    "event_id": "ev_6mHZL8Cwr06T26t4zerD8R",
+    "response_status_code": 202
+   },
+   {
+    "attempt_number": 1,
+    "datetime": "2026-09-10T17:20:53.598336+00:00",
+    "error": null,
+    "event_id": "ev_1vJl8cI5J9MgqupwNbCAtS",
+    "response_status_code": 202
+   },
+   {
+    "attempt_number": 1,
+    "datetime": "2026-09-10T17:20:53.504571+00:00",
+    "error": null,
+    "event_id": "ev_5N4Zb9E81EgMma6MRFgYks",
+    "response_status_code": 202
+   },
+   {
+    "attempt_number": 1,
+    "datetime": "2026-09-10T17:20:52.294746+00:00",
+    "error": null,
+    "event_id": "ev_3os7UzSlEhloGAfnhfX4c1",
+    "response_status_code": 202
+   },
+   {
+    "attempt_number": 1,
+    "datetime": "2026-09-10T17:20:49.798323+00:00",
+    "error": null,
+    "event_id": "ev_4593x2hV3BZ2e32jEvGEaP",
+    "response_status_code": 202
+   },
+   {
+    "attempt_number": 1,
+    "datetime": "2026-09-10T17:20:48.950410+00:00",
+    "error": null,
+    "event_id": "ev_3x3pFMpYePso54QjQNGXC4",
+    "response_status_code": 202
+   }
+  ]
+ },
+ "id": "whsub_0vyDZbaKl3PbrYl9PCWHHI",
+ "latest_error": null,
+ "pause_reason": null,
+ "recent_consecutive_fail_buckets_cnt": 0,
+ "status": "active",
+ "updated_by": "user_8HHUh3SH67YzD8IMakjKoJ9SWputzlUdaihCG95g7as",
+ "url": "https://mailer-automation-c26722b7119c.herokuapp.com/easypost/create_tracker",
+ "verify_ssl": true
+}
