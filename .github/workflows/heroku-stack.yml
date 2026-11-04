@@ -1,0 +1,52 @@
+name: Set Heroku stack
+
+# Changes the stack the next build uses (Heroku-22 reaches end-of-life
+# 2027-04-30). The change applies on the next deploy from CI/CD Pipeline.
+on:
+  workflow_dispatch:
+    inputs:
+      stack:
+        description: Stack for the next build
+        required: true
+        default: heroku-24
+      target:
+        description: Heroku app to update
+        required: true
+        default: both
+        type: choice
+        options:
+          - both
+          - production
+          - staging
+
+permissions:
+  contents: read
+
+jobs:
+  set-stack:
+    runs-on: ubuntu-latest
+    env:
+      HEROKU_API_KEY: ${{ secrets.HEROKU_API_KEY }}
+      STACK: ${{ inputs.stack }}
+      TARGET: ${{ inputs.target }}
+    steps:
+      - name: Set build stack
+        run: |
+          set -euo pipefail
+          api() {
+            curl -fsS -X "$1" "https://api.heroku.com$2" \
+              -H "Accept: application/vnd.heroku+json; version=3" \
+              -H "Authorization: Bearer $HEROKU_API_KEY" \
+              -H "Content-Type: application/json" ${3:+-d "$3"}
+          }
+          echo "Available stacks:"
+          api GET /stacks | jq -r '.[] | "  \(.name) (\(.state))"'
+          case "$TARGET" in
+            both) apps="mailer-automation-staging mailer-automation" ;;
+            production) apps="mailer-automation" ;;
+            staging) apps="mailer-automation-staging" ;;
+          esac
+          for app in $apps; do
+            api PATCH "/apps/$app" "{\"build_stack\":\"$STACK\"}" \
+              | jq -r '"\(.name): stack=\(.stack.name) next build=\(.build_stack.name)"'
+          done
