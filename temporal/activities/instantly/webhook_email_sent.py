@@ -69,11 +69,17 @@ def complete_lead_task_by_email(
     activity.logger.info("close_crm_task_count = %d", len(tasks))
 
     # Find the matching task
-    matching_task = None
-    for task in tasks:
-        if args.campaign_name in task.get("text", "") and not task.get("is_complete"):
-            matching_task = task
-            break
+    campaign_tasks = [t for t in tasks if args.campaign_name in t.get("text", "")]
+    matching_task = next((t for t in campaign_tasks if not t.get("is_complete")), None)
+
+    if not matching_task and campaign_tasks:
+        # The task exists but someone already marked it done (e.g. bulk-completed in the
+        # Close inbox before Instantly sent; 67 such tasks on 2026-11-03/04). The email
+        # still went out, so log it rather than parking the workflow.
+        activity.logger.info(
+            "campaign task already complete for lead %s; logging email anyway", lead_id
+        )
+        return CompleteLeadTaskByEmailResult(lead_id=lead_id)
 
     if not matching_task:
         if is_last_attempt(activity.info()):
