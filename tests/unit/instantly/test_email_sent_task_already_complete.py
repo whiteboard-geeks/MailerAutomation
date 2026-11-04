@@ -7,7 +7,6 @@ with 'Task not found'. An already-completed task for the campaign is not an erro
 
 from unittest.mock import MagicMock, patch
 
-import pytest
 
 from temporal.activities.instantly import webhook_email_sent as mod
 
