@@ -80,6 +80,11 @@ class WebhookDeliveryStatusWorkflow:
             maximum_attempts=TEMPORAL_WORKFLOW_ACTIVITY_MAX_ATTEMPTS,
         )
 
+    @workflow.signal
+    def data_issue_fixed(self) -> None:
+        """Signals that data have been manually fixed and that the workflow should retry."""
+        self._data_issue_fixed = True
+
     @workflow.run
     async def run(
         self, input: WebhookDeliveryStatusPayload
