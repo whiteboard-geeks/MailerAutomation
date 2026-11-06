@@ -25,7 +25,7 @@
                                         "queries": [
                                             {
                                                 "condition": {
-                                                    "mode": "full_words",
+                                                    "mode": "exact_value",
                                                     "type": "text",
                                                     "value": "email_goes_here"
                                                 },
