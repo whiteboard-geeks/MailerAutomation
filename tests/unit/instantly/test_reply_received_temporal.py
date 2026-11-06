@@ -255,6 +255,7 @@ def test_add_email_activity_to_lead_raises_when_no_leads(monkeypatch):
 
     monkeypatch.setattr(activities, "create_email_search_query", lambda _: "query")
     monkeypatch.setattr(activities, "search_close_leads", lambda _: [])
+    monkeypatch.setattr(activities, "campaign_runs_from_close", lambda _: True)
 
     with pytest.raises(ValueError):
         activities.add_email_activity_to_lead(

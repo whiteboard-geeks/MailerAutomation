@@ -1,8 +1,10 @@
 from datetime import datetime
 import json
+from typing import Optional
 from pydantic import BaseModel, Field
 from temporalio import activity
 from close_utils import (
+    campaign_runs_from_close,
     create_email_search_query,
     get_lead_by_id,
     make_close_request,
@@ -30,19 +32,26 @@ class CompleteLeadTaskByEmailResult(BaseModel):
 @activity.defn
 def complete_lead_task_by_email(
     args: CompleteLeadTaskByEmailArgs,
-) -> CompleteLeadTaskByEmailResult:
+) -> Optional[CompleteLeadTaskByEmailResult]:
     """Mark task as complete in Close CRM.
 
     Args:
         args (CompleteLeadTaskByEmailArgs): Email address of lead
 
     Returns:
-        CompleteLeadTaskByEmailResult: Lead ID
+        CompleteLeadTaskByEmailResult: Lead ID, or None when the campaign is not run
+        from Close and the lead is not in Close (nothing to log).
     """
     query = create_email_search_query(args.lead_email)
     leads = search_close_leads(query)
 
     if len(leads) == 0:
+        if not campaign_runs_from_close(args.campaign_name):
+            activity.logger.info(
+                "no Close lead and campaign %r is not run from Close; skipping",
+                args.campaign_name,
+            )
+            return None
         if is_last_attempt(activity.info()):
             _send_error_email_no_lead_found(
                 workflow_id=activity.info().workflow_id, lead_email=args.lead_email

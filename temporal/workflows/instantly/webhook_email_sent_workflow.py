@@ -54,6 +54,8 @@ class WebhookEmailSentWorkflow:
         self._campaign_name = input_validated.campaign_name
 
         complete_lead_task_result = await self._complete_lead_task_by_email(input_validated)
+        if complete_lead_task_result is None:
+            return  # campaign not run from Close and lead not in Close
 
         add_email_activity_to_lead_args = AddEmailActivityToLeadArgs(
             lead_id=complete_lead_task_result.lead_id,
@@ -66,7 +68,7 @@ class WebhookEmailSentWorkflow:
 
         await self._add_email_activity_to_lead(add_email_activity_to_lead_args)
 
-    async def _complete_lead_task_by_email(self, input: WebhookEmailSentPaylodValidated) -> CompleteLeadTaskByEmailResult:
+    async def _complete_lead_task_by_email(self, input: WebhookEmailSentPaylodValidated) -> CompleteLeadTaskByEmailResult | None:
         while True:
             try:
                 return await workflow.execute_activity(

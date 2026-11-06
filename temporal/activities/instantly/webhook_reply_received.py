@@ -8,6 +8,7 @@ from pydantic import BaseModel, Field
 from temporalio import activity
 
 from close_utils import (
+    campaign_runs_from_close,
     create_email_search_query,
     get_lead_by_id,
     get_sequence_subscriptions,
@@ -80,13 +81,20 @@ class SendNotificationEmailResult(BaseModel):
 @activity.defn(name="reply_received_add_email_activity_to_lead")
 def add_email_activity_to_lead(
     args: AddEmailActivityToLeadArgs,
-) -> AddEmailActivityToLeadResult:
+) -> Optional[AddEmailActivityToLeadResult]:
     payload = args.payload
 
     query = create_email_search_query(payload.lead_email)
     leads = search_close_leads(query)
 
     if not leads:
+        if not campaign_runs_from_close(payload.campaign_name):
+            # Campaign loaded straight into Instantly: the reply is in Instantly's inbox.
+            activity.logger.info(
+                "no Close lead and campaign %r is not run from Close; skipping",
+                payload.campaign_name,
+            )
+            return None
         if is_last_attempt(activity.info()):
             _send_error_email_no_lead_found(
                 workflow_id=activity.info().workflow_id, lead_email=payload.lead_email

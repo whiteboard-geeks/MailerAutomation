@@ -61,6 +61,8 @@ class WebhookReplyReceivedWorkflow:
         self._campaign_name = input_validated.campaign_name
 
         add_email_result = await self._add_email_activity_to_lead(input_validated)
+        if add_email_result is None:
+            return  # campaign not run from Close and lead not in Close
 
         pause_result = await self._pause_sequence_subscriptions(
             add_email_result.lead_id,
@@ -76,7 +78,7 @@ class WebhookReplyReceivedWorkflow:
     async def _add_email_activity_to_lead(
         self,
         input_validated: WebhookReplyReceivedPayloadValidated,
-    ) -> AddEmailActivityToLeadResult:
+    ) -> AddEmailActivityToLeadResult | None:
         while True:
             try:
                 return await workflow.execute_activity(

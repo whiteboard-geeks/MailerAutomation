@@ -55,3 +55,30 @@ def test_no_campaign_task_still_alerts():
     result, _, mail = _run([{"id": "t", "text": "Letter 3 Sent", "is_complete": True}])
     assert isinstance(result, ValueError)
     mail.assert_called_once()
+
+
+def _run_no_lead(runs_from_close):
+    with patch.object(mod, "search_close_leads", return_value=[]), \
+         patch.object(mod, "campaign_runs_from_close", return_value=runs_from_close), \
+         patch.object(mod, "is_last_attempt", return_value=True), \
+         patch.object(mod, "send_email") as mail, \
+         patch.object(mod.activity, "info", return_value=MagicMock(workflow_id="wf")), \
+         patch.object(mod.activity, "logger"):
+        try:
+            return mod.complete_lead_task_by_email(ARGS), mail
+        except ValueError as e:
+            return e, mail
+
+
+def test_no_lead_for_campaign_not_run_from_close_is_skipped_quietly():
+    # 2026-11-06: 'Agencies - White Label Video Brochures' was loaded straight into
+    # Instantly; every send parked a workflow and emailed a 'No Lead Found' alert.
+    result, mail = _run_no_lead(runs_from_close=False)
+    assert result is None
+    mail.assert_not_called()
+
+
+def test_no_lead_for_close_campaign_still_alerts():
+    result, mail = _run_no_lead(runs_from_close=True)
+    assert isinstance(result, ValueError)
+    mail.assert_called_once()

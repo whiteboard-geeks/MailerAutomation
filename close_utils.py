@@ -362,6 +362,44 @@ def search_close_leads(query):
         raise
 
 
+def campaign_runs_from_close(campaign_name) -> bool:
+    """True if any Close lead has ever had an 'Instantly: <campaign>' task.
+
+    Campaigns started from Close always create that task (webhook_add_lead). A campaign
+    whose leads were loaded straight into Instantly never does, so a missing Close lead
+    there is expected, not a data issue to alert on.
+    """
+    query = {
+        "query": {
+            "type": "and",
+            "queries": [
+                {"type": "object_type", "object_type": "lead"},
+                {
+                    "type": "has_related",
+                    "this_object_type": "lead",
+                    "related_object_type": "task.lead",
+                    "related_query": {
+                        "type": "and",
+                        "queries": [
+                            {
+                                "type": "text",
+                                "mode": "phrase",
+                                "value": f"Instantly: {campaign_name}",
+                            }
+                        ],
+                    },
+                },
+            ],
+        },
+        "_limit": 1,
+        "_fields": {"lead": ["id"]},
+    }
+    response = make_close_request(
+        "post", "https://api.close.com/api/v1/data/search/", json=query, timeout=30
+    )
+    return bool(response.json()["data"])
+
+
 def get_lead_by_id(lead_id) -> dict | None:
     """
     Get a lead by its ID from Close.
