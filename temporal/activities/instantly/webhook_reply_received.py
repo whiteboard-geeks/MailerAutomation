@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime
 import json
+import re
 from typing import Any, Dict, List, Optional
 
 from pydantic import BaseModel, Field
@@ -25,6 +26,22 @@ from temporal.activities.instantly.webhook_add_lead import BARBARA_USER_ID
 from temporal.shared import is_last_attempt
 from utils.email import send_email
 from utils.instantly_reply_received import determine_notification_recipients
+
+
+# Close rejects email activities whose body_html is over 1,048,576 characters.
+CLOSE_BODY_HTML_MAX = 1_048_576
+_INLINE_IMAGE = re.compile(r"data:image/[\w.+-]+;base64,[A-Za-z0-9+/=\s]+")
+
+
+def fit_body_html_for_close(html: str) -> str:
+    """Drop inline base64 images (signature logos) when the HTML is too long for Close.
+
+    If it is still too long, return "" so the reply is logged with body_text only.
+    """
+    if len(html) <= CLOSE_BODY_HTML_MAX:
+        return html
+    html = _INLINE_IMAGE.sub("", html)
+    return html if len(html) <= CLOSE_BODY_HTML_MAX else ""
 
 
 class WebhookReplyReceivedPayloadValidated(BaseModel):
@@ -176,7 +193,7 @@ def add_email_activity_to_lead(
         "cc": [],
         "status": "inbox",
         "body_text": payload.reply_text or "",
-        "body_html": payload.reply_html or "",
+        "body_html": fit_body_html_for_close(payload.reply_html or ""),
         "attachments": [],
         "template_id": None,
     }
