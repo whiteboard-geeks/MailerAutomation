@@ -2,8 +2,10 @@
 
 ## Where things run
 
-- **Heroku app (prod):** `mailer-automation` — `web` ×2 + `worker_temporal` ×1, addons `papertrail` + `rediscloud` (whiteboard-geeks team)
-- **Heroku app (staging):** `mailer-automation-staging`
+- **Production:** Whiteboard Geeks Hetzner box `wbg-apps` (moved off Heroku 2026-11-16). Webhooks hit `https://app.whiteboardgeeks.com/mailer/<route>` (Caddy strips `/mailer`, proxies to gunicorn on 127.0.0.1:8781). systemd units `mailer-automation-web` and `mailer-automation-worker`; code in `/opt/mailer-automation/current` (a link into `releases/<sha>`); settings in `/etc/mailer-automation/env` (root-only); Redis is the box's local `redis-server`, db 7.
+- **Staging:** same box, `https://app.whiteboardgeeks.com/mailer-staging/`, port 8782, units `mailer-automation-staging-web|worker`, `/opt/mailer-automation-staging`, `/etc/mailer-automation/staging.env`, Redis db 8.
+- **Deploys:** push to `main` → GitHub Actions → `ssh ma-deploy@app.whiteboardgeeks.com "<staging|production> <sha> [test]"`, which runs `/usr/local/sbin/mailer-automation-deploy` (build, restart, health check, automatic rollback). Manual deploy or rollback: `ssh wbg-apps sudo mailer-automation-deploy production <sha>`.
+- **Health check:** `mailer-automation-health.timer` every 5 min; emails Lance when it goes down and when it recovers.
 - **Temporal (self-hosted):** Whiteboard Geeks Hetzner `wbg-apps`, namespace `mailerautomation-prod`, mTLS gRPC `app.whiteboardgeeks.com:7233`, SSO UI https://app.whiteboardgeeks.com/temporal/namespaces/mailerautomation-prod/workflows
 - The Flask web dynos enqueue new workflows on self-hosted Temporal; the `worker_temporal` dyno runs their activities. Temporal Cloud was retired on August 3, 2026.
 
@@ -11,13 +13,13 @@
 
 | Symptom | First place to look |
 |---|---|
-| Webhook not triggering anything downstream | `heroku logs -a mailer-automation -n 1500 \| grep <route>` — confirms the request hit Flask and was/wasn't enqueued |
+| Webhook not triggering anything downstream | `ssh wbg-apps sudo journalctl -u mailer-automation-web --since -2h \| grep <route>` — confirms the request hit Flask and was/wasn't enqueued |
 | Workflow ran but produced wrong output | Self-hosted Temporal UI → search by workflow id and view event history. Pre-cutover Cloud history is available only in the read-only archive documented in `infra/temporal/README.md`. |
 | "Did the worker actually pick this up?" | Temporal UI status. `RUNNING` for >1 min usually means an activity is failing or waiting on `_data_issue_fixed` signal. |
-| Older than ~12h | Heroku CLI tail is short — use **Papertrail** (addon `PAPERTRAIL`, `heroku addons:open papertrail -a mailer-automation`) |
-| Redis-related | `rediscloud:100` addon |
+| Worker / activity errors | `ssh wbg-apps sudo journalctl -u mailer-automation-worker --since -2h` |
+| Redis-related | `ssh wbg-apps sudo redis-cli -n 7` (staging: `-n 8`) |
 
-Papertrail keeps logs much longer than `heroku logs` (which is rolling, only 1500 lines).
+journald on wbg-apps keeps up to 1 GB of logs (weeks). Logs from before 2026-11-16 were in Heroku's Papertrail addon.
 
 ## Temporal CLI
 
@@ -29,7 +31,7 @@ temporal --env prod workflow show -w <workflow-id> --output json
 temporal --env prod workflow count --query 'WorkflowType="WebhookDeliveryStatusWorkflow"'
 ```
 
-Workflow IDs are random UUIDs (g_run_id), not tracking codes — to find a workflow for a specific tracking number, you usually have to inspect the workflow input via `workflow show` or grep Heroku/Papertrail logs for the request_id.
+Workflow IDs are random UUIDs (g_run_id), not tracking codes — to find a workflow for a specific tracking number, you usually have to inspect the workflow input via `workflow show` or grep the journald logs for the request_id.
 
 ## EasyPost gotchas
 

@@ -140,10 +140,7 @@ pytest
 
 ## Deployment
 
-The application is configured to be deployed on platforms like Heroku:
-
-- `Procfile` contains the commands needed to run the web and worker processes
-- Configure the necessary environment variables on your hosting platform
+Production and staging run on the Whiteboard Geeks Hetzner box (`wbg-apps`) under systemd; pushes to `main` deploy through GitHub Actions. See `CLAUDE.md` → "Where things run" for units, paths, logs and manual rollback.
 
 ## Troubleshooting
 
