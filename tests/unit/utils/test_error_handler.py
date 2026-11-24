@@ -41,7 +41,18 @@ def test_real_exception_still_emails() -> None:
     send.assert_called_once()
 
 
-def test_debug_env_closed_outside_development() -> None:
-    with patch.object(app_module, "env_type", "staging"):
+def test_debug_env_closed_in_production() -> None:
+    with patch.object(app_module, "env_type", "production"):
         resp, _ = _get("/debug/env")
     assert resp.status_code == 403
+
+
+def test_debug_env_shows_no_credential_text() -> None:
+    secret = '{"type":"service_account","private_key":"xyz"}'
+    with patch.object(app_module, "env_type", "staging"), patch.dict(
+        os.environ, {"GMAIL_SERVICE_ACCOUNT_INFO": secret}
+    ):
+        resp, _ = _get("/debug/env")
+    body = resp.get_json()
+    assert body["gmail_service_account_info"] == f"Found ({len(secret)} chars)"
+    assert "xyz" not in resp.get_data(as_text=True)

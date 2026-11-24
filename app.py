@@ -641,17 +641,12 @@ def search_close_for_contact_by_email_or_phone(contact):
 @flask_app.route("/debug/env")
 def debug_env():
     """Debug endpoint to check environment variables (only in development)."""
-    # Local only: staging and production are public, so they get a 403.
-    if env_type == "development":
-        gmail_info = os.environ.get("GMAIL_SERVICE_ACCOUNT_INFO", "Not found")
-        gmail_file = os.environ.get("GMAIL_SERVICE_ACCOUNT_FILE", "Not found")
-
-        # If GMAIL_SERVICE_ACCOUNT_INFO exists, just show first/last few chars
-        if gmail_info != "Not found":
-            info_len = len(gmail_info)
-            gmail_info = (
-                f"Found ({info_len} chars): {gmail_info[:20]}...{gmail_info[-20:]}"
-            )
+    # Staging's integration tests read this, so it answers outside production,
+    # but it only says whether credentials are set, never any part of them.
+    if env_type not in ["production", "prod"]:
+        gmail_info = os.environ.get("GMAIL_SERVICE_ACCOUNT_INFO")
+        gmail_info = f"Found ({len(gmail_info)} chars)" if gmail_info else "Not found"
+        gmail_file = "Found" if os.environ.get("GMAIL_SERVICE_ACCOUNT_FILE") else "Not found"
 
         return {
             "env_type": os.environ.get("ENV_TYPE", "Not set"),
@@ -660,7 +655,7 @@ def debug_env():
             "flask_env": os.environ.get("FLASK_ENV", "Not set"),
             "flask_debug": os.environ.get("FLASK_DEBUG", "Not set"),
         }
-    return {"error": "Debug endpoints are only available in development"}, 403
+    return {"error": "Debug endpoints not available in production"}, 403
 
 
 if __name__ == "__main__":
