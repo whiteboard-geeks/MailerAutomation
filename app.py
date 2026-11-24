@@ -10,6 +10,7 @@ import uuid
 import time
 
 from flask import Flask, request, jsonify, g
+from werkzeug.exceptions import HTTPException
 import pytest
 import structlog
 from close_utils import make_close_request
@@ -158,6 +159,14 @@ def log_response(response):
 @flask_app.errorhandler(Exception)
 def handle_exception(e):
     """Comprehensive error handler for all exceptions."""
+    # Client errors (404 from scanners probing /.env, 405 wrong method, ...)
+    # are not application errors: answer with their own status, no email.
+    if isinstance(e, HTTPException) and e.code is not None and e.code < 500:
+        logger.info(
+            "client_error", status=e.code, route=request.path, method=request.method
+        )
+        return e
+
     # Capture the traceback
     tb = traceback.format_exc()
 
@@ -632,7 +641,8 @@ def search_close_for_contact_by_email_or_phone(contact):
 @flask_app.route("/debug/env")
 def debug_env():
     """Debug endpoint to check environment variables (only in development)."""
-    if os.environ.get("ENV_TYPE", "").lower() not in ["production", "prod"]:
+    # Local only: staging and production are public, so they get a 403.
+    if env_type == "development":
         gmail_info = os.environ.get("GMAIL_SERVICE_ACCOUNT_INFO", "Not found")
         gmail_file = os.environ.get("GMAIL_SERVICE_ACCOUNT_FILE", "Not found")
 
@@ -650,7 +660,7 @@ def debug_env():
             "flask_env": os.environ.get("FLASK_ENV", "Not set"),
             "flask_debug": os.environ.get("FLASK_DEBUG", "Not set"),
         }
-    return {"error": "Debug endpoints not available in production"}, 403
+    return {"error": "Debug endpoints are only available in development"}, 403
 
 
 if __name__ == "__main__":
